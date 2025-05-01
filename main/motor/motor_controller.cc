@@ -1,0 +1,316 @@
+#include "motor_controller.h"
+#include <esp_log.h>
+#include <cmath>
+#include "../boards/bread-compact-wifi/config.h"
+
+// 为bread-compact-wifi板定义电机引脚
+#define ENA_PIN 2  // 电机A使能
+#define ENB_PIN 1  // 电机B使能
+#define IN1_PIN 47 // 电机A输入1
+#define IN2_PIN 21 // 电机A输入2
+#define IN3_PIN 20 // 电机B输入1
+#define IN4_PIN 19 // 电机B输入2
+
+#define TAG "MotorController"
+
+MotorController::MotorController(int ena_pin, int enb_pin, int in1_pin, int in2_pin, int in3_pin, int in4_pin)
+    : ena_pin_(ena_pin == DEFAULT_ENA_PIN ? ENA_PIN : ena_pin), 
+      enb_pin_(enb_pin == DEFAULT_ENB_PIN ? ENB_PIN : enb_pin), 
+      in1_pin_(in1_pin == DEFAULT_IN1_PIN ? IN1_PIN : in1_pin), 
+      in2_pin_(in2_pin == DEFAULT_IN2_PIN ? IN2_PIN : in2_pin), 
+      in3_pin_(in3_pin == DEFAULT_IN3_PIN ? IN3_PIN : in3_pin), 
+      in4_pin_(in4_pin == DEFAULT_IN4_PIN ? IN4_PIN : in4_pin),
+      running_(false),
+      direction_x_(0),
+      direction_y_(0),
+      motor_speed_(DEFAULT_SPEED),
+      distance_percent_(0),
+      last_dir_x_(0),
+      last_dir_y_(0),
+      cached_angle_degrees_(0) {
+}
+
+MotorController::~MotorController() {
+    Stop();
+}
+
+bool MotorController::Start() {
+    if (running_) {
+        ESP_LOGW(TAG, "Motor controller already running");
+        return true;
+    }
+
+    InitGPIO();
+    
+    // 确保电机停止
+    ControlMotor(LOW, LOW, LOW, LOW);
+    
+    running_ = true;
+    ESP_LOGI(TAG, "Motor controller started");
+    return true;
+}
+
+void MotorController::Stop() {
+    if (!running_) {
+        return;
+    }
+
+    // 停止所有电机
+    ControlMotor(LOW, LOW, LOW, LOW);
+    
+    running_ = false;
+    ESP_LOGI(TAG, "Motor controller stopped");
+}
+
+bool MotorController::IsRunning() const {
+    return running_;
+}
+
+const char* MotorController::GetName() const {
+    return "MotorController";
+}
+
+void MotorController::SetControlParams(float distance, int dirX, int dirY) {
+    if (!running_) {
+        ESP_LOGW(TAG, "Motor controller not running");
+        return;
+    }
+
+    distance_percent_ = distance;
+    direction_x_ = dirX;
+    direction_y_ = dirY;
+    
+    // 根据摇杆拖动距离计算速度
+    float speedFactor = pow(distance_percent_, 2.0);
+    motor_speed_ = MIN_SPEED + (int)((MAX_SPEED - MIN_SPEED) * speedFactor);
+    
+    // 根据方向值确定电机控制方式
+    if (direction_x_ == 0 && direction_y_ == 0) {
+        // 停止
+        ControlMotor(LOW, LOW, LOW, LOW);
+    } else {
+        // 计算角度，确定前进、后退、左转、右转
+        float angle = atan2(direction_y_, direction_x_);
+        float angleDegrees = angle * 180.0 / M_PI;
+        
+        // 前进区域（大致在-135度到-45度之间）
+        if (angleDegrees < -45 && angleDegrees > -135) {
+            ControlMotor(HIGH, LOW, HIGH, LOW); // 前进
+        }
+        // 后退区域（大致在45度到135度之间）
+        else if (angleDegrees > 45 && angleDegrees < 135) {
+            ControlMotor(LOW, HIGH, LOW, HIGH); // 后退
+        }
+        // 右转区域（大致在-45度到45度之间）
+        else if (angleDegrees >= -45 && angleDegrees <= 45) {
+            ControlMotor(LOW, HIGH, HIGH, LOW); // 右转
+        }
+        // 左转区域（135度到180度或-180度到-135度之间）
+        else {
+            ControlMotor(HIGH, LOW, LOW, HIGH); // 左转
+        }
+    }
+}
+
+void MotorController::Forward(int speed) {
+    if (!running_) {
+        ESP_LOGW(TAG, "Motor controller not running");
+        return;
+    }
+    
+    motor_speed_ = speed;
+    ControlMotor(HIGH, LOW, HIGH, LOW);
+}
+
+void MotorController::Backward(int speed) {
+    if (!running_) {
+        ESP_LOGW(TAG, "Motor controller not running");
+        return;
+    }
+    
+    motor_speed_ = speed;
+    ControlMotor(LOW, HIGH, LOW, HIGH);
+}
+
+void MotorController::TurnLeft(int speed) {
+    if (!running_) {
+        ESP_LOGW(TAG, "Motor controller not running");
+        return;
+    }
+    
+    motor_speed_ = speed;
+    ControlMotor(HIGH, LOW, LOW, HIGH);
+}
+
+void MotorController::TurnRight(int speed) {
+    if (!running_) {
+        ESP_LOGW(TAG, "Motor controller not running");
+        return;
+    }
+    
+    motor_speed_ = speed;
+    ControlMotor(LOW, HIGH, HIGH, LOW);
+}
+
+void MotorController::Stop(bool brake) {
+    if (!running_) {
+        ESP_LOGW(TAG, "Motor controller not running");
+        return;
+    }
+    
+    if (brake) {
+        // 刹车模式 - 向电机施加反向电流以迅速停止
+        ControlMotor(HIGH, HIGH, HIGH, HIGH);
+        // 短暂延时让电机有时间停止
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+    
+    // 自由停止模式 - 切断电源让电机自然停止
+    ControlMotor(LOW, LOW, LOW, LOW);
+}
+
+void MotorController::SetSpeed(int speed) {
+    motor_speed_ = speed < MIN_SPEED ? MIN_SPEED : (speed > MAX_SPEED ? MAX_SPEED : speed);
+}
+
+void MotorController::InitGPIO() {
+    // 配置电机控制引脚
+    gpio_config_t io_conf = {};
+    
+    // 设置为输出模式
+    io_conf.mode = GPIO_MODE_OUTPUT;
+    
+    // 设置引脚掩码
+    io_conf.pin_bit_mask = (1ULL << in1_pin_) | (1ULL << in2_pin_) |
+                           (1ULL << in3_pin_) | (1ULL << in4_pin_);
+    
+    // 禁用中断和上拉/下拉
+    io_conf.intr_type = GPIO_INTR_DISABLE;
+    io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
+    io_conf.pull_up_en = GPIO_PULLUP_DISABLE;
+    
+    // 配置GPIO
+    gpio_config(&io_conf);
+    
+    // 配置PWM控制引脚 (ENA, ENB)
+    // 使用LEDC通道0和通道1
+    ledc_timer_config_t ledc_timer = {
+        .speed_mode = LEDC_LOW_SPEED_MODE,
+        .duty_resolution = LEDC_TIMER_8_BIT,
+        .timer_num = LEDC_TIMER_0,
+        .freq_hz = 5000,
+        .clk_cfg = LEDC_AUTO_CLK
+    };
+    ledc_timer_config(&ledc_timer);
+    
+    // 配置ENA
+    ledc_channel_config_t ledc_channel_ena = {
+        .gpio_num = ena_pin_,
+        .speed_mode = LEDC_LOW_SPEED_MODE,
+        .channel = LEDC_CHANNEL_0,
+        .intr_type = LEDC_INTR_DISABLE,
+        .timer_sel = LEDC_TIMER_0,
+        .duty = 0,
+        .hpoint = 0
+    };
+    ledc_channel_config(&ledc_channel_ena);
+    
+    // 配置ENB
+    ledc_channel_config_t ledc_channel_enb = {
+        .gpio_num = enb_pin_,
+        .speed_mode = LEDC_LOW_SPEED_MODE,
+        .channel = LEDC_CHANNEL_1,
+        .intr_type = LEDC_INTR_DISABLE,
+        .timer_sel = LEDC_TIMER_0,
+        .duty = 0,
+        .hpoint = 0
+    };
+    ledc_channel_config(&ledc_channel_enb);
+    
+    // 初始时设置为0
+    ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 0);
+    ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
+    ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1, 0);
+    ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1);
+}
+
+void MotorController::ControlMotor(int in1, int in2, int in3, int in4) {
+    // 设置电机方向控制引脚
+    gpio_set_level((gpio_num_t)in1_pin_, in1);
+    gpio_set_level((gpio_num_t)in2_pin_, in2);
+    gpio_set_level((gpio_num_t)in3_pin_, in3);
+    gpio_set_level((gpio_num_t)in4_pin_, in4);
+    
+    // 如果是停止状态，两个电机都停止
+    if (in1 == LOW && in2 == LOW && in3 == LOW && in4 == LOW) {
+        ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 0);
+        ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
+        ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1, 0);
+        ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1);
+        return;
+    }
+    
+    // 计算角度（弧度）
+    if (last_dir_x_ != direction_x_ || last_dir_y_ != direction_y_) {
+        float angle = atan2(direction_y_, direction_x_);
+        cached_angle_degrees_ = angle * 180.0 / M_PI;
+        last_dir_x_ = direction_x_;
+        last_dir_y_ = direction_y_;
+    }
+    
+    float angleDegrees = cached_angle_degrees_;
+    
+    // 计算左右电机的速度
+    int leftSpeed = motor_speed_;
+    int rightSpeed = motor_speed_;
+    
+    // 根据角度调整左右电机速度
+    // 前进时
+    if (angleDegrees < -45 && angleDegrees > -135) {
+        float deviation = abs(angleDegrees + 90);
+        float ratio = 1.0 - pow(deviation / 45.0, 1.5) * 0.7;
+        
+        if (angleDegrees > -90) {
+            rightSpeed = (int)(motor_speed_ * ratio);
+        } else if (angleDegrees < -90) {
+            leftSpeed = (int)(motor_speed_ * ratio);
+        }
+    }
+    // 后退时
+    else if (angleDegrees > 45 && angleDegrees < 135) {
+        float deviation = abs(angleDegrees - 90);
+        float ratio = 1.0 - pow(deviation / 45.0, 1.5) * 0.7;
+        
+        if (angleDegrees < 90) {
+            leftSpeed = (int)(motor_speed_ * ratio);
+        } else if (angleDegrees > 90) {
+            rightSpeed = (int)(motor_speed_ * ratio);
+        }
+    }
+    // 左转或右转
+    else {
+        // 右转
+        if (angleDegrees >= -45 && angleDegrees <= 45) {
+            float turnIntensity = 1.0 - pow(abs(angleDegrees) / 45.0, 1.2) * 0.3;
+            leftSpeed = motor_speed_;
+            rightSpeed = (int)(motor_speed_ * (0.3 + (0.7 * (1.0 - turnIntensity))));
+        }
+        // 左转
+        else {
+            float normalizedAngle = angleDegrees > 0 ? 180 - angleDegrees : -180 - angleDegrees;
+            float turnIntensity = 1.0 - pow(abs(normalizedAngle) / 45.0, 1.2) * 0.3;
+            leftSpeed = (int)(motor_speed_ * (0.3 + (0.7 * (1.0 - turnIntensity))));
+            rightSpeed = motor_speed_;
+        }
+    }
+    
+    // 确保速度在有效范围内
+    leftSpeed = leftSpeed < MIN_SPEED ? MIN_SPEED : (leftSpeed > MAX_SPEED ? MAX_SPEED : leftSpeed);
+    rightSpeed = rightSpeed < MIN_SPEED ? MIN_SPEED : (rightSpeed > MAX_SPEED ? MAX_SPEED : rightSpeed);
+    
+    // 应用速度到电机
+    ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, leftSpeed);
+    ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
+    ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1, rightSpeed);
+    ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1);
+} 

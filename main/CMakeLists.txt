@@ -21,9 +21,37 @@ set(SOURCES "audio_codecs/audio_codec.cc"
             "settings.cc"
             "background_task.cc"
             "main.cc"
+            "components.cc"
+            "motor/motor_controller.cc"
+            "motor/motor_content.cc"
+            "ai/ai_controller.cc"
+            "ai/ai_content.cc"
+            "vision/vision_controller.cc"
+            "vision/vision_content.cc"
             )
 
 set(INCLUDE_DIRS "." "display" "audio_codecs" "protocols" "audio_processing")
+
+# HTML文件列表
+set(HTML_FILES "${CMAKE_CURRENT_SOURCE_DIR}/assets/html/index.html"
+               "${CMAKE_CURRENT_SOURCE_DIR}/assets/html/car.html"
+               "${CMAKE_CURRENT_SOURCE_DIR}/assets/html/ai.html"
+               "${CMAKE_CURRENT_SOURCE_DIR}/assets/html/cam.html")
+
+# 根据配置添加Web组件
+if(CONFIG_ENABLE_WEB_SERVER)
+    list(APPEND SOURCES 
+        "web/web_server.cc"
+    )
+    list(APPEND INCLUDE_DIRS "web")
+    
+    if(CONFIG_ENABLE_WEB_CONTENT)
+        list(APPEND SOURCES 
+            "web/web_content.cc" 
+            "web/html_content.cc"
+        )
+    endif()
+endif()
 
 # 添加 IOT 相关文件
 file(GLOB IOT_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/iot/things/*.cc)
@@ -197,7 +225,7 @@ if(CONFIG_IDF_TARGET_ESP32)
 endif()
 
 idf_component_register(SRCS ${SOURCES}
-                    EMBED_FILES ${LANG_SOUNDS} ${COMMON_SOUNDS}
+                    EMBED_FILES ${LANG_SOUNDS} ${COMMON_SOUNDS} ${HTML_FILES}
                     INCLUDE_DIRS ${INCLUDE_DIRS}
                     WHOLE_ARCHIVE
                     )

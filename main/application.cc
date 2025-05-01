@@ -9,6 +9,7 @@
 #include "font_awesome_symbols.h"
 #include "iot/thing_manager.h"
 #include "assets/lang_config.h"
+#include "web/web_server.h"
 
 #if CONFIG_USE_AUDIO_PROCESSOR
 #include "afe_audio_processor.h"
@@ -389,6 +390,12 @@ void Application::Start() {
 
     /* Wait for the network to be ready */
     board.StartNetwork();
+
+    // 初始化Web组件
+#if defined(CONFIG_ENABLE_WEB_SERVER)
+    WebServer::InitWebComponents();
+    ESP_LOGI(TAG, "Web components initialized");
+#endif
 
     // Check for new firmware version or get the MQTT broker address
     CheckNewVersion();

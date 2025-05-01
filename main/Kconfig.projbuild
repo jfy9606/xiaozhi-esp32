@@ -261,5 +261,83 @@ config USE_REALTIME_CHAT
     depends on USE_AUDIO_PROCESSOR && (BOARD_TYPE_ESP_BOX_3 || BOARD_TYPE_ESP_BOX || BOARD_TYPE_ESP_BOX_LITE || BOARD_TYPE_LICHUANG_DEV || BOARD_TYPE_ESP32S3_KORVO2_V3)
     help
         需要 ESP32 S3 与 AEC 开启，因为性能不够，不建议和微信聊天界面风格同时开启
-        
+
+menu "Web组件配置"
+    config ENABLE_WEB_SERVER
+        bool "启用Web服务器"
+        default y
+        help
+            启用Web服务器及其功能
+
+    config WEB_SERVER_PORT
+        int "Web服务器端口"
+        default 8080
+        depends on ENABLE_WEB_SERVER
+        help
+            Web服务器监听的端口号，默认8080
+            
+    config ENABLE_WEB_CONTENT
+        bool "启用Web内容"
+        default y
+        depends on ENABLE_WEB_SERVER
+        help
+            启用Web内容处理，包括网页和WebSocket
+endmenu
+
+menu "小智ESP32"
+
+    # Web服务器配置
+    menu "Web Server Configuration"
+        config ENABLE_WEB_SERVER
+            bool "Enable Web Server"
+            default y
+            help
+                Enable web server for configuration and control.
+                
+        config WEB_SERVER_PORT
+            int "Web Server Port"
+            default 8080
+            depends on ENABLE_WEB_SERVER
+            help
+                Port number for web server.
+                
+        config ENABLE_WEB_CONTENT
+            bool "Enable Web Content"
+            default y
+            depends on ENABLE_WEB_SERVER
+            help
+                Enable web content serving (HTML, CSS, JS).
+    endmenu
+    
+    # 电机控制器配置
+    menu "Motor Controller Configuration"
+        config ENABLE_MOTOR_CONTROLLER
+            bool "Enable Motor Controller"
+            default y
+            help
+                Enable motor controller for car movement.
+    endmenu
+    
+    # AI控制器配置
+    menu "AI Controller Configuration"
+        config ENABLE_AI_CONTROLLER
+            bool "Enable AI Controller"
+            default y
+            help
+                Enable AI controller for voice recognition and TTS.
+    endmenu
+    
+    # 视觉控制器配置
+    menu "Vision Controller Configuration"
+        config ENABLE_VISION_CONTROLLER
+            bool "Enable Vision Controller"
+            default y
+            help
+                Enable vision controller for camera functionality.
+    endmenu
+    
+    # ...其他已有的配置...
+    
+endmenu
+
 endmenu
