@@ -1,5 +1,12 @@
 menu "Xiaozhi Assistant"
 
+config ENABLE_XIAOZHI_AI_CORE
+    bool "启用小智AI核心功能"
+    default y
+    help
+        开启或关闭小智AI的核心功能，包括语音唤醒、语音对话及与AI后端的交互功能。
+        关闭此功能不会影响OTA、WIFI、显示屏功能，以及WIFI配对及其网页服务器。
+
 config OTA_URL
     string "Default OTA URL"
     default "https://api.tenclass.net/xiaozhi/ota/"
@@ -237,14 +244,14 @@ config USE_WECHAT_MESSAGE_STYLE
 config USE_WAKE_WORD_DETECT
     bool "启用唤醒词检测"
     default y
-    depends on IDF_TARGET_ESP32S3 && SPIRAM
+    depends on IDF_TARGET_ESP32S3 && SPIRAM && ENABLE_XIAOZHI_AI_CORE
     help
         需要 ESP32 S3 与 AFE 支持
 
 config USE_AUDIO_PROCESSOR
     bool "启用音频降噪、增益处理"
     default y
-    depends on IDF_TARGET_ESP32S3 && SPIRAM
+    depends on IDF_TARGET_ESP32S3 && SPIRAM && ENABLE_XIAOZHI_AI_CORE
     help
         需要 ESP32 S3 与 AFE 支持
 

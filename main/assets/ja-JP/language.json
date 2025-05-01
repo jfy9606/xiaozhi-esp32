@@ -13,10 +13,11 @@
         "REG_ERROR": "ネットワークに接続できません。ネットワーク状態を確認してください",
         "DETECTING_MODULE": "モジュールを検出中...",
         "REGISTERING_NETWORK": "ネットワーク接続待機中...",
-        "CHECKING_NEW_VERSION": "新しいバージョンを確認中...",
+        "CHECKING_NEW_VERSION": "アップデートを確認中...",
         "CHECK_NEW_VERSION_FAILED": "更新確認に失敗しました。%d 秒後に再試行します: %s",
+        "AI_CORE_DISABLED": "小知AIコア機能が無効",
 
-        "STANDBY": "待機中",
+        "STANDBY": "スタンバイ",
         "CONNECT_TO": "接続先 ",
         "CONNECTING": "接続中...",
         "CONNECTED_TO": "接続完了 ",

@@ -13,8 +13,9 @@
         "REG_ERROR": "Unable to access network, please check SIM card status",
         "DETECTING_MODULE": "Detecting module...",
         "REGISTERING_NETWORK": "Waiting for network...",
-        "CHECKING_NEW_VERSION": "Checking for new version...",
+        "CHECKING_NEW_VERSION": "Checking for updates...",
         "CHECK_NEW_VERSION_FAILED": "Check for new version failed, will retry in %d seconds: %s",
+        "AI_CORE_DISABLED": "Xiaozhi AI Core features disabled",
 
         "STANDBY": "Standby",
         "CONNECT_TO": "Connect to ",

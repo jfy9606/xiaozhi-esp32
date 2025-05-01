@@ -299,6 +299,12 @@ void Application::ToggleChatState() {
 }
 
 void Application::StartListening() {
+#if !CONFIG_ENABLE_XIAOZHI_AI_CORE
+    // AI核心功能禁用时，显示提示信息
+    Alert(Lang::Strings::INFO, Lang::Strings::AI_CORE_DISABLED, "sad", Lang::Sounds::P3_EXCLAMATION);
+    return;
+#endif
+
     if (device_state_ == kDeviceStateActivating) {
         SetDeviceState(kDeviceStateIdle);
         return;
@@ -349,10 +355,10 @@ void Application::StopListening() {
 
 void Application::Start() {
     auto& board = Board::GetInstance();
-    SetDeviceState(kDeviceStateStarting);
-
+    
     /* Setup the display */
     auto display = board.GetDisplay();
+    SetDeviceState(kDeviceStateStarting);
 
     /* Setup the audio codec */
     auto codec = board.GetAudioCodec();
@@ -390,6 +396,7 @@ void Application::Start() {
     // Initialize the protocol
     display->SetStatus(Lang::Strings::LOADING_PROTOCOL);
 
+#if CONFIG_ENABLE_XIAOZHI_AI_CORE
     if (ota_.HasMqttConfig()) {
         protocol_ = std::make_unique<MqttProtocol>();
     } else if (ota_.HasWebsocketConfig()) {
@@ -577,8 +584,6 @@ void Application::Start() {
     wake_word_detect_.StartDetection();
 #endif
 
-    // Wait for the new version check to finish
-    xEventGroupWaitBits(event_group_, CHECK_NEW_VERSION_DONE_EVENT, pdTRUE, pdFALSE, portMAX_DELAY);
     SetDeviceState(kDeviceStateIdle);
 
     if (protocol_started) {
@@ -589,6 +594,18 @@ void Application::Start() {
         ResetDecoder();
         PlaySound(Lang::Sounds::P3_SUCCESS);
     }
+#else
+    // AI核心功能关闭时显示提示信息
+    SetDeviceState(kDeviceStateIdle);
+    
+    std::string message = std::string(Lang::Strings::VERSION) + ota_.GetCurrentVersion();
+    display->ShowNotification(message.c_str());
+    display->SetChatMessage("system", Lang::Strings::AI_CORE_DISABLED);
+    
+    // 播放提示音
+    ResetDecoder();
+    PlaySound(Lang::Sounds::P3_SUCCESS);
+#endif // CONFIG_ENABLE_XIAOZHI_AI_CORE
     
     // Enter the main event loop
     MainEventLoop();
@@ -896,6 +913,12 @@ void Application::Reboot() {
 }
 
 void Application::WakeWordInvoke(const std::string& wake_word) {
+#if !CONFIG_ENABLE_XIAOZHI_AI_CORE
+    // AI核心功能禁用时，显示提示信息
+    Alert(Lang::Strings::INFO, Lang::Strings::AI_CORE_DISABLED, "sad", Lang::Sounds::P3_EXCLAMATION);
+    return;
+#endif
+
     if (device_state_ == kDeviceStateIdle) {
         ToggleChatState();
         Schedule([this, wake_word]() {
