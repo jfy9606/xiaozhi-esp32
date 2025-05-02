@@ -4,6 +4,15 @@
 #include <esp_http_server.h>
 #include "../components.h"
 #include "web_server.h"
+#include <string>
+#include <map>
+
+// 配置选项
+#ifndef CONFIG_WEB_CONTENT_TAG
+#define CONFIG_WEB_CONTENT_TAG "WebContent"
+#endif
+
+// 所有内存分配根据WEB_SERVER_USE_PSRAM决定是否使用PSRAM宏
 
 // Web内容处理组件
 class WebContent : public Component {
@@ -17,34 +26,51 @@ public:
     virtual bool IsRunning() const override;
     virtual const char* GetName() const override;
 
-    // 处理首页
-    static esp_err_t HandleRoot(httpd_req_t *req);
+    // 获取MIME类型
+    static const char* GetContentType(const PSRAMString& path);
+
+    // 注册静态资源处理器
+    void RegisterStaticContent();
     
-    // 处理小车控制页面
-    static esp_err_t HandleCar(httpd_req_t *req);
+    // 注册WebSocket消息处理器
+    void RegisterWebSocketHandlers();
+
+    // WebSocket消息处理函数
+    // 每种类型定义一个处理函数
+    void HandleSystemMessage(int client_id, const PSRAMString& message, const PSRAMString& type);
+    void HandleControlMessage(int client_id, const PSRAMString& message, const PSRAMString& type);
+    void HandleHeartbeatMessage(int client_id, const PSRAMString& message, const PSRAMString& type);
+    void HandleStatusMessage(int client_id, const PSRAMString& message, const PSRAMString& type);
     
-    // 处理AI页面
-    static esp_err_t HandleAI(httpd_req_t *req);
+    // 获取系统状态信息
+    PSRAMString GetSystemStatus();
     
-    // 处理摄像头页面
-    static esp_err_t HandleCamera(httpd_req_t *req);
+    // 获取WiFi状态信息
+    PSRAMString GetWifiStatus();
     
-    // 处理WebSocket消息
-    void HandleWebSocketMessage(int client_index, const std::string& message);
+    // 设置WiFi配置
+    bool ConfigureWifi(const PSRAMString& ssid, const PSRAMString& password);
 
 private:
     WebServer* server_;
     bool running_;
     
-    // 初始化URI处理函数
-    void InitHandlers();
+    // 处理静态文件请求
+    static esp_err_t HandleStaticFile(httpd_req_t* req);
     
-    // 状态查询处理
-    static esp_err_t HandleStatus(httpd_req_t *req);
+    // 初始化静态资源处理器
+    void InitStaticHandlers();
     
-    // WiFi配置处理
-    static esp_err_t HandleWifiConfig(httpd_req_t *req);
-    static esp_err_t HandleWifiSettings(httpd_req_t *req);
+    // 预加载静态资源到PSRAM
+    void PreloadStaticAssets();
+    
+    // 缓存的静态资源
+    static char* favicon_ico_psram;
+    static size_t favicon_ico_size;
+    static char* style_css_psram;
+    static size_t style_css_size;
+    static char* script_js_psram;
+    static size_t script_js_size;
 };
 
 #endif // _WEB_CONTENT_H_ 

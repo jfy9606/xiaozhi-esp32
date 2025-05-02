@@ -2,14 +2,17 @@
 #include <esp_log.h>
 #include <esp_timer.h>
 #include <img_converters.h>
-#include <ArduinoJson.h>
+#include <cJSON.h>
+#include <sys/socket.h>
+#include <esp_wifi.h>
 #include "sdkconfig.h"
+#if CONFIG_ENABLE_WEB_CONTENT
+#include "web/html_content.h"
+#endif
 
 #define TAG "VisionContent"
 
-// 声明外部HTML内容获取函数（在html_content.cc中定义）
-extern const char* CAM_HTML;
-extern size_t get_cam_html_size();
+// 使用html_content.h中定义的HTML内容函数
 
 // 多部分HTTP相关定义
 #define PART_BOUNDARY "123456789000000000000987654321"
@@ -23,8 +26,8 @@ typedef struct {
     size_t len;
 } jpg_chunking_t;
 
-VisionContent::VisionContent(WebServer* server, VisionController* vision_controller)
-    : server_(server), vision_controller_(vision_controller), running_(false) {
+VisionContent::VisionContent(WebServer* server)
+    : server_(server), vision_controller_(nullptr), running_(false) {
     // 初始化滑动平均过滤器
     RaFilterInit(&ra_filter_, 20);
 }
@@ -50,15 +53,27 @@ bool VisionContent::Start() {
         return false;
     }
 
-    if (!vision_controller_ || !vision_controller_->IsRunning()) {
-        ESP_LOGE(TAG, "Vision controller not running, cannot start vision content");
+    // 获取视觉控制器
+    vision_controller_ = GetVisionController();
+    if (!vision_controller_) {
+        ESP_LOGE(TAG, "Vision controller not found, cannot start vision content");
         return false;
+    }
+    
+    // 如果视觉控制器未运行，尝试启动它
+    if (!vision_controller_->IsRunning()) {
+        ESP_LOGI(TAG, "Vision controller not running, attempting to start it");
+        if (!vision_controller_->Start()) {
+            ESP_LOGE(TAG, "Failed to start vision controller");
+            return false;
+        }
+        ESP_LOGI(TAG, "Vision controller started successfully");
     }
 
     InitHandlers();
     
     running_ = true;
-    ESP_LOGI(TAG, "Vision content started");
+    ESP_LOGI(TAG, "Vision content started with integrated camera functionality");
     return true;
 }
 
@@ -80,27 +95,65 @@ const char* VisionContent::GetName() const {
 }
 
 void VisionContent::InitHandlers() {
-    // 注册URI处理函数
-    server_->RegisterUri("/camera", HTTP_GET, HandleCamera, this);
-    server_->RegisterUri("/stream", HTTP_GET, StreamHandler, this);
-    server_->RegisterUri("/capture", HTTP_GET, CaptureHandler, this);
-    server_->RegisterUri("/bmp", HTTP_GET, BmpHandler, this);
-    server_->RegisterUri("/led", HTTP_GET, LedHandler, this);
-    server_->RegisterUri("/status", HTTP_GET, StatusHandler, this);
-    server_->RegisterUri("/control", HTTP_GET, CommandHandler, this);
+    if (!server_ || !server_->IsRunning()) {
+        ESP_LOGE(TAG, "Web server not running, cannot initialize Vision handlers");
+        return;
+    }
+
+    ESP_LOGI(TAG, "Initializing Vision URI handlers");
     
-    // 注册WebSocket处理
-    server_->RegisterWebSocket("/ws", [this](int client_index, const std::string& message) {
-        HandleWebSocketMessage(client_index, message);
-    });
+    // Safe URI registration with logging
+    auto safeRegisterUri = [this](const char* uri, httpd_method_t method, esp_err_t (*handler)(httpd_req_t*), void* ctx) {
+        if (!server_->IsUriRegistered(uri)) {
+            server_->RegisterUri(uri, method, handler, ctx);
+            ESP_LOGI(TAG, "Registered Vision URI handler: %s", uri);
+        } else {
+            ESP_LOGW(TAG, "URI already registered, skipping: %s", uri);
+        }
+    };
+
+    // 注册视觉相关URI处理函数
+    safeRegisterUri("/camera", HTTP_GET, HandleCamera, this);
+    safeRegisterUri("/stream", HTTP_GET, StreamHandler, this);
+    safeRegisterUri("/capture", HTTP_GET, CaptureHandler, this);
+    safeRegisterUri("/bmp", HTTP_GET, BmpHandler, this);
+    safeRegisterUri("/led", HTTP_GET, LedHandler, this);
+    safeRegisterUri("/control", HTTP_GET, CommandHandler, this);
+    
+    // 注册特殊的状态URI，避免与WebContent冲突
+    safeRegisterUri("/vision/status", HTTP_GET, StatusHandler, this);
+    
+    // WebSocket注册 - 更新为全局统一的WebSocket
+    if (!server_->IsUriRegistered("/ws")) {
+        ESP_LOGI(TAG, "Registering global WebSocket handler");
+        server_->RegisterWebSocket("/ws", [this](int client_index, const PSRAMString& message) {
+            HandleWebSocketMessage(client_index, message);
+        });
+        ESP_LOGI(TAG, "Registered WebSocket handler for vision");
+    } else {
+        ESP_LOGW(TAG, "WebSocket URI /ws already registered by another component");
+        // 尝试注册自己的消息处理回调
+        // 注意：这里我们不能直接访问其他组件设置的回调，但我们的回调会通过HandleWsMessageInternal分发
+    }
+    
+    ESP_LOGI(TAG, "Vision URI handlers initialization complete");
 }
 
 esp_err_t VisionContent::HandleCamera(httpd_req_t *req) {
+#if CONFIG_ENABLE_WEB_CONTENT
     httpd_resp_set_type(req, "text/html");
     httpd_resp_set_hdr(req, "Content-Encoding", "identity");
     httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
-    httpd_resp_send(req, CAM_HTML, get_cam_html_size());
+    httpd_resp_send(req, VISION_HTML, get_vision_html_size());
     return ESP_OK;
+#else
+    // 当Web内容未启用时，返回一个简单的消息
+    const char* message = "<html><body><h1>Vision Content Disabled</h1><p>The web content feature is not enabled in this build.</p></body></html>";
+    httpd_resp_set_type(req, "text/html");
+    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+    httpd_resp_send(req, message, strlen(message));
+    return ESP_OK;
+#endif
 }
 
 size_t VisionContent::JpegEncodeStream(void *arg, size_t index, const void *data, size_t len) {
@@ -117,12 +170,17 @@ size_t VisionContent::JpegEncodeStream(void *arg, size_t index, const void *data
 
 esp_err_t VisionContent::StreamHandler(httpd_req_t *req) {
     VisionContent* content = static_cast<VisionContent*>(req->user_ctx);
-    if (!content || !content->vision_controller_) {
-        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Vision controller not available");
+    if (!content) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Invalid request context");
         return ESP_FAIL;
     }
     
+    // 安全检查：验证视觉控制器是否存在
     VisionController* vision = content->vision_controller_;
+    if (!vision) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Vision controller not available");
+        return ESP_FAIL;
+    }
     
     // 设置视频流状态
     vision->SetStreaming(true);
@@ -131,9 +189,6 @@ esp_err_t VisionContent::StreamHandler(httpd_req_t *req) {
     httpd_resp_set_type(req, _STREAM_CONTENT_TYPE);
     httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
     httpd_resp_set_hdr(req, "X-Framerate", "24");
-    
-    // 声明JPEG分块结构
-    jpg_chunking_t jchunk = {req, 0};
     
     esp_err_t res = ESP_OK;
     char part_buf[128];
@@ -149,7 +204,11 @@ esp_err_t VisionContent::StreamHandler(httpd_req_t *req) {
     // FPS计算
     int fps = 24;
     
-    while (true) {
+    // 最大连续帧计数
+    const int MAX_FRAMES = 1000; // 限制连续流帧数
+    int frame_count = 0;
+    
+    while (frame_count < MAX_FRAMES) {
         // 获取摄像头帧
         camera_fb_t *fb = vision->GetFrame();
         if (!fb) {
@@ -172,6 +231,8 @@ esp_err_t VisionContent::StreamHandler(httpd_req_t *req) {
         size_t hlen = snprintf(part_buf, 128, _STREAM_BOUNDARY);
         res = httpd_resp_send_chunk(req, part_buf, hlen);
         if (res != ESP_OK) {
+            ESP_LOGW(TAG, "Failed to send boundary, stopping stream");
+            vision->ReturnFrame(fb);
             break;
         }
         
@@ -181,12 +242,16 @@ esp_err_t VisionContent::StreamHandler(httpd_req_t *req) {
         hlen = snprintf(part_buf, 128, _STREAM_PART, fb->len, tv.tv_sec, tv.tv_usec);
         res = httpd_resp_send_chunk(req, part_buf, hlen);
         if (res != ESP_OK) {
+            ESP_LOGW(TAG, "Failed to send header, stopping stream");
+            vision->ReturnFrame(fb);
             break;
         }
         
         // 发送JPEG数据
         res = httpd_resp_send_chunk(req, (const char *)fb->buf, fb->len);
         if (res != ESP_OK) {
+            ESP_LOGW(TAG, "Failed to send JPEG data, stopping stream");
+            vision->ReturnFrame(fb);
             break;
         }
         
@@ -198,12 +263,11 @@ esp_err_t VisionContent::StreamHandler(httpd_req_t *req) {
             vTaskDelay(pdMS_TO_TICKS(10));
         }
         
-        // 检查客户端连接
-        if (httpd_req_is_cancelling(req)) {
-            break;
-        }
+        // 增加帧计数
+        frame_count++;
     }
     
+    // 结束流媒体
     vision->SetStreaming(false);
     
     // 最后发送一个空块表示结束
@@ -214,12 +278,17 @@ esp_err_t VisionContent::StreamHandler(httpd_req_t *req) {
 
 esp_err_t VisionContent::CaptureHandler(httpd_req_t *req) {
     VisionContent* content = static_cast<VisionContent*>(req->user_ctx);
-    if (!content || !content->vision_controller_) {
-        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Vision controller not available");
+    if (!content) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Invalid request context");
         return ESP_FAIL;
     }
     
+    // 安全检查：验证视觉控制器是否存在
     VisionController* vision = content->vision_controller_;
+    if (!vision) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Vision controller not available");
+        return ESP_FAIL;
+    }
     
     // 获取摄像头帧
     camera_fb_t *fb = vision->GetFrame();
@@ -251,12 +320,17 @@ esp_err_t VisionContent::CaptureHandler(httpd_req_t *req) {
 
 esp_err_t VisionContent::BmpHandler(httpd_req_t *req) {
     VisionContent* content = static_cast<VisionContent*>(req->user_ctx);
-    if (!content || !content->vision_controller_) {
-        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Vision controller not available");
+    if (!content) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Invalid request context");
         return ESP_FAIL;
     }
     
+    // 安全检查：验证视觉控制器是否存在
     VisionController* vision = content->vision_controller_;
+    if (!vision) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Vision controller not available");
+        return ESP_FAIL;
+    }
     
     // 获取摄像头帧
     camera_fb_t *fb = vision->GetFrame();
@@ -301,12 +375,17 @@ esp_err_t VisionContent::BmpHandler(httpd_req_t *req) {
 
 esp_err_t VisionContent::LedHandler(httpd_req_t *req) {
     VisionContent* content = static_cast<VisionContent*>(req->user_ctx);
-    if (!content || !content->vision_controller_) {
-        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Vision controller not available");
+    if (!content) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Invalid request context");
         return ESP_FAIL;
     }
     
+    // 安全检查：验证视觉控制器是否存在
     VisionController* vision = content->vision_controller_;
+    if (!vision) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Vision controller not available");
+        return ESP_FAIL;
+    }
     
     // 解析查询参数
     char query[32];
@@ -326,75 +405,133 @@ esp_err_t VisionContent::LedHandler(httpd_req_t *req) {
     int current_intensity = vision->GetLedIntensity();
     
     // 创建JSON响应
-    DynamicJsonDocument doc(128);
-    doc["intensity"] = current_intensity;
+    cJSON* doc = cJSON_CreateObject();
+    cJSON_AddNumberToObject(doc, "intensity", current_intensity);
     
-    String response;
-    serializeJson(doc, response);
+    char* json = cJSON_Print(doc);
+    if (!json) {
+        cJSON_Delete(doc);
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to generate JSON response");
+        return ESP_FAIL;
+    }
     
     // 返回响应
     httpd_resp_set_type(req, "application/json");
-    httpd_resp_send(req, response.c_str(), response.length());
+    httpd_resp_send(req, json, strlen(json));
+    
+    cJSON_Delete(doc);
+    free(json);
     
     return ESP_OK;
 }
 
 esp_err_t VisionContent::StatusHandler(httpd_req_t *req) {
     VisionContent* content = static_cast<VisionContent*>(req->user_ctx);
-    if (!content || !content->vision_controller_) {
-        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Vision controller not available");
+    if (!content) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Invalid request context");
         return ESP_FAIL;
     }
     
-    VisionController* vision = content->vision_controller_;
+    // 设置CORS头和类型
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+    httpd_resp_set_hdr(req, "Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    httpd_resp_set_hdr(req, "Access-Control-Allow-Headers", "Content-Type");
     
-    // 获取摄像头状态
+    // 创建基础JSON响应
+    cJSON* doc = cJSON_CreateObject();
+    
+    // 添加基本系统信息
+    cJSON_AddStringToObject(doc, "version", "1.0.0");
+    cJSON_AddBoolToObject(doc, "system_ready", true);
+    
+    // 安全检查：验证视觉控制器是否存在
+    VisionController* vision = content->vision_controller_;
+    if (!vision) {
+        cJSON_AddBoolToObject(doc, "camera_available", false);
+        cJSON_AddStringToObject(doc, "camera_error", "Vision controller not initialized");
+        
+        char* json = cJSON_Print(doc);
+        if (!json) {
+            cJSON_Delete(doc);
+            httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to generate JSON response");
+            return ESP_FAIL;
+        }
+        
+        httpd_resp_send(req, json, strlen(json));
+        
+        cJSON_Delete(doc);
+        free(json);
+        return ESP_OK;
+    }
+    
+    // 添加视觉控制器状态
+    cJSON_AddBoolToObject(doc, "camera_available", true);
+    cJSON_AddBoolToObject(doc, "camera_running", vision->IsRunning());
+    cJSON_AddBoolToObject(doc, "camera_streaming", vision->IsStreaming());
+    cJSON_AddNumberToObject(doc, "led_intensity", vision->GetLedIntensity());
+    
+    // 获取摄像头传感器状态
     sensor_t *s = esp_camera_sensor_get();
     if (!s) {
-        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to get sensor data");
+        cJSON_AddBoolToObject(doc, "sensor_available", false);
+    } else {
+        cJSON_AddBoolToObject(doc, "sensor_available", true);
+        
+        // 创建嵌套的sensor对象
+        cJSON* sensor = cJSON_CreateObject();
+        cJSON_AddItemToObject(doc, "sensor", sensor);
+        
+        // 添加传感器信息
+        cJSON_AddNumberToObject(sensor, "framesize", s->status.framesize);
+        cJSON_AddNumberToObject(sensor, "quality", s->status.quality);
+        cJSON_AddNumberToObject(sensor, "brightness", s->status.brightness);
+        cJSON_AddNumberToObject(sensor, "contrast", s->status.contrast);
+        cJSON_AddNumberToObject(sensor, "saturation", s->status.saturation);
+        cJSON_AddNumberToObject(sensor, "sharpness", s->status.sharpness);
+        cJSON_AddNumberToObject(sensor, "denoise", s->status.denoise);
+        cJSON_AddNumberToObject(sensor, "special_effect", s->status.special_effect);
+        cJSON_AddNumberToObject(sensor, "wb_mode", s->status.wb_mode);
+        cJSON_AddNumberToObject(sensor, "awb", s->status.awb);
+        cJSON_AddNumberToObject(sensor, "awb_gain", s->status.awb_gain);
+        cJSON_AddNumberToObject(sensor, "aec", s->status.aec);
+        cJSON_AddNumberToObject(sensor, "aec2", s->status.aec2);
+        cJSON_AddNumberToObject(sensor, "ae_level", s->status.ae_level);
+        cJSON_AddNumberToObject(sensor, "aec_value", s->status.aec_value);
+        cJSON_AddNumberToObject(sensor, "agc", s->status.agc);
+        cJSON_AddNumberToObject(sensor, "agc_gain", s->status.agc_gain);
+        cJSON_AddNumberToObject(sensor, "gainceiling", s->status.gainceiling);
+        cJSON_AddNumberToObject(sensor, "bpc", s->status.bpc);
+        cJSON_AddNumberToObject(sensor, "wpc", s->status.wpc);
+        cJSON_AddNumberToObject(sensor, "raw_gma", s->status.raw_gma);
+        cJSON_AddNumberToObject(sensor, "lenc", s->status.lenc);
+        cJSON_AddNumberToObject(sensor, "hmirror", s->status.hmirror);
+        cJSON_AddNumberToObject(sensor, "vflip", s->status.vflip);
+        cJSON_AddNumberToObject(sensor, "dcw", s->status.dcw);
+        cJSON_AddNumberToObject(sensor, "colorbar", s->status.colorbar);
+    }
+    
+    // 添加内存使用信息
+    cJSON_AddNumberToObject(doc, "free_heap", esp_get_free_heap_size());
+    cJSON_AddNumberToObject(doc, "min_free_heap", esp_get_minimum_free_heap_size());
+    
+    // 添加时间戳
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    cJSON_AddNumberToObject(doc, "timestamp", tv.tv_sec);
+    
+    char* json = cJSON_Print(doc);
+    if (!json) {
+        cJSON_Delete(doc);
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to generate JSON response");
         return ESP_FAIL;
     }
     
-    // 创建JSON响应
-    DynamicJsonDocument doc(1024);
-    doc["running"] = vision->IsRunning();
-    doc["streaming"] = vision->IsStreaming();
-    doc["led_intensity"] = vision->GetLedIntensity();
-    
-    JsonObject sensor = doc.createNestedObject("sensor");
-    sensor["framesize"] = s->status.framesize;
-    sensor["quality"] = s->status.quality;
-    sensor["brightness"] = s->status.brightness;
-    sensor["contrast"] = s->status.contrast;
-    sensor["saturation"] = s->status.saturation;
-    sensor["sharpness"] = s->status.sharpness;
-    sensor["denoise"] = s->status.denoise;
-    sensor["special_effect"] = s->status.special_effect;
-    sensor["wb_mode"] = s->status.wb_mode;
-    sensor["awb"] = s->status.awb;
-    sensor["awb_gain"] = s->status.awb_gain;
-    sensor["aec"] = s->status.aec;
-    sensor["aec2"] = s->status.aec2;
-    sensor["ae_level"] = s->status.ae_level;
-    sensor["aec_value"] = s->status.aec_value;
-    sensor["agc"] = s->status.agc;
-    sensor["agc_gain"] = s->status.agc_gain;
-    sensor["gainceiling"] = s->status.gainceiling;
-    sensor["bpc"] = s->status.bpc;
-    sensor["wpc"] = s->status.wpc;
-    sensor["raw_gma"] = s->status.raw_gma;
-    sensor["lenc"] = s->status.lenc;
-    sensor["hmirror"] = s->status.hmirror;
-    sensor["vflip"] = s->status.vflip;
-    sensor["dcw"] = s->status.dcw;
-    sensor["colorbar"] = s->status.colorbar;
-    
-    String response;
-    serializeJson(doc, response);
-    
     // 返回响应
-    httpd_resp_set_type(req, "application/json");
-    httpd_resp_send(req, response.c_str(), response.length());
+    httpd_resp_send(req, json, strlen(json));
+    
+    cJSON_Delete(doc);
+    free(json);
     
     return ESP_OK;
 }
@@ -426,7 +563,6 @@ esp_err_t VisionContent::CommandHandler(httpd_req_t *req) {
     
     // 解析并应用命令参数
     char val[32];
-    int res = 0;
     
     // 检查各种摄像头参数，有则设置
     if (httpd_query_key_value(buf, "framesize", val, sizeof(val)) == ESP_OK) {
@@ -478,127 +614,238 @@ esp_err_t VisionContent::CommandHandler(httpd_req_t *req) {
     return ESP_OK;
 }
 
-void VisionContent::HandleWebSocketMessage(int client_index, const std::string& message) {
-    if (!vision_controller_) {
-        ESP_LOGW(TAG, "Vision controller not available");
-        return;
-    }
+void VisionContent::HandleWebSocketMessage(int client_index, const PSRAMString& message) {
+    // 记录接收到的消息 - 仅在DEBUG级别记录
+    ESP_LOGD(TAG, "WebSocket message from client %d: %s", 
+        client_index, message.c_str());
     
     // 解析JSON消息
-    DynamicJsonDocument doc(512);
-    DeserializationError error = deserializeJson(doc, message.c_str());
-    if (error) {
-        ESP_LOGW(TAG, "Invalid JSON in WebSocket message: %s", error.c_str());
+    cJSON* doc = cJSON_Parse(message.c_str());
+    if (!doc) {
+        ESP_LOGW(TAG, "Invalid JSON in WebSocket message");
         return;
     }
     
     // 处理不同类型的消息
-    const char* type = doc["type"];
-    if (!type) {
+    cJSON* type_obj = cJSON_GetObjectItem(doc, "type");
+    if (!type_obj || !type_obj->valuestring) {
         ESP_LOGW(TAG, "Missing message type");
+        cJSON_Delete(doc);
         return;
     }
     
+    const char* type = type_obj->valuestring;
+    
+    // 处理视觉/摄像头相关的消息类型
     if (strcmp(type, "led_intensity") == 0) {
+        // 检查摄像头控制器是否可用
+        if (vision_controller_ == nullptr) {
+            ESP_LOGW(TAG, "VisionController not available");
+            server_->SendWebSocketMessage(client_index, 
+                "{\"type\":\"error\",\"message\":\"Camera controller not available\"}");
+            cJSON_Delete(doc);
+            return;
+        }
+        
         // 设置LED强度
-        int intensity = doc["intensity"];
-        vision_controller_->SetLedIntensity(intensity);
+        cJSON* intensity_obj = cJSON_GetObjectItem(doc, "intensity");
+        if (intensity_obj) {
+            int intensity = intensity_obj->valueint;
+            vision_controller_->SetLedIntensity(intensity);
         
-        // 发送确认消息
-        DynamicJsonDocument respDoc(128);
-        respDoc["type"] = "led_status";
-        respDoc["intensity"] = vision_controller_->GetLedIntensity();
-        
-        String response;
-        serializeJson(respDoc, response);
-        
-        server_->SendWebSocketMessage(client_index, response.c_str());
+            // 发送确认消息
+            cJSON* respDoc = cJSON_CreateObject();
+            cJSON_AddStringToObject(respDoc, "type", "led_status");
+            cJSON_AddNumberToObject(respDoc, "intensity", vision_controller_->GetLedIntensity());
+            
+            char* response = cJSON_Print(respDoc);
+            
+            server_->SendWebSocketMessage(client_index, response);
+            
+            cJSON_Delete(respDoc);
+            free(response);
+        }
     }
     else if (strcmp(type, "camera_control") == 0) {
+        // 检查摄像头控制器是否可用
+        if (vision_controller_ == nullptr) {
+            ESP_LOGW(TAG, "VisionController not available");
+            server_->SendWebSocketMessage(client_index, 
+                "{\"type\":\"error\",\"message\":\"Camera controller not available\"}");
+            cJSON_Delete(doc);
+            return;
+        }
+        
         // 获取摄像头传感器
         sensor_t *s = esp_camera_sensor_get();
         if (!s) {
             ESP_LOGW(TAG, "Failed to get sensor data");
+            server_->SendWebSocketMessage(client_index, 
+                "{\"type\":\"error\",\"message\":\"Camera sensor not available\"}");
+            cJSON_Delete(doc);
             return;
         }
         
         // 处理各种摄像头参数
-        if (doc.containsKey("framesize")) {
-            int v = doc["framesize"];
+        bool updated = false;
+        
+        cJSON* framesize_obj = cJSON_GetObjectItem(doc, "framesize");
+        if (framesize_obj) {
+            int v = framesize_obj->valueint;
             if (v >= 0 && v <= 13) {
                 s->set_framesize(s, (framesize_t)v);
+                updated = true;
             }
         }
-        if (doc.containsKey("quality")) {
-            int v = doc["quality"];
+        
+        cJSON* quality_obj = cJSON_GetObjectItem(doc, "quality");
+        if (quality_obj) {
+            int v = quality_obj->valueint;
             if (v >= 0 && v <= 63) {
                 s->set_quality(s, v);
+                updated = true;
             }
         }
-        if (doc.containsKey("contrast")) {
-            int v = doc["contrast"];
+        
+        cJSON* contrast_obj = cJSON_GetObjectItem(doc, "contrast");
+        if (contrast_obj) {
+            int v = contrast_obj->valueint;
             if (v >= -2 && v <= 2) {
                 s->set_contrast(s, v);
+                updated = true;
             }
         }
-        if (doc.containsKey("brightness")) {
-            int v = doc["brightness"];
+        
+        cJSON* brightness_obj = cJSON_GetObjectItem(doc, "brightness");
+        if (brightness_obj) {
+            int v = brightness_obj->valueint;
             if (v >= -2 && v <= 2) {
                 s->set_brightness(s, v);
+                updated = true;
             }
         }
-        if (doc.containsKey("saturation")) {
-            int v = doc["saturation"];
+        
+        cJSON* saturation_obj = cJSON_GetObjectItem(doc, "saturation");
+        if (saturation_obj) {
+            int v = saturation_obj->valueint;
             if (v >= -2 && v <= 2) {
                 s->set_saturation(s, v);
+                updated = true;
             }
         }
-        if (doc.containsKey("hmirror")) {
-            int v = doc["hmirror"];
+        
+        cJSON* hmirror_obj = cJSON_GetObjectItem(doc, "hmirror");
+        if (hmirror_obj) {
+            int v = hmirror_obj->valueint;
             if (v == 0 || v == 1) {
                 s->set_hmirror(s, v);
+                updated = true;
             }
         }
-        if (doc.containsKey("vflip")) {
-            int v = doc["vflip"];
+        
+        cJSON* vflip_obj = cJSON_GetObjectItem(doc, "vflip");
+        if (vflip_obj) {
+            int v = vflip_obj->valueint;
             if (v == 0 || v == 1) {
                 s->set_vflip(s, v);
+                updated = true;
             }
         }
         
         // 发送确认消息
-        server_->SendWebSocketMessage(client_index, "{\"type\":\"camera_control_ack\",\"status\":\"ok\"}");
+        if (updated) {
+            server_->SendWebSocketMessage(client_index, 
+                "{\"type\":\"camera_control_ack\",\"status\":\"ok\"}");
+        } else {
+            server_->SendWebSocketMessage(client_index, 
+                "{\"type\":\"camera_control_ack\",\"status\":\"no_change\"}");
+        }
     }
-    else if (strcmp(type, "status_request") == 0) {
+    else if (strcmp(type, "camera_status_request") == 0) {
+        // 专门处理摄像头状态请求
+        // 检查摄像头控制器是否可用
+        if (vision_controller_ == nullptr) {
+            ESP_LOGW(TAG, "VisionController not available for status request");
+            cJSON* statusDoc = cJSON_CreateObject();
+            cJSON_AddStringToObject(statusDoc, "type", "camera_status");
+            cJSON_AddBoolToObject(statusDoc, "available", false);
+            cJSON_AddStringToObject(statusDoc, "error", "Camera controller not initialized");
+            
+            char* response = cJSON_Print(statusDoc);
+            server_->SendWebSocketMessage(client_index, response);
+            
+            cJSON_Delete(statusDoc);
+            free(response);
+            cJSON_Delete(doc);
+            return;
+        }
+        
         // 获取摄像头传感器
         sensor_t *s = esp_camera_sensor_get();
         if (!s) {
             ESP_LOGW(TAG, "Failed to get sensor data");
+            cJSON* statusDoc = cJSON_CreateObject();
+            cJSON_AddStringToObject(statusDoc, "type", "camera_status");
+            cJSON_AddBoolToObject(statusDoc, "available", true);
+            cJSON_AddBoolToObject(statusDoc, "running", vision_controller_->IsRunning());
+            cJSON_AddBoolToObject(statusDoc, "sensor_error", true);
+            
+            char* response = cJSON_Print(statusDoc);
+            server_->SendWebSocketMessage(client_index, response);
+            
+            cJSON_Delete(statusDoc);
+            free(response);
+            cJSON_Delete(doc);
             return;
         }
         
         // 发送状态信息
-        DynamicJsonDocument statusDoc(1024);
-        statusDoc["type"] = "camera_status";
-        statusDoc["running"] = vision_controller_->IsRunning();
-        statusDoc["streaming"] = vision_controller_->IsStreaming();
-        statusDoc["led_intensity"] = vision_controller_->GetLedIntensity();
+        cJSON* statusDoc = cJSON_CreateObject();
+        cJSON_AddStringToObject(statusDoc, "type", "camera_status");
+        cJSON_AddBoolToObject(statusDoc, "running", vision_controller_->IsRunning());
+        cJSON_AddBoolToObject(statusDoc, "streaming", vision_controller_->IsStreaming());
+        cJSON_AddNumberToObject(statusDoc, "led_intensity", vision_controller_->GetLedIntensity());
         
-        JsonObject sensor = statusDoc.createNestedObject("sensor");
-        sensor["framesize"] = s->status.framesize;
-        sensor["quality"] = s->status.quality;
-        sensor["brightness"] = s->status.brightness;
-        sensor["contrast"] = s->status.contrast;
-        sensor["saturation"] = s->status.saturation;
-        sensor["sharpness"] = s->status.sharpness;
-        sensor["hmirror"] = s->status.hmirror;
-        sensor["vflip"] = s->status.vflip;
+        // 创建嵌套的sensor对象
+        cJSON* sensor = cJSON_CreateObject();
+        cJSON_AddItemToObject(statusDoc, "sensor", sensor);
         
-        String response;
-        serializeJson(statusDoc, response);
+        // 添加传感器信息
+        cJSON_AddNumberToObject(sensor, "framesize", s->status.framesize);
+        cJSON_AddNumberToObject(sensor, "quality", s->status.quality);
+        cJSON_AddNumberToObject(sensor, "brightness", s->status.brightness);
+        cJSON_AddNumberToObject(sensor, "contrast", s->status.contrast);
+        cJSON_AddNumberToObject(sensor, "saturation", s->status.saturation);
+        cJSON_AddNumberToObject(sensor, "sharpness", s->status.sharpness);
+        cJSON_AddNumberToObject(sensor, "hmirror", s->status.hmirror);
+        cJSON_AddNumberToObject(sensor, "vflip", s->status.vflip);
         
-        server_->SendWebSocketMessage(client_index, response.c_str());
+        char* response = cJSON_Print(statusDoc);
+        
+        server_->SendWebSocketMessage(client_index, response);
+        
+        cJSON_Delete(statusDoc);
+        free(response);
     }
+    // 还可以处理通用状态请求，添加摄像头信息
+    else if (strcmp(type, "status_request") == 0) {
+        // 添加摄像头状态信息到全局状态
+        if (vision_controller_ != nullptr) {
+            cJSON* statusDoc = cJSON_CreateObject();
+            cJSON_AddStringToObject(statusDoc, "type", "camera_status_update");
+            cJSON_AddBoolToObject(statusDoc, "running", vision_controller_->IsRunning());
+            cJSON_AddBoolToObject(statusDoc, "streaming", vision_controller_->IsStreaming());
+            cJSON_AddNumberToObject(statusDoc, "led_intensity", vision_controller_->GetLedIntensity());
+            
+            char* response = cJSON_Print(statusDoc);
+            server_->SendWebSocketMessage(client_index, response);
+            
+            cJSON_Delete(statusDoc);
+            free(response);
+        }
+    }
+    
+    cJSON_Delete(doc);
 }
 
 ra_filter_t* VisionContent::RaFilterInit(ra_filter_t* filter, size_t sample_size) {
@@ -629,19 +876,77 @@ int VisionContent::RaFilterRun(ra_filter_t* filter, int value) {
     return filter->sum / filter->count;
 }
 
+// 新增GetVisionController方法实现
+VisionController* VisionContent::GetVisionController() {
+    if (vision_controller_ == nullptr) {
+        // 从ComponentManager获取VisionController实例
+        auto& manager = ComponentManager::GetInstance();
+        Component* component = manager.GetComponent("VisionController");
+        
+        if (component) {
+            // 安全检查：验证组件名称与期望的类型是否匹配
+            if (strcmp(component->GetName(), "VisionController") == 0) {
+                vision_controller_ = static_cast<VisionController*>(component);
+            } else {
+                ESP_LOGE(TAG, "Component found but not a VisionController (name=%s)", 
+                         component->GetName());
+            }
+        } else {
+            ESP_LOGW(TAG, "VisionController not found in ComponentManager");
+        }
+    }
+    
+    if (vision_controller_ == nullptr) {
+        ESP_LOGE(TAG, "Failed to get VisionController reference");
+    }
+    
+    return vision_controller_;
+}
+
 // 初始化视觉组件
 void InitVisionComponents(WebServer* web_server) {
 #if defined(CONFIG_ENABLE_VISION_CONTROLLER)
-    // 创建视觉控制器组件
-    VisionController* vision_controller = new VisionController();
-    ComponentManager::GetInstance().RegisterComponent(vision_controller);
+    if (!web_server) {
+        ESP_LOGE(TAG, "Web server is null, cannot initialize vision components");
+        return;
+    }
     
-    // 创建视觉内容处理组件
-    VisionContent* vision_content = new VisionContent(web_server, vision_controller);
-    ComponentManager::GetInstance().RegisterComponent(vision_content);
+    auto& manager = ComponentManager::GetInstance();
     
-    ESP_LOGI(TAG, "Vision components initialized");
+    // 检查VisionController是否已经存在
+    VisionController* vision_controller = nullptr;
+    Component* existing_controller = manager.GetComponent("VisionController");
+    
+    if (existing_controller) {
+        ESP_LOGI(TAG, "VisionController already exists, using existing instance");
+        vision_controller = static_cast<VisionController*>(existing_controller);
+    } else {
+        // 创建视觉控制器组件
+        vision_controller = new VisionController();
+        if (!vision_controller) {
+            ESP_LOGE(TAG, "Failed to allocate memory for VisionController");
+            return;
+        }
+        manager.RegisterComponent(vision_controller);
+        ESP_LOGI(TAG, "Created new VisionController instance");
+    }
+    
+    // 检查VisionContent是否已经存在
+    if (manager.GetComponent("VisionContent")) {
+        ESP_LOGI(TAG, "VisionContent already exists, skipping creation");
+    } else {
+        // 创建视觉内容处理组件
+        VisionContent* vision_content = new VisionContent(web_server);
+        if (!vision_content) {
+            ESP_LOGE(TAG, "Failed to allocate memory for VisionContent");
+            return;
+        }
+        manager.RegisterComponent(vision_content);
+        ESP_LOGI(TAG, "Created new VisionContent instance");
+    }
+    
+    ESP_LOGI(TAG, "Vision components initialized successfully");
 #else
     ESP_LOGI(TAG, "Vision controller disabled in configuration");
 #endif
-} 
+}

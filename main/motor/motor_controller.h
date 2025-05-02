@@ -4,14 +4,43 @@
 #include <driver/gpio.h>
 #include <driver/ledc.h>
 #include "../components.h"
+#include "sdkconfig.h"
 
-// 电机控制引脚默认定义
+// 电机控制引脚默认定义 - 根据目标芯片提供合适的引脚
+#if CONFIG_IDF_TARGET_ESP32
+// ESP32芯片引脚定义 (GPIO有效范围0-39)
+#define DEFAULT_ENA_PIN 2  // 电机A使能
+#define DEFAULT_ENB_PIN 1  // 电机B使能
+#define DEFAULT_IN1_PIN 27 // 电机A输入1
+#define DEFAULT_IN2_PIN 21 // 电机A输入2
+#define DEFAULT_IN3_PIN 20 // 电机B输入1
+#define DEFAULT_IN4_PIN 19 // 电机B输入2
+#elif CONFIG_IDF_TARGET_ESP32S3
+
+// ESP32-S3芯片引脚定义 (GPIO有效范围0-47)
 #define DEFAULT_ENA_PIN 2  // 电机A使能
 #define DEFAULT_ENB_PIN 1  // 电机B使能
 #define DEFAULT_IN1_PIN 47 // 电机A输入1
 #define DEFAULT_IN2_PIN 21 // 电机A输入2
 #define DEFAULT_IN3_PIN 20 // 电机B输入1
 #define DEFAULT_IN4_PIN 19 // 电机B输入2
+#elif CONFIG_IDF_TARGET_ESP32C3
+// ESP32-C3芯片引脚定义 (GPIO有效范围0-21)
+#define DEFAULT_ENA_PIN 1  // 电机A使能
+#define DEFAULT_ENB_PIN 0  // 电机B使能
+#define DEFAULT_IN1_PIN 7 // 电机A输入1
+#define DEFAULT_IN2_PIN 6  // 电机A输入2
+#define DEFAULT_IN3_PIN 19  // 电机B输入1
+#define DEFAULT_IN4_PIN 18  // 电机B输入2
+#else
+// 默认使用安全的低编号引脚
+#define DEFAULT_ENA_PIN 2  // 电机A使能
+#define DEFAULT_ENB_PIN 1  // 电机B使能
+#define DEFAULT_IN1_PIN 27 // 电机A输入1
+#define DEFAULT_IN2_PIN 21 // 电机A输入2
+#define DEFAULT_IN3_PIN 20 // 电机B输入1
+#define DEFAULT_IN4_PIN 19 // 电机B输入2
+#endif
 
 // 速度控制参数
 #define DEFAULT_SPEED 100

@@ -21,8 +21,8 @@ public:
     // 处理AI页面
     static esp_err_t HandleAI(httpd_req_t *req);
     
-    // 处理WebSocket消息
-    void HandleWebSocketMessage(int client_index, const std::string& message);
+    // 处理WebSocket消息 - 更新为使用PSRAMString
+    void HandleWebSocketMessage(int client_index, const PSRAMString& message);
     
     // 处理语音识别完成
     void OnVoiceRecognized(const std::string& text);

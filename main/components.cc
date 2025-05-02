@@ -1,6 +1,7 @@
 #include "components.h"
 #include <esp_log.h>
 #include <algorithm>
+#include <cstring>
 
 #define TAG "Components"
 
@@ -28,20 +29,23 @@ void ComponentManager::StopAll() {
 }
 
 void ComponentManager::RegisterComponent(Component* component) {
-    if (component) {
-        // 检查组件是否已经注册
-        auto it = std::find_if(components_.begin(), components_.end(), 
-            [component](Component* c) { 
-                return strcmp(c->GetName(), component->GetName()) == 0; 
-            });
-        
-        if (it == components_.end()) {
-            components_.push_back(component);
-            ESP_LOGI(TAG, "Component registered: %s", component->GetName());
-        } else {
-            ESP_LOGW(TAG, "Component %s already registered", component->GetName());
-        }
+    if (!component) {
+        return;
     }
+    
+    // 检查是否已存在同名组件
+    auto it = std::find_if(components_.begin(), components_.end(),
+        [component](const Component* c) {
+            return strcmp(c->GetName(), component->GetName()) == 0;
+        });
+    
+    if (it != components_.end()) {
+        ESP_LOGW(TAG, "Component %s already registered", component->GetName());
+        return;
+    }
+    
+    components_.push_back(component);
+    ESP_LOGI(TAG, "Component registered: %s", component->GetName());
 }
 
 void ComponentManager::UnregisterComponent(Component* component) {
@@ -61,19 +65,23 @@ void ComponentManager::UnregisterComponent(Component* component) {
 }
 
 Component* ComponentManager::GetComponent(const char* name) {
-    auto it = std::find_if(components_.begin(), components_.end(), 
-        [name](Component* c) { 
-            return strcmp(c->GetName(), name) == 0; 
-        });
-    
-    if (it != components_.end()) {
-        return *it;
+    if (!name) {
+        return nullptr;
     }
     
-    return nullptr;
+    auto it = std::find_if(components_.begin(), components_.end(),
+        [name](const Component* c) {
+            return strcmp(c->GetName(), name) == 0;
+        });
+    
+    return (it != components_.end()) ? *it : nullptr;
 }
 
 ComponentManager::~ComponentManager() {
     StopAll();
-    // 注意: 不要删除组件，因为它们可能在其他地方被使用
+    
+    for (auto component : components_) {
+        delete component;
+    }
+    components_.clear();
 } 

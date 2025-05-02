@@ -37,6 +37,7 @@ private:
 
     void InitializeDisplayI2c() {
         i2c_master_bus_config_t bus_config = {
+            // Use I2C channel 0 for display since camera is not initialized yet
             .i2c_port = (i2c_port_t)0,
             .sda_io_num = DISPLAY_SDA_PIN,
             .scl_io_num = DISPLAY_SCL_PIN,

@@ -261,83 +261,80 @@ config USE_REALTIME_CHAT
     depends on USE_AUDIO_PROCESSOR && (BOARD_TYPE_ESP_BOX_3 || BOARD_TYPE_ESP_BOX || BOARD_TYPE_ESP_BOX_LITE || BOARD_TYPE_LICHUANG_DEV || BOARD_TYPE_ESP32S3_KORVO2_V3)
     help
         需要 ESP32 S3 与 AEC 开启，因为性能不够，不建议和微信聊天界面风格同时开启
-
-menu "Web组件配置"
-    config ENABLE_WEB_SERVER
-        bool "启用Web服务器"
-        default y
-        help
-            启用Web服务器及其功能
-
-    config WEB_SERVER_PORT
-        int "Web服务器端口"
-        default 8080
-        depends on ENABLE_WEB_SERVER
-        help
-            Web服务器监听的端口号，默认8080
-            
-    config ENABLE_WEB_CONTENT
-        bool "启用Web内容"
-        default y
-        depends on ENABLE_WEB_SERVER
-        help
-            启用Web内容处理，包括网页和WebSocket
-endmenu
-
-menu "小智ESP32"
-
+        
+menu "Components Manager"
     # Web服务器配置
-    menu "Web Server Configuration"
+    menu "Web Server"
         config ENABLE_WEB_SERVER
-            bool "Enable Web Server"
+            bool "启用Web服务器功能"
             default y
             help
-                Enable web server for configuration and control.
-                
+                开启或关闭Web服务器功能。开启后，设备将提供Web界面用于控制和配置。
+                Web服务器将在WiFi连接成功且系统初始化完成后自动启动。
+        
         config WEB_SERVER_PORT
-            int "Web Server Port"
+            int "Web服务器端口"
             default 8080
             depends on ENABLE_WEB_SERVER
             help
-                Port number for web server.
+                Web服务器监听的端口号。默认为8080。
+        
+        config WEB_SERVER_CORE_ID
+            int "Web服务器运行的核心ID"
+            default 0
+            depends on ENABLE_WEB_SERVER
+            range 0 1
+            help
+                在双核ESP32上，设置Web服务器运行的核心ID。
+                0 - 在核心0上运行
+                1 - 在核心1上运行
+                建议使用核心0以避免与AI和音频处理冲突。
+        
+        config WEB_SERVER_USE_PSRAM
+            bool "使用PSRAM存储Web服务器内容"
+            default y if SPIRAM
+            depends on ENABLE_WEB_SERVER && SPIRAM
+            help
+                如果启用，Web服务器将尽可能使用PSRAM存储数据，包括HTML内容、
+                WebSocket消息、HTTP请求/响应等，减轻内部内存负担。
+                此选项需要硬件支持PSRAM并已在项目中启用SPIRAM。
                 
         config ENABLE_WEB_CONTENT
-            bool "Enable Web Content"
+            bool "启用Web内容功能"
             default y
             depends on ENABLE_WEB_SERVER
             help
-                Enable web content serving (HTML, CSS, JS).
+                开启或关闭Web内容功能。开启后，设备将提供完整的Web界面，包括控制页面等。
+                关闭此选项将只提供基本的Web API接口，不包含HTML页面。
     endmenu
     
     # 电机控制器配置
-    menu "Motor Controller Configuration"
+    menu "Motor Controller"
         config ENABLE_MOTOR_CONTROLLER
-            bool "Enable Motor Controller"
+            bool "启用电机控制器"
             default y
             help
-                Enable motor controller for car movement.
+                启用电机控制器，用于小车移动功能
     endmenu
     
     # AI控制器配置
-    menu "AI Controller Configuration"
+    menu "AI Controller"
         config ENABLE_AI_CONTROLLER
-            bool "Enable AI Controller"
+            bool "启用AI控制器"
             default y
             help
-                Enable AI controller for voice recognition and TTS.
+                启用AI控制器，用于语音识别和TTS功能
     endmenu
     
     # 视觉控制器配置
-    menu "Vision Controller Configuration"
+    menu "Vision Controller"
         config ENABLE_VISION_CONTROLLER
-            bool "Enable Vision Controller"
+            bool "启用视觉控制器"
             default y
             help
-                Enable vision controller for camera functionality.
+                启用视觉控制器，用于摄像头功能
     endmenu
-    
-    # ...其他已有的配置...
-    
-endmenu
 
+endmenu
+        
 endmenu

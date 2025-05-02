@@ -1,16 +1,30 @@
 #include "ai_content.h"
 #include <esp_log.h>
-#include <ArduinoJson.h>
+#include <cJSON.h>
+#include <cstring>
 #include "sdkconfig.h"
+#if CONFIG_ENABLE_WEB_CONTENT
+#include "web/html_content.h"
+#endif
 
 #define TAG "AIContent"
 
-// 声明外部HTML内容获取函数（在html_content.cc中定义）
-extern const char* AI_HTML;
-extern size_t get_ai_html_size();
+// 使用html_content.h中定义的HTML内容函数
 
 AIContent::AIContent(WebServer* server, AIController* ai_controller)
     : server_(server), ai_controller_(ai_controller), running_(false) {
+    
+    // If ai_controller is not provided, try to get it from ComponentManager
+    if (!ai_controller_) {
+        auto& manager = ComponentManager::GetInstance();
+        Component* component = manager.GetComponent("AIController");
+        if (component) {
+            ai_controller_ = static_cast<AIController*>(component);
+            ESP_LOGI(TAG, "Got AIController from ComponentManager");
+        } else {
+            ESP_LOGW(TAG, "AIController not found in ComponentManager");
+        }
+    }
 }
 
 AIContent::~AIContent() {
@@ -28,20 +42,31 @@ bool AIContent::Start() {
         return false;
     }
 
+    // Check if we need to try getting AIController from component manager
     if (!ai_controller_) {
-        ESP_LOGE(TAG, "AI controller not available, cannot start AI content");
-        return false;
+        auto& manager = ComponentManager::GetInstance();
+        Component* component = manager.GetComponent("AIController");
+        if (component) {
+            ai_controller_ = static_cast<AIController*>(component);
+            ESP_LOGI(TAG, "Got AIController from ComponentManager in Start method");
+        } else {
+            ESP_LOGW(TAG, "AIController not found in ComponentManager, continuing with limited functionality");
+        }
     }
 
+    // Initialize handlers even if ai_controller is null (just won't be able to execute AI functions)
     InitHandlers();
     
-    // 设置语音识别完成回调
-    ai_controller_->SetVoiceCommandCallback([this](const std::string& text) {
-        OnVoiceRecognized(text);
-    });
+    // Setup voice recognition callback only if controller exists
+    if (ai_controller_) {
+        // 设置语音识别完成回调
+        ai_controller_->SetVoiceCommandCallback([this](const std::string& text) {
+            OnVoiceRecognized(text);
+        });
+    }
     
     running_ = true;
-    ESP_LOGI(TAG, "AI content started");
+    ESP_LOGI(TAG, "AI content started %s", ai_controller_ ? "with full functionality" : "with limited functionality (no AI controller)");
     return true;
 }
 
@@ -63,17 +88,64 @@ const char* AIContent::GetName() const {
 }
 
 void AIContent::InitHandlers() {
-    // 注册URI处理函数
-    server_->RegisterUri("/ai", HTTP_GET, HandleAI, this);
-    server_->RegisterUri("/ai/speak", HTTP_POST, HandleSpeakText, this);
-    server_->RegisterUri("/ai/set_api_key", HTTP_POST, HandleSetApiKey, this);
-    server_->RegisterUri("/ai/status", HTTP_GET, HandleStatus, this);
+    if (!server_ || !server_->IsRunning()) {
+        ESP_LOGE(TAG, "Server not running, cannot register handlers");
+        return;
+    }
+
+    // 检查URI是否已注册，避免重复注册
+    if (!server_->IsUriRegistered("/ai")) {
+        server_->RegisterUri("/ai", HTTP_GET, HandleAI, this);
+        ESP_LOGI(TAG, "Registered URI handler: /ai");
+    } else {
+        ESP_LOGW(TAG, "URI already registered, skipping: /ai");
+    }
+    
+    if (!server_->IsUriRegistered("/api/speak")) {
+        server_->RegisterUri("/api/speak", HTTP_POST, HandleSpeakText, this);
+        ESP_LOGI(TAG, "Registered URI handler: /api/speak");
+    } else {
+        ESP_LOGW(TAG, "URI already registered, skipping: /api/speak");
+    }
+    
+    if (!server_->IsUriRegistered("/api/set_key")) {
+        server_->RegisterUri("/api/set_key", HTTP_POST, HandleSetApiKey, this);
+        ESP_LOGI(TAG, "Registered URI handler: /api/set_key");
+    } else {
+        ESP_LOGW(TAG, "URI already registered, skipping: /api/set_key");
+    }
+    
+    if (!server_->IsUriRegistered("/api/ai/status")) {
+        server_->RegisterUri("/api/ai/status", HTTP_GET, HandleStatus, this);
+        ESP_LOGI(TAG, "Registered URI handler: /api/ai/status");
+    } else {
+        ESP_LOGW(TAG, "URI already registered, skipping: /api/ai/status");
+    }
+    
+    // WebSocket可能已被其他组件注册，检查后再注册
+    if (!server_->IsUriRegistered("/ws")) {
+        server_->RegisterWebSocket("/ws", [this](int client_index, const PSRAMString& message) {
+            HandleWebSocketMessage(client_index, message);
+        });
+        ESP_LOGI(TAG, "Registered WebSocket handler: /ws");
+    } else {
+        ESP_LOGW(TAG, "WebSocket handler already registered, skipping: /ws");
+        // 仍然需要确保接收到WebSocket消息，通过WebServer处理
+    }
 }
 
 esp_err_t AIContent::HandleAI(httpd_req_t *req) {
+#if CONFIG_ENABLE_WEB_CONTENT
     httpd_resp_set_type(req, "text/html");
     httpd_resp_send(req, AI_HTML, get_ai_html_size());
     return ESP_OK;
+#else
+    // 当Web内容未启用时，返回一个简单的消息
+    const char* message = "<html><body><h1>AI Content Disabled</h1><p>The web content feature is not enabled in this build.</p></body></html>";
+    httpd_resp_set_type(req, "text/html");
+    httpd_resp_send(req, message, strlen(message));
+    return ESP_OK;
+#endif
 }
 
 esp_err_t AIContent::HandleSpeakText(httpd_req_t *req) {
@@ -107,33 +179,36 @@ esp_err_t AIContent::HandleSpeakText(httpd_req_t *req) {
     buf[received] = '\0';
     
     // 解析JSON
-    DynamicJsonDocument doc(512);
-    DeserializationError error = deserializeJson(doc, buf);
-    if (error) {
+    cJSON *doc = cJSON_Parse(buf);
+    if (!doc) {
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid JSON");
         return ESP_FAIL;
     }
     
     // 获取文本
-    const char* text = doc["text"];
-    if (!text) {
+    cJSON *text_obj = cJSON_GetObjectItem(doc, "text");
+    if (!text_obj || !text_obj->valuestring) {
+        cJSON_Delete(doc);
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing text parameter");
         return ESP_FAIL;
     }
     
-    bool success = content->ai_controller_->SpeakText(text);
+    bool success = content->ai_controller_->SpeakText(text_obj->valuestring);
     
     // 创建JSON响应
-    DynamicJsonDocument respDoc(128);
-    respDoc["success"] = success;
-    respDoc["message"] = success ? "Text sent to speech synthesis" : "Failed to speak text";
+    cJSON *respDoc = cJSON_CreateObject();
+    cJSON_AddBoolToObject(respDoc, "success", success);
+    cJSON_AddStringToObject(respDoc, "message", success ? "Text sent to speech synthesis" : "Failed to speak text");
     
-    String response;
-    serializeJson(respDoc, response);
+    char *response = cJSON_Print(respDoc);
     
     // 返回响应
     httpd_resp_set_type(req, "application/json");
-    httpd_resp_send(req, response.c_str(), response.length());
+    httpd_resp_send(req, response, strlen(response));
+    
+    cJSON_Delete(doc);
+    cJSON_Delete(respDoc);
+    free(response);
     
     return ESP_OK;
 }
@@ -169,40 +244,43 @@ esp_err_t AIContent::HandleSetApiKey(httpd_req_t *req) {
     buf[received] = '\0';
     
     // 解析JSON
-    DynamicJsonDocument doc(512);
-    DeserializationError error = deserializeJson(doc, buf);
-    if (error) {
+    cJSON *doc = cJSON_Parse(buf);
+    if (!doc) {
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid JSON");
         return ESP_FAIL;
     }
     
     // 获取API密钥
-    const char* api_key = doc["api_key"];
-    if (!api_key) {
+    cJSON *api_key_obj = cJSON_GetObjectItem(doc, "api_key");
+    if (!api_key_obj || !api_key_obj->valuestring) {
+        cJSON_Delete(doc);
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing api_key parameter");
         return ESP_FAIL;
     }
     
     // 设置API密钥
-    content->ai_controller_->SetApiKey(api_key);
+    content->ai_controller_->SetApiKey(api_key_obj->valuestring);
     
     // 如果提供了API端点，也设置它
-    const char* api_endpoint = doc["api_endpoint"];
-    if (api_endpoint) {
-        content->ai_controller_->SetApiEndpoint(api_endpoint);
+    cJSON *api_endpoint_obj = cJSON_GetObjectItem(doc, "api_endpoint");
+    if (api_endpoint_obj && api_endpoint_obj->valuestring) {
+        content->ai_controller_->SetApiEndpoint(api_endpoint_obj->valuestring);
     }
     
     // 创建JSON响应
-    DynamicJsonDocument respDoc(128);
-    respDoc["success"] = true;
-    respDoc["message"] = "API key set successfully";
+    cJSON *respDoc = cJSON_CreateObject();
+    cJSON_AddBoolToObject(respDoc, "success", true);
+    cJSON_AddStringToObject(respDoc, "message", "API key set successfully");
     
-    String response;
-    serializeJson(respDoc, response);
+    char *response = cJSON_Print(respDoc);
     
     // 返回响应
     httpd_resp_set_type(req, "application/json");
-    httpd_resp_send(req, response.c_str(), response.length());
+    httpd_resp_send(req, response, strlen(response));
+    
+    cJSON_Delete(doc);
+    cJSON_Delete(respDoc);
+    free(response);
     
     return ESP_OK;
 }
@@ -217,75 +295,83 @@ esp_err_t AIContent::HandleStatus(httpd_req_t *req) {
     AIController* ai = content->ai_controller_;
     
     // 创建JSON响应
-    DynamicJsonDocument doc(256);
-    doc["running"] = ai->IsRunning();
-    doc["recording"] = ai->IsRecording();
-    doc["recognition_state"] = static_cast<int>(ai->GetRecognitionState());
-    doc["last_recognized_text"] = ai->GetLastRecognizedText();
+    cJSON *doc = cJSON_CreateObject();
+    cJSON_AddBoolToObject(doc, "running", ai->IsRunning());
+    cJSON_AddBoolToObject(doc, "recording", ai->IsRecording());
+    cJSON_AddNumberToObject(doc, "recognition_state", static_cast<int>(ai->GetRecognitionState()));
+    cJSON_AddStringToObject(doc, "last_recognized_text", ai->GetLastRecognizedText().c_str());
     
-    String response;
-    serializeJson(doc, response);
+    char *response = cJSON_Print(doc);
     
     // 返回响应
     httpd_resp_set_type(req, "application/json");
-    httpd_resp_send(req, response.c_str(), response.length());
+    httpd_resp_send(req, response, strlen(response));
+    
+    cJSON_Delete(doc);
+    free(response);
     
     return ESP_OK;
 }
 
-void AIContent::HandleWebSocketMessage(int client_index, const std::string& message) {
+void AIContent::HandleWebSocketMessage(int client_index, const PSRAMString& message) {
     if (!ai_controller_) {
         ESP_LOGW(TAG, "AI controller not available");
         return;
     }
     
     // 解析JSON消息
-    DynamicJsonDocument doc(512);
-    DeserializationError error = deserializeJson(doc, message.c_str());
-    if (error) {
-        ESP_LOGW(TAG, "Invalid JSON in WebSocket message: %s", error.c_str());
+    cJSON *doc = cJSON_Parse(message.c_str());
+    if (!doc) {
+        ESP_LOGW(TAG, "Invalid JSON in WebSocket message");
         return;
     }
     
     // 处理不同类型的消息
-    const char* type = doc["type"];
-    if (!type) {
+    cJSON *type_obj = cJSON_GetObjectItem(doc, "type");
+    if (!type_obj || !type_obj->valuestring) {
         ESP_LOGW(TAG, "Missing message type");
+        cJSON_Delete(doc);
         return;
     }
     
+    const char* type = type_obj->valuestring;
+    
     if (strcmp(type, "speak_text") == 0) {
-        const char* text = doc["text"];
-        if (!text) {
+        cJSON *text_obj = cJSON_GetObjectItem(doc, "text");
+        if (!text_obj || !text_obj->valuestring) {
             ESP_LOGW(TAG, "Missing text parameter");
+            cJSON_Delete(doc);
             return;
         }
         
-        bool success = ai_controller_->SpeakText(text);
+        bool success = ai_controller_->SpeakText(text_obj->valuestring);
         
         // 发送确认消息
-        DynamicJsonDocument respDoc(128);
-        respDoc["type"] = "speak_status";
-        respDoc["status"] = success ? "success" : "failed";
+        cJSON *respDoc = cJSON_CreateObject();
+        cJSON_AddStringToObject(respDoc, "type", "speak_status");
+        cJSON_AddStringToObject(respDoc, "status", success ? "success" : "failed");
         
-        String response;
-        serializeJson(respDoc, response);
+        char *response = cJSON_Print(respDoc);
         
-        server_->SendWebSocketMessage(client_index, response.c_str());
+        server_->SendWebSocketMessage(client_index, response);
+        
+        cJSON_Delete(respDoc);
+        free(response);
     }
     else if (strcmp(type, "set_api_key") == 0) {
-        const char* api_key = doc["api_key"];
-        if (!api_key) {
+        cJSON *api_key_obj = cJSON_GetObjectItem(doc, "api_key");
+        if (!api_key_obj || !api_key_obj->valuestring) {
             ESP_LOGW(TAG, "Missing api_key parameter");
+            cJSON_Delete(doc);
             return;
         }
         
-        ai_controller_->SetApiKey(api_key);
+        ai_controller_->SetApiKey(api_key_obj->valuestring);
         
         // 如果提供了API端点，也设置它
-        const char* api_endpoint = doc["api_endpoint"];
-        if (api_endpoint) {
-            ai_controller_->SetApiEndpoint(api_endpoint);
+        cJSON *api_endpoint_obj = cJSON_GetObjectItem(doc, "api_endpoint");
+        if (api_endpoint_obj && api_endpoint_obj->valuestring) {
+            ai_controller_->SetApiEndpoint(api_endpoint_obj->valuestring);
         }
         
         // 发送确认消息
@@ -293,18 +379,22 @@ void AIContent::HandleWebSocketMessage(int client_index, const std::string& mess
     }
     else if (strcmp(type, "status_request") == 0) {
         // 发送状态信息
-        DynamicJsonDocument statusDoc(256);
-        statusDoc["type"] = "ai_status";
-        statusDoc["running"] = ai_controller_->IsRunning();
-        statusDoc["recording"] = ai_controller_->IsRecording();
-        statusDoc["recognition_state"] = static_cast<int>(ai_controller_->GetRecognitionState());
-        statusDoc["last_recognized_text"] = ai_controller_->GetLastRecognizedText();
+        cJSON *statusDoc = cJSON_CreateObject();
+        cJSON_AddStringToObject(statusDoc, "type", "ai_status");
+        cJSON_AddBoolToObject(statusDoc, "running", ai_controller_->IsRunning());
+        cJSON_AddBoolToObject(statusDoc, "recording", ai_controller_->IsRecording());
+        cJSON_AddNumberToObject(statusDoc, "recognition_state", static_cast<int>(ai_controller_->GetRecognitionState()));
+        cJSON_AddStringToObject(statusDoc, "last_recognized_text", ai_controller_->GetLastRecognizedText().c_str());
         
-        String response;
-        serializeJson(statusDoc, response);
+        char *response = cJSON_Print(statusDoc);
         
-        server_->SendWebSocketMessage(client_index, response.c_str());
+        server_->SendWebSocketMessage(client_index, response);
+        
+        cJSON_Delete(statusDoc);
+        free(response);
     }
+    
+    cJSON_Delete(doc);
 }
 
 void AIContent::OnVoiceRecognized(const std::string& text) {
@@ -313,29 +403,48 @@ void AIContent::OnVoiceRecognized(const std::string& text) {
     }
     
     // 广播语音识别结果到所有WebSocket客户端
-    DynamicJsonDocument doc(256);
-    doc["type"] = "voice_recognized";
-    doc["text"] = text;
+    cJSON *doc = cJSON_CreateObject();
+    cJSON_AddStringToObject(doc, "type", "voice_recognized");
+    cJSON_AddStringToObject(doc, "text", text.c_str());
     
-    String message;
-    serializeJson(doc, message);
+    char *message = cJSON_Print(doc);
     
-    server_->BroadcastWebSocketMessage(message.c_str());
+    server_->BroadcastWebSocketMessage(message);
+    
+    cJSON_Delete(doc);
+    free(message);
 }
 
 // 初始化AI组件
 void InitAIComponents(WebServer* web_server) {
 #if defined(CONFIG_ENABLE_AI_CONTROLLER)
-    // 创建简化版AI控制器组件
-    AIController* ai_controller = new AIController();
-    ComponentManager::GetInstance().RegisterComponent(ai_controller);
+    auto& manager = ComponentManager::GetInstance();
     
-    // 创建AI内容处理组件
-    AIContent* ai_content = new AIContent(web_server, ai_controller);
-    ComponentManager::GetInstance().RegisterComponent(ai_content);
+    // 检查AIController是否已经存在
+    AIController* ai_controller = nullptr;
+    Component* existing_controller = manager.GetComponent("AIController");
+    if (existing_controller) {
+        ESP_LOGI(TAG, "AIController already exists, using existing instance");
+        ai_controller = static_cast<AIController*>(existing_controller);
+    } else {
+        // 创建新的AI控制器组件
+        ai_controller = new AIController();
+        manager.RegisterComponent(ai_controller);
+        ESP_LOGI(TAG, "Created new AIController instance");
+    }
+    
+    // 检查AIContent是否已经存在
+    if (manager.GetComponent("AIContent")) {
+        ESP_LOGI(TAG, "AIContent already exists, skipping creation");
+    } else {
+        // 创建AI内容处理组件
+        AIContent* ai_content = new AIContent(web_server, ai_controller);
+        manager.RegisterComponent(ai_content);
+        ESP_LOGI(TAG, "Created new AIContent instance");
+    }
     
     ESP_LOGI(TAG, "AI components initialized");
 #else
     ESP_LOGI(TAG, "AI controller disabled in configuration");
 #endif
-} 
+}

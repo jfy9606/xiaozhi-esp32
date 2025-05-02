@@ -1,17 +1,88 @@
 #include "motor_content.h"
 #include <esp_log.h>
-#include <ArduinoJson.h>
+#include <cJSON.h>
+#include <cstring>
 #include <cmath>
 #include "sdkconfig.h"
+#include "motor_controller.h"
+#include "web/web_server.h"
+#if CONFIG_ENABLE_WEB_CONTENT
+#include "web/html_content.h"
+#endif
 
 #define TAG "MotorContent"
 
-// 声明外部HTML内容获取函数（在html_content.cc中定义）
-extern const char* CAR_HTML;
-extern size_t get_car_html_size();
+// 使用html_content.h中定义的HTML内容函数
 
-MotorContent::MotorContent(WebServer* server, MotorController* motor_controller)
-    : server_(server), motor_controller_(motor_controller), running_(false) {
+// Handle motor control requests
+static esp_err_t HandleMotorControl(httpd_req_t* req) {
+    // Read the request content
+    char content[100];
+    int ret = httpd_req_recv(req, content, sizeof(content) - 1);
+    if (ret <= 0) {
+        if (ret == HTTPD_SOCK_ERR_TIMEOUT) {
+            httpd_resp_send_408(req);
+        }
+        return ESP_FAIL;
+    }
+    content[ret] = '\0';
+
+    // Parse the request
+    int dirX = 0, dirY = 0;
+    float distance = 0.0;
+    
+    char *token = strtok(content, "&");
+    while (token != NULL) {
+        if (strstr(token, "dirX=") == token) {
+            dirX = atoi(token + 5);
+        } else if (strstr(token, "dirY=") == token) {
+            dirY = atoi(token + 5);
+        } else if (strstr(token, "distance=") == token) {
+            distance = atof(token + 9);
+        }
+        token = strtok(NULL, "&");
+    }
+
+    // Get the motor controller
+    auto& manager = ComponentManager::GetInstance();
+    Component* component = manager.GetComponent("MotorController");
+    if (!component) {
+        httpd_resp_send_500(req);
+        return ESP_FAIL;
+    }
+    
+    MotorController* motor = static_cast<MotorController*>(component);
+    motor->SetControlParams(distance, dirX, dirY);
+
+    // Send response
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, "{\"status\":\"ok\"}", -1);
+    
+    return ESP_OK;
+}
+
+// Motor status endpoint to get the current state of the motor
+static esp_err_t HandleMotorStatus(httpd_req_t* req) {
+    auto& manager = ComponentManager::GetInstance();
+    Component* component = manager.GetComponent("MotorController");
+    
+    char response[100];
+    if (component && component->IsRunning()) {
+        snprintf(response, sizeof(response), 
+            "{\"status\":\"ok\",\"running\":true}");
+    } else {
+        snprintf(response, sizeof(response), 
+            "{\"status\":\"ok\",\"running\":false}");
+    }
+    
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, response, -1);
+    
+    return ESP_OK;
+}
+
+MotorContent::MotorContent(WebServer* server)
+    : server_(server), running_(false) {
 }
 
 MotorContent::~MotorContent() {
@@ -29,13 +100,9 @@ bool MotorContent::Start() {
         return false;
     }
 
-    if (!motor_controller_ || !motor_controller_->IsRunning()) {
-        ESP_LOGE(TAG, "Motor controller not running, cannot start motor content");
-        return false;
-    }
-
+    // Initialize handlers when starting
     InitHandlers();
-    
+
     running_ = true;
     ESP_LOGI(TAG, "Motor content started");
     return true;
@@ -59,261 +126,135 @@ const char* MotorContent::GetName() const {
 }
 
 void MotorContent::InitHandlers() {
-    // 注册URI处理函数
-    server_->RegisterUri("/car", HTTP_GET, HandleCar, this);
-    server_->RegisterUri("/motor/command", HTTP_POST, HandleCommand, this);
-    server_->RegisterUri("/motor/status", HTTP_GET, HandleStatus, this);
+    // 检查URI是否已注册，避免重复注册
+    if (!server_->IsUriRegistered("/car")) {
+        server_->RegisterUri("/car", HTTP_GET, HandleCar, this);
+        ESP_LOGI(TAG, "Registered URI handler: /car");
+    } else {
+        ESP_LOGW(TAG, "URI already registered, skipping: /car");
+    }
     
-    // 注册WebSocket处理
-    server_->RegisterWebSocket("/ws", [this](int client_index, const std::string& message) {
-        HandleWebSocketMessage(client_index, message);
-    });
+    if (!server_->IsUriRegistered("/motor/control")) {
+        server_->RegisterUri("/motor/control", HTTP_POST, HandleMotorControl);
+        ESP_LOGI(TAG, "Registered URI handler: /motor/control");
+    } else {
+        ESP_LOGW(TAG, "URI already registered, skipping: /motor/control");
+    }
+    
+    if (!server_->IsUriRegistered("/motor/status")) {
+        server_->RegisterUri("/motor/status", HTTP_GET, HandleMotorStatus);
+        ESP_LOGI(TAG, "Registered URI handler: /motor/status");
+    } else {
+        ESP_LOGW(TAG, "URI already registered, skipping: /motor/status");
+    }
+    
+    // WebSocket可能已被其他组件注册，检查后再注册
+    if (!server_->IsUriRegistered("/ws")) {
+        // 使用匹配WebSocketMessageCallback参数类型的lambda
+        server_->RegisterWebSocket("/ws", [this](int client_index, const PSRAMString& message) {
+            HandleWebSocketMessage(client_index, message);
+        });
+        ESP_LOGI(TAG, "Registered WebSocket handler: /ws");
+    } else {
+        ESP_LOGW(TAG, "WebSocket handler already registered, skipping: /ws");
+    }
 }
 
 esp_err_t MotorContent::HandleCar(httpd_req_t *req) {
+#if CONFIG_ENABLE_WEB_CONTENT
     httpd_resp_set_type(req, "text/html");
-    httpd_resp_send(req, CAR_HTML, get_car_html_size());
+    httpd_resp_send(req, MOTOR_HTML, get_motor_html_size());
     return ESP_OK;
+#else
+    // 当Web内容未启用时，返回一个简单的消息
+    const char* message = "<html><body><h1>Motor Content Disabled</h1><p>The web content feature is not enabled in this build.</p></body></html>";
+    httpd_resp_set_type(req, "text/html");
+    httpd_resp_send(req, message, strlen(message));
+    return ESP_OK;
+#endif
 }
 
-esp_err_t MotorContent::HandleCommand(httpd_req_t *req) {
-    MotorContent* content = static_cast<MotorContent*>(req->user_ctx);
-    if (!content || !content->motor_controller_) {
-        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Motor controller not available");
-        return ESP_FAIL;
-    }
-
-    char buf[256];
-    int ret, remaining = req->content_len;
-    
-    if (remaining > sizeof(buf) - 1) {
-        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Content too large");
-        return ESP_FAIL;
-    }
-    
-    int received = 0;
-    while (remaining > 0) {
-        ret = httpd_req_recv(req, buf + received, remaining);
-        if (ret <= 0) {
-            if (ret == HTTPD_SOCK_ERR_TIMEOUT) {
-                continue;
-            }
-            httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to receive data");
-            return ESP_FAIL;
-        }
-        received += ret;
-        remaining -= ret;
-    }
-    buf[received] = '\0';
-    
-    // 解析JSON
-    DynamicJsonDocument doc(512);
-    DeserializationError error = deserializeJson(doc, buf);
-    if (error) {
-        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid JSON");
-        return ESP_FAIL;
-    }
-    
-    // 获取命令类型
-    const char* cmd = doc["cmd"];
-    if (!cmd) {
-        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing command");
-        return ESP_FAIL;
-    }
-    
-    // 处理不同类型的命令
-    if (strcmp(cmd, "joystick") == 0) {
-        // 处理摇杆命令
-        int x = doc["x"];
-        int y = doc["y"];
-        float distance = doc["distance"];
-        
-        content->motor_controller_->SetControlParams(distance, x, y);
-        
-        // 返回成功响应
-        httpd_resp_set_type(req, "application/json");
-        httpd_resp_send(req, "{\"status\":\"ok\"}", -1);
-    }
-    else if (strcmp(cmd, "move") == 0) {
-        // 处理移动命令
-        const char* direction = doc["direction"];
-        int speed = doc["speed"] | DEFAULT_SPEED;
-        
-        if (!direction) {
-            httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing direction");
-            return ESP_FAIL;
-        }
-        
-        if (strcmp(direction, "forward") == 0) {
-            content->motor_controller_->Forward(speed);
-        }
-        else if (strcmp(direction, "backward") == 0) {
-            content->motor_controller_->Backward(speed);
-        }
-        else if (strcmp(direction, "left") == 0) {
-            content->motor_controller_->TurnLeft(speed);
-        }
-        else if (strcmp(direction, "right") == 0) {
-            content->motor_controller_->TurnRight(speed);
-        }
-        else if (strcmp(direction, "stop") == 0) {
-            bool brake = doc["brake"] | false;
-            content->motor_controller_->Stop(brake);
-        }
-        else {
-            httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid direction");
-            return ESP_FAIL;
-        }
-        
-        // 返回成功响应
-        httpd_resp_set_type(req, "application/json");
-        httpd_resp_send(req, "{\"status\":\"ok\"}", -1);
-    }
-    else if (strcmp(cmd, "speed") == 0) {
-        // 处理速度命令
-        int speed = doc["speed"];
-        if (speed < MIN_SPEED || speed > MAX_SPEED) {
-            httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, 
-                               "Speed must be between MIN_SPEED and MAX_SPEED");
-            return ESP_FAIL;
-        }
-        
-        content->motor_controller_->SetSpeed(speed);
-        
-        // 返回成功响应
-        httpd_resp_set_type(req, "application/json");
-        httpd_resp_send(req, "{\"status\":\"ok\"}", -1);
-    }
-    else {
-        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Unknown command");
-        return ESP_FAIL;
-    }
-    
-    return ESP_OK;
-}
-
-esp_err_t MotorContent::HandleStatus(httpd_req_t *req) {
-    MotorContent* content = static_cast<MotorContent*>(req->user_ctx);
-    if (!content || !content->motor_controller_) {
-        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Motor controller not available");
-        return ESP_FAIL;
-    }
-    
-    MotorController* motor = content->motor_controller_;
-    
-    // 创建JSON响应
-    DynamicJsonDocument doc(256);
-    doc["running"] = motor->IsRunning();
-    doc["speed"] = motor->GetCurrentSpeed();
-    doc["dirX"] = motor->GetDirectionX();
-    doc["dirY"] = motor->GetDirectionY();
-    
-    String response;
-    serializeJson(doc, response);
-    
-    // 返回响应
-    httpd_resp_set_type(req, "application/json");
-    httpd_resp_send(req, response.c_str(), response.length());
-    
-    return ESP_OK;
-}
-
-void MotorContent::HandleWebSocketMessage(int client_index, const std::string& message) {
-    if (!motor_controller_) {
+void MotorContent::HandleWebSocketMessage(int client_index, const PSRAMString& message) {
+    // Get the motor controller from ComponentManager
+    auto& manager = ComponentManager::GetInstance();
+    Component* component = manager.GetComponent("MotorController");
+    if (!component) {
         ESP_LOGW(TAG, "Motor controller not available");
         return;
     }
     
+    MotorController* motor_controller = static_cast<MotorController*>(component);
+    
     // 解析JSON消息
-    DynamicJsonDocument doc(512);
-    DeserializationError error = deserializeJson(doc, message.c_str());
-    if (error) {
-        ESP_LOGW(TAG, "Invalid JSON in WebSocket message: %s", error.c_str());
+    cJSON *doc = cJSON_Parse(message.c_str());
+    if (!doc) {
+        ESP_LOGW(TAG, "Invalid JSON in WebSocket message");
         return;
     }
     
     // 处理不同类型的消息
-    const char* type = doc["type"];
-    if (!type) {
+    cJSON *type_obj = cJSON_GetObjectItem(doc, "type");
+    if (!type_obj || !type_obj->valuestring) {
         ESP_LOGW(TAG, "Missing message type");
+        cJSON_Delete(doc);
         return;
     }
     
+    const char* type = type_obj->valuestring;
+    
     if (strcmp(type, "joystick") == 0) {
         // 处理摇杆命令
-        int x = doc["x"];
-        int y = doc["y"];
-        float distance = doc["distance"];
+        cJSON *x_obj = cJSON_GetObjectItem(doc, "x");
+        cJSON *y_obj = cJSON_GetObjectItem(doc, "y");
+        cJSON *distance_obj = cJSON_GetObjectItem(doc, "distance");
         
-        motor_controller_->SetControlParams(distance, x, y);
-        
-        // 发送确认消息
-        String response = "{\"type\":\"joystick_ack\",\"status\":\"ok\"}";
-        server_->SendWebSocketMessage(client_index, response.c_str());
-    }
-    else if (strcmp(type, "motor_command") == 0) {
-        // 处理电机命令
-        const char* cmd = doc["cmd"];
-        
-        if (!cmd) {
-            ESP_LOGW(TAG, "Missing motor command");
+        if (!x_obj || !y_obj || !distance_obj) {
+            ESP_LOGW(TAG, "Missing joystick parameters");
+            cJSON_Delete(doc);
             return;
         }
         
-        if (strcmp(cmd, "forward") == 0) {
-            int speed = doc["speed"] | DEFAULT_SPEED;
-            motor_controller_->Forward(speed);
-        }
-        else if (strcmp(cmd, "backward") == 0) {
-            int speed = doc["speed"] | DEFAULT_SPEED;
-            motor_controller_->Backward(speed);
-        }
-        else if (strcmp(cmd, "left") == 0) {
-            int speed = doc["speed"] | DEFAULT_SPEED;
-            motor_controller_->TurnLeft(speed);
-        }
-        else if (strcmp(cmd, "right") == 0) {
-            int speed = doc["speed"] | DEFAULT_SPEED;
-            motor_controller_->TurnRight(speed);
-        }
-        else if (strcmp(cmd, "stop") == 0) {
-            bool brake = doc["brake"] | false;
-            motor_controller_->Stop(brake);
-        }
+        int x = x_obj->valueint;
+        int y = y_obj->valueint;
+        float distance = distance_obj->valuedouble;
+        
+        motor_controller->SetControlParams(distance, x, y);
         
         // 发送确认消息
-        String response = "{\"type\":\"motor_ack\",\"status\":\"ok\"}";
-        server_->SendWebSocketMessage(client_index, response.c_str());
+        server_->SendWebSocketMessage(client_index, "{\"type\":\"joystick_ack\",\"status\":\"ok\"}");
     }
-    else if (strcmp(type, "status_request") == 0) {
-        // 发送状态信息
-        DynamicJsonDocument statusDoc(256);
-        statusDoc["type"] = "motor_status";
-        statusDoc["running"] = motor_controller_->IsRunning();
-        statusDoc["speed"] = motor_controller_->GetCurrentSpeed();
-        statusDoc["dirX"] = motor_controller_->GetDirectionX();
-        statusDoc["dirY"] = motor_controller_->GetDirectionY();
-        
-        String response;
-        serializeJson(statusDoc, response);
-        
-        server_->SendWebSocketMessage(client_index, response.c_str());
-    }
+    
+    cJSON_Delete(doc);
 }
 
 // 初始化电机组件
-void InitMotorComponents(WebServer* web_server) {
-#if defined(CONFIG_ENABLE_MOTOR_CONTROLLER)
-    // 创建电机控制器组件 - 使用默认参数，引脚定义在motor_controller.cc中
-    MotorController* motor_controller = new MotorController();
-    ComponentManager::GetInstance().RegisterComponent(motor_controller);
+void InitMotorComponents(WebServer* server) {
+    ESP_LOGI(TAG, "Initializing motor components");
     
-    // 创建电机内容处理组件
-    MotorContent* motor_content = new MotorContent(web_server, motor_controller);
-    ComponentManager::GetInstance().RegisterComponent(motor_content);
+    auto& manager = ComponentManager::GetInstance();
+    
+    // 检查MotorController是否已经存在
+    MotorController* motor_controller = nullptr;
+    Component* existing_controller = manager.GetComponent("MotorController");
+    if (existing_controller) {
+        ESP_LOGI(TAG, "MotorController already exists, using existing instance");
+        motor_controller = static_cast<MotorController*>(existing_controller);
+    } else {
+        // 创建新的电机控制器组件
+        motor_controller = new MotorController();
+        manager.RegisterComponent(motor_controller);
+        ESP_LOGI(TAG, "Created new MotorController instance");
+    }
+    
+    // 检查MotorContent是否已经存在
+    if (manager.GetComponent("MotorContent")) {
+        ESP_LOGI(TAG, "MotorContent already exists, skipping creation");
+    } else {
+        // 创建电机内容处理组件
+        MotorContent* motor_content = new MotorContent(server);
+        manager.RegisterComponent(motor_content);
+        ESP_LOGI(TAG, "Created new MotorContent instance");
+    }
     
     ESP_LOGI(TAG, "Motor components initialized");
-#else
-    ESP_LOGI(TAG, "Motor controller disabled in configuration");
-#endif
-} 
+}

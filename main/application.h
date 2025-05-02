@@ -21,6 +21,7 @@
 #include "ota.h"
 #include "background_task.h"
 #include "audio_processor.h"
+#include "components.h"
 
 #if CONFIG_USE_WAKE_WORD_DETECT
 #include "wake_word_detect.h"
@@ -72,6 +73,12 @@ public:
     void WakeWordInvoke(const std::string& wake_word);
     void PlaySound(const std::string_view& sound);
     bool CanEnterSleepMode();
+    
+    // Component management methods
+    void InitializeComponents();
+    void StartComponents();
+    void StopComponents();
+    Component* GetComponent(const char* name);
 
 private:
     Application();

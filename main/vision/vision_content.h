@@ -15,10 +15,11 @@ typedef struct {
     int *values;   // 要填充值的数组
 } ra_filter_t;
 
-// 视觉的Web内容处理组件
+// 视觉的Web内容处理组件，集成了摄像头功能
 class VisionContent : public Component {
 public:
-    VisionContent(WebServer* server, VisionController* vision_controller);
+    // 修改构造函数只需要WebServer，VisionController会从ComponentManager获取
+    VisionContent(WebServer* server);
     virtual ~VisionContent();
 
     // Component接口实现
@@ -27,23 +28,23 @@ public:
     virtual bool IsRunning() const override;
     virtual const char* GetName() const override;
 
-    // 处理摄像头页面
+    // 处理摄像头页面 - 作为视觉子系统的一部分
     static esp_err_t HandleCamera(httpd_req_t *req);
     
-    // 处理WebSocket消息
-    void HandleWebSocketMessage(int client_index, const std::string& message);
-    
-    // 获取视觉控制器实例
-    VisionController* GetVisionController() { return vision_controller_; }
+    // 处理WebSocket消息 - 更新为使用PSRAMString
+    void HandleWebSocketMessage(int client_index, const PSRAMString& message);
 
 private:
     WebServer* server_;
-    VisionController* vision_controller_;
+    VisionController* vision_controller_;  // 将从ComponentManager获取
     bool running_;
     ra_filter_t ra_filter_;
     
     // 初始化URI处理函数
     void InitHandlers();
+    
+    // 获取视觉控制器引用
+    VisionController* GetVisionController();
     
     // MJPEG流处理函数
     static esp_err_t StreamHandler(httpd_req_t *req);
@@ -71,7 +72,7 @@ private:
     static size_t JpegEncodeStream(void *arg, size_t index, const void *data, size_t len);
 };
 
-// 初始化视觉组件
+// 初始化视觉组件（包含摄像头功能）
 void InitVisionComponents(WebServer* web_server);
 
 #endif // _VISION_CONTENT_H_ 

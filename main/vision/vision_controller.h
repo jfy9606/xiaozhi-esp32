@@ -3,6 +3,8 @@
 
 #include <esp_camera.h>
 #include "../components.h"
+#include "sdkconfig.h"
+#include <driver/gpio.h>
 
 // 定义摄像头接口引脚 - 为bread-compact-wifi板
 #define PWDN_GPIO_NUM     -1
@@ -22,8 +24,20 @@
 #define HREF_GPIO_NUM     7
 #define PCLK_GPIO_NUM     13
 
-// LED闪光灯定义 - 使用GPIO45
+// LED闪光灯定义 - 根据不同ESP32芯片配置不同引脚
+#if CONFIG_IDF_TARGET_ESP32
+// ESP32芯片使用GPIO4作为LED引脚（有效范围0-39）
+#define LED_PIN          4
+#elif CONFIG_IDF_TARGET_ESP32S3
+// ESP32-S3芯片可以使用GPIO45（有效范围0-47）
 #define LED_PIN          45
+#elif CONFIG_IDF_TARGET_ESP32C3
+// ESP32-C3芯片使用GPIO7（有效范围0-21）
+#define LED_PIN          13
+#else
+// 默认使用低编号引脚确保安全
+#define LED_PIN          4
+#endif
 
 // 视觉控制器组件
 class VisionController : public Component {

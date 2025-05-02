@@ -40,6 +40,11 @@ public:
     
     // 获取组件
     Component* GetComponent(const char* name);
+    
+    // 获取所有组件
+    const std::vector<Component*>& GetComponents() const {
+        return components_;
+    }
 
 private:
     ComponentManager() = default;

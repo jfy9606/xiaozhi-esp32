@@ -2,6 +2,7 @@
 
 #include <esp_log.h>
 #include <esp_task_wdt.h>
+#include <cstring>
 
 #define TAG "BackgroundTask"
 

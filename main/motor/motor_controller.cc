@@ -1,25 +1,23 @@
 #include "motor_controller.h"
 #include <esp_log.h>
 #include <cmath>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 #include "../boards/bread-compact-wifi/config.h"
 
-// 为bread-compact-wifi板定义电机引脚
-#define ENA_PIN 2  // 电机A使能
-#define ENB_PIN 1  // 电机B使能
-#define IN1_PIN 47 // 电机A输入1
-#define IN2_PIN 21 // 电机A输入2
-#define IN3_PIN 20 // 电机B输入1
-#define IN4_PIN 19 // 电机B输入2
+// 定义GPIO电平
+#define HIGH 1
+#define LOW  0
 
 #define TAG "MotorController"
 
 MotorController::MotorController(int ena_pin, int enb_pin, int in1_pin, int in2_pin, int in3_pin, int in4_pin)
-    : ena_pin_(ena_pin == DEFAULT_ENA_PIN ? ENA_PIN : ena_pin), 
-      enb_pin_(enb_pin == DEFAULT_ENB_PIN ? ENB_PIN : enb_pin), 
-      in1_pin_(in1_pin == DEFAULT_IN1_PIN ? IN1_PIN : in1_pin), 
-      in2_pin_(in2_pin == DEFAULT_IN2_PIN ? IN2_PIN : in2_pin), 
-      in3_pin_(in3_pin == DEFAULT_IN3_PIN ? IN3_PIN : in3_pin), 
-      in4_pin_(in4_pin == DEFAULT_IN4_PIN ? IN4_PIN : in4_pin),
+    : ena_pin_(ena_pin), 
+      enb_pin_(enb_pin), 
+      in1_pin_(in1_pin), 
+      in2_pin_(in2_pin), 
+      in3_pin_(in3_pin), 
+      in4_pin_(in4_pin),
       running_(false),
       direction_x_(0),
       direction_y_(0),
@@ -31,7 +29,10 @@ MotorController::MotorController(int ena_pin, int enb_pin, int in1_pin, int in2_
 }
 
 MotorController::~MotorController() {
-    Stop();
+    // 调用自身的Stop方法停止电机，指定参数以避免歧义
+    if (this->IsRunning()) {
+        this->Stop(true);  // 显式调用带参数的Stop方法
+    }
 }
 
 bool MotorController::Start() {
@@ -50,16 +51,15 @@ bool MotorController::Start() {
     return true;
 }
 
+// Component接口实现的Stop方法
 void MotorController::Stop() {
-    if (!running_) {
-        return;
+    // 实现Component::Stop虚函数，调用带参数的Stop方法
+    if (running_) {
+        Stop(true);
+        // 确保标志被重置
+        running_ = false;
+        ESP_LOGI(TAG, "Motor controller stopped from Component::Stop()");
     }
-
-    // 停止所有电机
-    ControlMotor(LOW, LOW, LOW, LOW);
-    
-    running_ = false;
-    ESP_LOGI(TAG, "Motor controller stopped");
 }
 
 bool MotorController::IsRunning() const {
@@ -152,6 +152,7 @@ void MotorController::TurnRight(int speed) {
     ControlMotor(LOW, HIGH, HIGH, LOW);
 }
 
+// 重载方法，带参数的实现
 void MotorController::Stop(bool brake) {
     if (!running_) {
         ESP_LOGW(TAG, "Motor controller not running");
@@ -167,6 +168,9 @@ void MotorController::Stop(bool brake) {
     
     // 自由停止模式 - 切断电源让电机自然停止
     ControlMotor(LOW, LOW, LOW, LOW);
+    
+    running_ = false;
+    ESP_LOGI(TAG, "Motor controller stopped");
 }
 
 void MotorController::SetSpeed(int speed) {
@@ -174,6 +178,23 @@ void MotorController::SetSpeed(int speed) {
 }
 
 void MotorController::InitGPIO() {
+    ESP_LOGI(TAG, "Initializing motor GPIO pins: ENA=%d, ENB=%d, IN1=%d, IN2=%d, IN3=%d, IN4=%d",
+             ena_pin_, enb_pin_, in1_pin_, in2_pin_, in3_pin_, in4_pin_);
+    
+    // 验证所有引脚是否在有效范围内
+    if (ena_pin_ < 0 || ena_pin_ >= GPIO_NUM_MAX ||
+        enb_pin_ < 0 || enb_pin_ >= GPIO_NUM_MAX ||
+        in1_pin_ < 0 || in1_pin_ >= GPIO_NUM_MAX ||
+        in2_pin_ < 0 || in2_pin_ >= GPIO_NUM_MAX ||
+        in3_pin_ < 0 || in3_pin_ >= GPIO_NUM_MAX ||
+        in4_pin_ < 0 || in4_pin_ >= GPIO_NUM_MAX) {
+        ESP_LOGE(TAG, "Invalid motor pin configuration detected!");
+        ESP_LOGE(TAG, "Valid pin range: 0-%d, ENA=%d, ENB=%d, IN1=%d, IN2=%d, IN3=%d, IN4=%d",
+                 GPIO_NUM_MAX-1, ena_pin_, enb_pin_, in1_pin_, in2_pin_, in3_pin_, in4_pin_);
+        // 安全处理：使用默认pin值
+        return;
+    }
+    
     // 配置电机控制引脚
     gpio_config_t io_conf = {};
     
@@ -190,7 +211,11 @@ void MotorController::InitGPIO() {
     io_conf.pull_up_en = GPIO_PULLUP_DISABLE;
     
     // 配置GPIO
-    gpio_config(&io_conf);
+    esp_err_t err = gpio_config(&io_conf);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Motor GPIO config failed with error 0x%x", err);
+        return;
+    }
     
     // 配置PWM控制引脚 (ENA, ENB)
     // 使用LEDC通道0和通道1

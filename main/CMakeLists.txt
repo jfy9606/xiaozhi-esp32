@@ -32,11 +32,15 @@ set(SOURCES "audio_codecs/audio_codec.cc"
 
 set(INCLUDE_DIRS "." "display" "audio_codecs" "protocols" "audio_processing")
 
-# HTML文件列表
-set(HTML_FILES "${CMAKE_CURRENT_SOURCE_DIR}/assets/html/index.html"
-               "${CMAKE_CURRENT_SOURCE_DIR}/assets/html/car.html"
-               "${CMAKE_CURRENT_SOURCE_DIR}/assets/html/ai.html"
-               "${CMAKE_CURRENT_SOURCE_DIR}/assets/html/cam.html")
+# HTML文件列表 - 只在启用web内容时使用
+set(EMBED_FILES "")
+if(CONFIG_ENABLE_WEB_SERVER AND CONFIG_ENABLE_WEB_CONTENT)
+    set(HTML_FILES "${CMAKE_CURRENT_SOURCE_DIR}/assets/html/index.html"
+                   "${CMAKE_CURRENT_SOURCE_DIR}/assets/html/motor.html"
+                   "${CMAKE_CURRENT_SOURCE_DIR}/assets/html/vision.html"
+                   "${CMAKE_CURRENT_SOURCE_DIR}/assets/html/ai.html")
+    list(APPEND EMBED_FILES ${HTML_FILES})
+endif()
 
 # 根据配置添加Web组件
 if(CONFIG_ENABLE_WEB_SERVER)
@@ -216,6 +220,9 @@ set(LANG_HEADER "${CMAKE_CURRENT_SOURCE_DIR}/assets/lang_config.h")
 file(GLOB LANG_SOUNDS ${CMAKE_CURRENT_SOURCE_DIR}/assets/${LANG_DIR}/*.p3)
 file(GLOB COMMON_SOUNDS ${CMAKE_CURRENT_SOURCE_DIR}/assets/common/*.p3)
 
+# 添加语音文件到嵌入列表
+list(APPEND EMBED_FILES ${LANG_SOUNDS} ${COMMON_SOUNDS})
+
 # 如果目标芯片是 ESP32，则排除特定文件
 if(CONFIG_IDF_TARGET_ESP32)
     list(REMOVE_ITEM SOURCES "audio_codecs/box_audio_codec.cc"
@@ -225,7 +232,7 @@ if(CONFIG_IDF_TARGET_ESP32)
 endif()
 
 idf_component_register(SRCS ${SOURCES}
-                    EMBED_FILES ${LANG_SOUNDS} ${COMMON_SOUNDS} ${HTML_FILES}
+                    EMBED_FILES ${EMBED_FILES}
                     INCLUDE_DIRS ${INCLUDE_DIRS}
                     WHOLE_ARCHIVE
                     )

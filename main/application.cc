@@ -10,6 +10,7 @@
 #include "iot/thing_manager.h"
 #include "assets/lang_config.h"
 #include "web/web_server.h"
+#include "wifi_station.h"
 
 #if CONFIG_USE_AUDIO_PROCESSOR
 #include "afe_audio_processor.h"
@@ -382,6 +383,14 @@ void Application::Start() {
     }
     codec->Start();
 
+    // Initialize all components before starting tasks
+    InitializeComponents();
+    
+    // Start components but not web components yet
+    // Web components will be started after network is ready
+    StartComponents();
+    
+    // Now start the background audio loop task
     xTaskCreatePinnedToCore([](void* arg) {
         Application* app = (Application*)arg;
         app->AudioLoop();
@@ -391,16 +400,17 @@ void Application::Start() {
     /* Wait for the network to be ready */
     board.StartNetwork();
 
-    // 初始化Web组件
+    // 初始化Web组件 - must be after network is ready
 #if defined(CONFIG_ENABLE_WEB_SERVER)
+    ESP_LOGI(TAG, "Initializing web components");
     WebServer::InitWebComponents();
-    ESP_LOGI(TAG, "Web components initialized");
+    ESP_LOGI(TAG, "Web components registered (will start after device enters idle state)");
 #endif
 
     // Check for new firmware version or get the MQTT broker address
     CheckNewVersion();
 
-    // Initialize the protocol
+    // Initialize the protocol before other components that might use it
     display->SetStatus(Lang::Strings::LOADING_PROTOCOL);
 
 #if CONFIG_ENABLE_XIAOZHI_AI_CORE
@@ -528,6 +538,7 @@ void Application::Start() {
     });
     bool protocol_started = protocol_->Start();
 
+    // Initialize audio processor after protocol is started
     audio_processor_->Initialize(codec, realtime_chat_enabled_);
     audio_processor_->OnOutput([this](std::vector<int16_t>&& data) {
         background_task_->Schedule([this, data = std::move(data)]() mutable {
@@ -814,7 +825,7 @@ void Application::SetDeviceState(DeviceState state) {
     if (device_state_ == state) {
         return;
     }
-    
+
     clock_ticks_ = 0;
     auto previous_state = device_state_;
     device_state_ = state;
@@ -835,6 +846,37 @@ void Application::SetDeviceState(DeviceState state) {
 #if CONFIG_USE_WAKE_WORD_DETECT
             wake_word_detect_.StartDetection();
 #endif
+
+            // 设备进入空闲状态，且WiFi已连接，启动Web服务器组件
+#if defined(CONFIG_ENABLE_WEB_SERVER)
+            // 使用Schedule方法在后台执行启动Web服务器的操作
+            Schedule([this]() {
+                // 检查WiFi是否已连接
+                if (WifiStation::GetInstance().IsConnected()) {
+                    ESP_LOGI(TAG, "Device entered idle state and WiFi is connected, starting Web components");
+                    
+                    // 获取WebServer组件
+                    Component* web_server = GetComponent("WebServer");
+                    if (web_server) {
+                        if (!web_server->IsRunning()) {
+                            // 使用静态方法启动Web服务器及相关组件
+                            if (WebServer::StartWebComponents()) {
+                                ESP_LOGI(TAG, "Web server components started successfully");
+                            } else {
+                                ESP_LOGW(TAG, "Failed to start Web server components");
+                            }
+                        } else {
+                            ESP_LOGI(TAG, "Web server already running");
+                        }
+                    } else {
+                        ESP_LOGW(TAG, "WebServer component not found");
+                    }
+                } else {
+                    ESP_LOGW(TAG, "WiFi not connected, skipping Web server startup");
+                }
+            });
+#endif // CONFIG_ENABLE_WEB_SERVER
+
             break;
         case kDeviceStateConnecting:
             display->SetStatus(Lang::Strings::CONNECTING);
@@ -957,4 +999,204 @@ bool Application::CanEnterSleepMode() {
 
     // Now it is safe to enter sleep mode
     return true;
+}
+
+// Component management methods
+void Application::InitializeComponents() {
+    ESP_LOGI(TAG, "Initializing all components");
+    try {
+        // Initialize vision components
+        ESP_LOGI(TAG, "Initializing vision components");
+        // Vision组件的具体初始化实现
+        try {
+            // 视觉相关组件现在统一由VisionController管理
+            // 摄像头功能已集成到VisionController中
+            auto& manager = ComponentManager::GetInstance();
+            
+            // 检查视觉控制器组件
+            Component* vision = manager.GetComponent("VisionController");
+            if (!vision) {
+                ESP_LOGI(TAG, "VisionController not found, may be registered later");
+            } else {
+                ESP_LOGI(TAG, "VisionController already registered (includes camera functionality)");
+            }
+            
+        } catch (const std::exception& e) {
+            ESP_LOGE(TAG, "Exception during vision components initialization: %s", e.what());
+        }
+        
+        // 初始化所有已注册的组件
+        auto& manager = ComponentManager::GetInstance();
+        ESP_LOGI(TAG, "Found %zu components registered", manager.GetComponents().size());
+        
+        // 遍历所有组件执行初始化前的准备工作
+        for (auto* component : manager.GetComponents()) {
+            if (component && component->GetName()) {
+                ESP_LOGI(TAG, "Preparing component: %s", component->GetName());
+            }
+        }
+    } catch (const std::exception& e) {
+        ESP_LOGE(TAG, "Exception in InitializeComponents: %s", e.what());
+    } catch (...) {
+        ESP_LOGE(TAG, "Unknown exception in InitializeComponents");
+    }
+}
+
+void Application::StartComponents() {
+    ESP_LOGI(TAG, "Starting all components in Application");
+    auto& manager = ComponentManager::GetInstance();
+    
+    // Log all registered components
+    ESP_LOGI(TAG, "Currently registered components:");
+    for (auto* component : manager.GetComponents()) {
+        if (!component) {
+            ESP_LOGW(TAG, "Found null component in manager, skipping");
+            continue;
+        }
+        ESP_LOGI(TAG, "- %s (running: %s)", 
+                component->GetName(), 
+                component->IsRunning() ? "yes" : "no");
+    }
+    
+    // Start all components
+    // Use try/catch to prevent crashes from propagating
+    for (auto* component : manager.GetComponents()) {
+        if (!component) {
+            ESP_LOGW(TAG, "Found null component in manager, skipping start");
+            continue;
+        }
+        
+        // Skip any null component Name to prevent crashes
+        if (!component->GetName()) {
+            ESP_LOGW(TAG, "Component has null name, skipping start");
+            continue;
+        }
+        
+        // Schedule component start in background task to avoid blocking
+        background_task_->Schedule([this, component]() {
+            if (!component || !component->GetName()) {
+                ESP_LOGW(TAG, "Component became invalid, skipping start");
+                return;
+            }
+            
+            if (!component->IsRunning()) {
+                try {
+                    ESP_LOGI(TAG, "Starting component: %s", component->GetName());
+                    bool started = component->Start();
+                    if (!started) {
+                        ESP_LOGE(TAG, "Failed to start component: %s", component->GetName());
+                    } else {
+                        ESP_LOGI(TAG, "Component %s started successfully", component->GetName());
+                    }
+                } catch (const std::exception& e) {
+                    ESP_LOGE(TAG, "Exception while starting component: %s", e.what());
+                } catch (...) {
+                    ESP_LOGE(TAG, "Unknown exception while starting component");
+                }
+            }
+        });
+    }
+    
+    // Special handling for vision components to ensure proper startup sequence
+    try {
+        ESP_LOGI(TAG, "Starting vision components with proper dependencies");
+        
+        // 启动VisionController (现已包含相机功能)
+        Component* vision = GetComponent("VisionController");
+        if (vision) {
+            if (!vision->IsRunning()) {
+                ESP_LOGI(TAG, "Starting vision controller component (with integrated camera)");
+                background_task_->Schedule([this, vision]() {
+                    try {
+                        if (!vision->Start()) {
+                            ESP_LOGE(TAG, "Failed to start VisionController from sequence");
+                        } else {
+                            ESP_LOGI(TAG, "VisionController (with camera) started successfully");
+                            
+                            // Start VisionContent only after VisionController is running
+                            Component* vision_content = GetComponent("VisionContent");
+                            if (vision_content && !vision_content->IsRunning()) {
+                                try {
+                                    if (!vision_content->Start()) {
+                                        ESP_LOGE(TAG, "Failed to start VisionContent");
+                                    } else {
+                                        ESP_LOGI(TAG, "VisionContent started successfully");
+                                    }
+                                } catch (const std::exception& e) {
+                                    ESP_LOGE(TAG, "Exception starting VisionContent: %s", e.what());
+                                }
+                            }
+                        }
+                    } catch (const std::exception& e) {
+                        ESP_LOGE(TAG, "Exception starting vision sequence: %s", e.what());
+                    }
+                });
+            }
+        }
+    } catch (const std::exception& e) {
+        ESP_LOGE(TAG, "Exception in vision component startup: %s", e.what());
+    } catch (...) {
+        ESP_LOGE(TAG, "Unknown exception in vision component startup");
+    }
+    
+    ESP_LOGI(TAG, "All components processing scheduled");
+}
+
+void Application::StopComponents() {
+    // Execute synchronously to ensure components are stopped
+    ESP_LOGI(TAG, "Stopping all components");
+    try {
+        auto& manager = ComponentManager::GetInstance();
+        
+        // 首先停止视觉相关组件
+        ESP_LOGI(TAG, "Stopping vision components");
+        
+        // 先停止VisionContent，它依赖于VisionController
+        Component* vision_content = GetComponent("VisionContent");
+        if (vision_content && vision_content->IsRunning()) {
+            ESP_LOGI(TAG, "Stopping vision content component");
+            try {
+                vision_content->Stop();
+            } catch (const std::exception& e) {
+                ESP_LOGE(TAG, "Exception stopping vision content: %s", e.what());
+            }
+        }
+        
+        // 然后停止VisionController (已包含相机功能)
+        Component* vision = GetComponent("VisionController");
+        if (vision && vision->IsRunning()) {
+            ESP_LOGI(TAG, "Stopping vision controller component (with integrated camera)");
+            try {
+                vision->Stop();
+            } catch (const std::exception& e) {
+                ESP_LOGE(TAG, "Exception stopping vision controller: %s", e.what());
+            }
+        }
+        
+        // 停止所有其他组件
+        ESP_LOGI(TAG, "Stopping all remaining components");
+        manager.StopAll();
+    } catch (const std::exception& e) {
+        ESP_LOGE(TAG, "Exception in StopComponents: %s", e.what());
+    } catch (...) {
+        ESP_LOGE(TAG, "Unknown exception in StopComponents");
+    }
+}
+
+Component* Application::GetComponent(const char* name) {
+    if (!name) {
+        ESP_LOGW(TAG, "GetComponent called with null name");
+        return nullptr;
+    }
+    
+    try {
+        auto& manager = ComponentManager::GetInstance();
+        return manager.GetComponent(name);
+    } catch (const std::exception& e) {
+        ESP_LOGE(TAG, "Exception in GetComponent: %s", e.what());
+        return nullptr;
+    } catch (...) {
+        ESP_LOGE(TAG, "Unknown exception in GetComponent");
+        return nullptr;
+    }
 }
