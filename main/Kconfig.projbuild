@@ -279,17 +279,6 @@ menu "Components Manager"
             help
                 Web服务器监听的端口号。默认为8080。
         
-        config WEB_SERVER_CORE_ID
-            int "Web服务器运行的核心ID"
-            default 0
-            depends on ENABLE_WEB_SERVER
-            range 0 1
-            help
-                在双核ESP32上，设置Web服务器运行的核心ID。
-                0 - 在核心0上运行
-                1 - 在核心1上运行
-                建议使用核心0以避免与AI和音频处理冲突。
-        
         config WEB_SERVER_USE_PSRAM
             bool "使用PSRAM存储Web服务器内容"
             default y if SPIRAM

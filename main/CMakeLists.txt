@@ -35,11 +35,23 @@ set(INCLUDE_DIRS "." "display" "audio_codecs" "protocols" "audio_processing")
 # HTML文件列表 - 只在启用web内容时使用
 set(EMBED_FILES "")
 if(CONFIG_ENABLE_WEB_SERVER AND CONFIG_ENABLE_WEB_CONTENT)
+    # 指定绝对路径，确保正确找到HTML文件
     set(HTML_FILES "${CMAKE_CURRENT_SOURCE_DIR}/assets/html/index.html"
                    "${CMAKE_CURRENT_SOURCE_DIR}/assets/html/motor.html"
                    "${CMAKE_CURRENT_SOURCE_DIR}/assets/html/vision.html"
                    "${CMAKE_CURRENT_SOURCE_DIR}/assets/html/ai.html")
+    
+    # 检查文件是否存在
+    foreach(HTML_FILE ${HTML_FILES})
+        if(NOT EXISTS ${HTML_FILE})
+            message(WARNING "HTML文件不存在: ${HTML_FILE}")
+        else()
+            message(STATUS "找到HTML文件: ${HTML_FILE}")
+        endif()
+    endforeach()
+    
     list(APPEND EMBED_FILES ${HTML_FILES})
+    message(STATUS "HTML文件将被嵌入到固件中")
 endif()
 
 # 根据配置添加Web组件

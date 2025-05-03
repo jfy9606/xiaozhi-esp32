@@ -123,17 +123,19 @@ void VisionContent::InitHandlers() {
     // 注册特殊的状态URI，避免与WebContent冲突
     safeRegisterUri("/vision/status", HTTP_GET, StatusHandler, this);
     
-    // WebSocket注册 - 更新为全局统一的WebSocket
+    // 注册WebSocket消息处理器 - 使用RegisterWebSocketHandler而不是RegisterWebSocket
     if (!server_->IsUriRegistered("/ws")) {
         ESP_LOGI(TAG, "Registering global WebSocket handler");
-        server_->RegisterWebSocket("/ws", [this](int client_index, const PSRAMString& message) {
-            HandleWebSocketMessage(client_index, message);
-        });
+        
+        // 注册新的WebSocketHandler（支持lambda）
+        server_->RegisterWebSocketHandler("vision_command", 
+            [this](int client_index, const PSRAMString& message, const PSRAMString& type) {
+                HandleWebSocketMessage(client_index, message);
+            });
+        
         ESP_LOGI(TAG, "Registered WebSocket handler for vision");
     } else {
         ESP_LOGW(TAG, "WebSocket URI /ws already registered by another component");
-        // 尝试注册自己的消息处理回调
-        // 注意：这里我们不能直接访问其他组件设置的回调，但我们的回调会通过HandleWsMessageInternal分发
     }
     
     ESP_LOGI(TAG, "Vision URI handlers initialization complete");

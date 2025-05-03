@@ -13,6 +13,18 @@
 #endif
 #include "../vision/vision_controller.h"
 #include <esp_heap_caps.h>
+#if defined(CONFIG_ENABLE_MOTOR_CONTROLLER)
+#include "../motor/motor_controller.h"
+#include "../motor/motor_content.h"
+#endif
+#if defined(CONFIG_ENABLE_AI_CONTROLLER)
+#include "../ai/ai_controller.h"
+#include "../ai/ai_content.h"
+#endif
+#if defined(CONFIG_ENABLE_VISION_CONTROLLER)
+#include "../vision/vision_controller.h"
+#include "../vision/vision_content.h"
+#endif
 
 #define TAG "WebServer"
 
@@ -112,10 +124,9 @@ bool WebServer::Start() {
     // 配置HTTP服务器
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.task_priority = CONFIG_WEB_SERVER_PRIORITY;
-    config.core_id = CONFIG_WEB_SERVER_CORE_ID;
     config.server_port = CONFIG_WEB_SERVER_PORT;
     config.max_uri_handlers = 16;
-    config.max_open_sockets = MAX_WS_CLIENTS + 5; // 额外的套接字用于HTTP请求
+    config.max_open_sockets = MAX_WS_CLIENTS + 3;  // 符合lwip限制: 7+3=10, 服务器内部使用3个
     config.lru_purge_enable = true;
     
     // 使用PSRAM优化
@@ -197,6 +208,7 @@ void WebServer::RegisterDefaultHandlers() {
     // Register handlers for special endpoints
     RegisterHttpHandler("/vision", HTTP_GET, VisionHandler);
     RegisterHttpHandler("/motor", HTTP_GET, MotorHandler);
+    RegisterHttpHandler("/ai", HTTP_GET, AIHandler);  // 添加AI页面路由
 }
 
 void WebServer::RegisterHttpHandler(const PSRAMString& path, httpd_method_t method, HttpRequestHandler handler) {
@@ -255,8 +267,15 @@ esp_err_t WebServer::RootHandler(httpd_req_t *req) {
     return SendHttpResponse(req, "text/html", html_content, len);
 #else
     // 当Web内容未启用时，返回一个简单的消息
-    const char* message = "<html><body><h1>Web Content Disabled</h1><p>The web content feature is not enabled in this build.</p></body></html>";
-    ESP_LOGI(TAG, "Web content disabled, serving simple message");
+    const char* message = "<html><body><h1>Web Content Disabled</h1>"
+        "<p>The web content feature is not enabled in this build.</p>"
+        "<p>API endpoints and WebSocket connections are still available.</p>"
+        "<ul>"
+        "<li>WebSocket: ws://[device-ip]:8080/ws</li>"
+        "<li>API Status: http://[device-ip]:8080/api/status</li>"
+        "</ul>"
+        "</body></html>";
+    ESP_LOGI(TAG, "Web content disabled, serving status page");
     return SendHttpResponse(req, "text/html", message, strlen(message));
 #endif
 }
@@ -272,7 +291,10 @@ esp_err_t WebServer::VisionHandler(httpd_req_t *req) {
     return SendHttpResponse(req, "text/html", html_content, len);
 #else
     // 当视觉内容未启用时，返回一个简单的消息
-    const char* message = "<html><body><h1>Vision Content Disabled</h1><p>The vision content feature is not enabled in this build.</p></body></html>";
+    const char* message = "<html><body><h1>Vision Content Disabled</h1>"
+        "<p>The vision content feature is not enabled in this build.</p>"
+        "<p>API endpoints are still available at /api/vision/*</p>"
+        "</body></html>";
     ESP_LOGI(TAG, "Vision content disabled, serving simple message");
     return SendHttpResponse(req, "text/html", message, strlen(message));
 #endif
@@ -289,8 +311,33 @@ esp_err_t WebServer::MotorHandler(httpd_req_t *req) {
     return SendHttpResponse(req, "text/html", html_content, len);
 #else
     // 当电机内容未启用时，返回一个简单的消息
-    const char* message = "<html><body><h1>Motor Content Disabled</h1><p>The motor content feature is not enabled in this build.</p></body></html>";
+    const char* message = "<html><body><h1>Motor Control Disabled</h1>"
+        "<p>The motor control web interface is not enabled in this build.</p>"
+        "<p>Motor API endpoints are still available at /api/motor/*</p>"
+        "<p>WebSocket commands for motor control are supported.</p>"
+        "</body></html>";
     ESP_LOGI(TAG, "Motor content disabled, serving simple message");
+    return SendHttpResponse(req, "text/html", message, strlen(message));
+#endif
+}
+
+// AI页面处理器
+esp_err_t WebServer::AIHandler(httpd_req_t *req) {
+#if CONFIG_ENABLE_WEB_CONTENT && CONFIG_ENABLE_AI_CONTROLLER
+    // 获取AI相关的HTML内容
+    const char* html_content = get_ai_html_content();
+    size_t len = get_ai_html_size();
+    
+    ESP_LOGI(TAG, "Serving ai.html, size: %d bytes", len);
+    return SendHttpResponse(req, "text/html", html_content, len);
+#else
+    // 当AI内容未启用时，返回一个简单的消息
+    const char* message = "<html><body><h1>AI Control Disabled</h1>"
+        "<p>The AI control web interface is not enabled in this build.</p>"
+        "<p>AI API endpoints are still available at /api/ai/*</p>"
+        "<p>WebSocket commands for AI control are supported.</p>"
+        "</body></html>";
+    ESP_LOGI(TAG, "AI content disabled, serving simple message");
     return SendHttpResponse(req, "text/html", message, strlen(message));
 #endif
 }
@@ -782,37 +829,83 @@ void WebServer::CheckWebSocketTimeouts() {
 // 初始化Web组件
 void WebServer::InitWebComponents() {
 #if defined(CONFIG_ENABLE_WEB_SERVER)
-    // 创建Web服务器组件 - 不立即启动
-    WebServer* web_server = new WebServer();
-    ComponentManager::GetInstance().RegisterComponent(web_server);
-    ESP_LOGI(TAG, "注册WebServer组件 (将在网络和AI初始化后启动)");
-
+    ESP_LOGI(TAG, "初始化Web组件");
+    
+    // 检查WebServer是否已经存在
+    auto& manager = ComponentManager::GetInstance();
+    Component* existing_web_server = manager.GetComponent("WebServer");
+    
+    WebServer* web_server = nullptr;
+    if (existing_web_server) {
+        ESP_LOGI(TAG, "WebServer已存在，使用现有实例");
+        web_server = static_cast<WebServer*>(existing_web_server);
+    } else {
+        // 创建Web服务器组件
+        web_server = new WebServer();
+        manager.RegisterComponent(web_server);
+        ESP_LOGI(TAG, "已创建新的WebServer实例");
+    }
+    
+    // 注册WebContent组件
 #if defined(CONFIG_ENABLE_WEB_CONTENT)
-    // 创建Web内容组件 - 不立即启动
-    WebContent* web_content = new WebContent(web_server);
-    ComponentManager::GetInstance().RegisterComponent(web_content);
-    ESP_LOGI(TAG, "注册WebContent组件 (将在WebServer之后启动)");
-#endif // CONFIG_ENABLE_WEB_CONTENT
-
+    Component* existing_web_content = manager.GetComponent("WebContent");
+    if (existing_web_content) {
+        ESP_LOGI(TAG, "WebContent已存在，跳过创建");
+    } else {
+        WebContent* web_content = new WebContent(web_server);
+        manager.RegisterComponent(web_content);
+        ESP_LOGI(TAG, "已创建新的WebContent实例");
+    }
+#else
+    ESP_LOGI(TAG, "WebContent在配置中已禁用");
+#endif
+    
     // 注册但不启动电机组件
-#if defined(CONFIG_ENABLE_MOTOR_CONTROLLER) && defined(CONFIG_ENABLE_WEB_CONTENT)
+#if defined(CONFIG_ENABLE_MOTOR_CONTROLLER)
+#if defined(CONFIG_ENABLE_WEB_CONTENT)
     InitMotorComponents(web_server);
+#else
+    // 即使禁用了WebContent，也要初始化电机组件
+    if (!manager.GetComponent("MotorController")) {
+        MotorController* motor_controller = new MotorController();
+        manager.RegisterComponent(motor_controller);
+        ESP_LOGI(TAG, "注册电机控制器 (WebContent已禁用)");
+    }
+#endif
     ESP_LOGI(TAG, "注册电机组件");
-#endif // CONFIG_ENABLE_MOTOR_CONTROLLER
+#endif
 
     // 注册但不启动AI组件
-#if defined(CONFIG_ENABLE_AI_CONTROLLER) && defined(CONFIG_ENABLE_WEB_CONTENT)
+#if defined(CONFIG_ENABLE_AI_CONTROLLER)
+#if defined(CONFIG_ENABLE_WEB_CONTENT)
     InitAIComponents(web_server);
+#else
+    // 即使禁用了WebContent，也要初始化AI组件
+    if (!manager.GetComponent("AIController")) {
+        AIController* ai_controller = new AIController();
+        manager.RegisterComponent(ai_controller);
+        ESP_LOGI(TAG, "注册AI控制器 (WebContent已禁用)");
+    }
+#endif
     ESP_LOGI(TAG, "注册AI组件");
-#endif // CONFIG_ENABLE_AI_CONTROLLER
+#endif
 
     // 注册但不启动视觉组件
-#if defined(CONFIG_ENABLE_VISION_CONTROLLER) && defined(CONFIG_ENABLE_WEB_CONTENT)
+#if defined(CONFIG_ENABLE_VISION_CONTROLLER)
+#if defined(CONFIG_ENABLE_WEB_CONTENT)
     InitVisionComponents(web_server);
+#else
+    // 即使禁用了WebContent，也要初始化视觉组件
+    if (!manager.GetComponent("VisionController")) {
+        VisionController* vision_controller = new VisionController();
+        manager.RegisterComponent(vision_controller);
+        ESP_LOGI(TAG, "注册视觉控制器 (WebContent已禁用)");
+    }
+#endif
     ESP_LOGI(TAG, "注册视觉组件");
-#endif // CONFIG_ENABLE_VISION_CONTROLLER
+#endif
 
-    ESP_LOGI(TAG, "Web组件初始化完成 (组件将在网络和AI初始化后启动)");
+    ESP_LOGI(TAG, "Web组件初始化完成 (组件将在网络初始化后启动)");
 #else
     ESP_LOGI(TAG, "Web服务器在配置中已禁用");
 #endif // CONFIG_ENABLE_WEB_SERVER
@@ -854,12 +947,13 @@ bool WebServer::StartWebComponents() {
             }
             ESP_LOGI(TAG, "WebContent启动成功");
         }
+#else
+        ESP_LOGI(TAG, "WebContent已禁用，但WebServer启动成功，API和WebSocket可用");
 #endif // CONFIG_ENABLE_WEB_CONTENT
-        
+
         // 启动电机相关组件
-#if defined(CONFIG_ENABLE_MOTOR_CONTROLLER) && defined(CONFIG_ENABLE_WEB_CONTENT)
+#if defined(CONFIG_ENABLE_MOTOR_CONTROLLER)
         Component* motor_controller = manager.GetComponent("MotorController");
-        Component* motor_content = manager.GetComponent("MotorContent");
         
         if (motor_controller && !motor_controller->IsRunning()) {
             if (!motor_controller->Start()) {
@@ -870,6 +964,8 @@ bool WebServer::StartWebComponents() {
             }
         }
         
+#if defined(CONFIG_ENABLE_WEB_CONTENT)
+        Component* motor_content = manager.GetComponent("MotorContent");
         if (motor_content && !motor_content->IsRunning()) {
             if (!motor_content->Start()) {
                 ESP_LOGE(TAG, "启动MotorContent失败");
@@ -877,13 +973,15 @@ bool WebServer::StartWebComponents() {
             } else {
                 ESP_LOGI(TAG, "MotorContent启动成功");
             }
+        } else if (motor_content) {
+            ESP_LOGI(TAG, "MotorContent已经在运行");
         }
+#endif // CONFIG_ENABLE_WEB_CONTENT
 #endif // CONFIG_ENABLE_MOTOR_CONTROLLER
         
         // 启动AI相关组件
-#if defined(CONFIG_ENABLE_AI_CONTROLLER) && defined(CONFIG_ENABLE_WEB_CONTENT)
+#if defined(CONFIG_ENABLE_AI_CONTROLLER)
         Component* ai_controller = manager.GetComponent("AIController");
-        Component* ai_content = manager.GetComponent("AIContent");
         
         if (ai_controller && !ai_controller->IsRunning()) {
             if (!ai_controller->Start()) {
@@ -894,6 +992,8 @@ bool WebServer::StartWebComponents() {
             }
         }
         
+#if defined(CONFIG_ENABLE_WEB_CONTENT)
+        Component* ai_content = manager.GetComponent("AIContent");
         if (ai_content && !ai_content->IsRunning()) {
             if (!ai_content->Start()) {
                 ESP_LOGE(TAG, "启动AIContent失败");
@@ -901,12 +1001,15 @@ bool WebServer::StartWebComponents() {
             } else {
                 ESP_LOGI(TAG, "AIContent启动成功");
             }
+        } else if (ai_content) {
+            ESP_LOGI(TAG, "AIContent已经在运行");
         }
+#endif // CONFIG_ENABLE_WEB_CONTENT
 #endif // CONFIG_ENABLE_AI_CONTROLLER
         
         // 启动视觉相关组件
+#if defined(CONFIG_ENABLE_VISION_CONTROLLER)
         Component* vision_controller = manager.GetComponent("VisionController");
-        Component* vision_content = manager.GetComponent("VisionContent");
         
         if (vision_controller && !vision_controller->IsRunning()) {
             if (!vision_controller->Start()) {
@@ -917,6 +1020,8 @@ bool WebServer::StartWebComponents() {
             }
         }
         
+#if defined(CONFIG_ENABLE_WEB_CONTENT)
+        Component* vision_content = manager.GetComponent("VisionContent");
         if (vision_content && !vision_content->IsRunning()) {
             if (!vision_content->Start()) {
                 ESP_LOGE(TAG, "启动VisionContent失败");
@@ -924,7 +1029,11 @@ bool WebServer::StartWebComponents() {
             } else {
                 ESP_LOGI(TAG, "VisionContent启动成功");
             }
+        } else if (vision_content) {
+            ESP_LOGI(TAG, "VisionContent已经在运行");
         }
+#endif // CONFIG_ENABLE_WEB_CONTENT
+#endif // CONFIG_ENABLE_VISION_CONTROLLER
         
         ESP_LOGI(TAG, "所有Web组件启动成功");
         return true;

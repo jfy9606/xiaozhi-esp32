@@ -8,7 +8,7 @@
 #define TAG "HtmlContent"
 
 // PSRAM内存分配宏 - 根据CONFIG_WEB_SERVER_USE_PSRAM决定是否使用PSRAM
-#if defined(CONFIG_WEB_SERVER_USE_PSRAM) && CONFIG_WEB_SERVER_USE_PSRAM && WEB_SERVER_HAS_PSRAM
+#if defined(CONFIG_WEB_SERVER_USE_PSRAM) && WEB_SERVER_HAS_PSRAM
 #define HTML_MALLOC(size) heap_caps_malloc(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)
 #define HTML_FREE(ptr) heap_caps_free(ptr)
 #define USING_PSRAM_FOR_HTML 1
@@ -58,6 +58,9 @@ static void init_html_content() {
     motor_html_size = motor_html_end - motor_html_start;
     ai_html_size = ai_html_end - ai_html_start;
     vision_html_size = vision_html_end - vision_html_start;
+    
+    ESP_LOGI(TAG, "HTML文件大小: index=%zu, motor=%zu, ai=%zu, vision=%zu",
+            index_html_size, motor_html_size, ai_html_size, vision_html_size);
     
     // 分配PSRAM内存并复制内容
     #if USING_PSRAM_FOR_HTML

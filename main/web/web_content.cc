@@ -8,7 +8,10 @@
 #include <esp_timer.h>
 #include <esp_chip_info.h>
 #include "sdkconfig.h"
-#include "html_content.h"  // 包含HTML内容头文件
+#include "html_content.h"
+#include <sys/param.h>
+#include <wifi_station.h>
+#include <esp_heap_caps.h>
 
 #define TAG CONFIG_WEB_CONTENT_TAG
 

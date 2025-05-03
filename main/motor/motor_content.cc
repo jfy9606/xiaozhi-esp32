@@ -148,16 +148,14 @@ void MotorContent::InitHandlers() {
         ESP_LOGW(TAG, "URI already registered, skipping: /motor/status");
     }
     
-    // WebSocket可能已被其他组件注册，检查后再注册
-    if (!server_->IsUriRegistered("/ws")) {
-        // 使用匹配WebSocketMessageCallback参数类型的lambda
-        server_->RegisterWebSocket("/ws", [this](int client_index, const PSRAMString& message) {
+    // 使用RegisterWebSocketHandler而不是RegisterWebSocket
+    // RegisterWebSocketHandler支持带有捕获的lambda表达式
+    server_->RegisterWebSocketHandler("joystick", 
+        [this](int client_index, const PSRAMString& message, const PSRAMString& type) {
             HandleWebSocketMessage(client_index, message);
         });
-        ESP_LOGI(TAG, "Registered WebSocket handler: /ws");
-    } else {
-        ESP_LOGW(TAG, "WebSocket handler already registered, skipping: /ws");
-    }
+    
+    ESP_LOGI(TAG, "Registered motor WebSocket handler for type: joystick");
 }
 
 esp_err_t MotorContent::HandleCar(httpd_req_t *req) {

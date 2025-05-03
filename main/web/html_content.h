@@ -1,5 +1,5 @@
-#ifndef _HTML_CONTENT_H_
-#define _HTML_CONTENT_H_
+#ifndef HTML_CONTENT_H
+#define HTML_CONTENT_H
 
 #include <stddef.h>
 
@@ -20,7 +20,7 @@ const char* get_motor_html_content();
 const char* get_ai_html_content();
 const char* get_vision_html_content();
 
-// 向后兼容的常量别名 - 不推荐直接使用
+// 外部声明供C代码访问的常量
 extern const char* INDEX_HTML;
 extern const char* MOTOR_HTML;
 extern const char* AI_HTML;
@@ -30,4 +30,4 @@ extern const char* VISION_HTML;
 }
 #endif
 
-#endif // _HTML_CONTENT_H_
+#endif // HTML_CONTENT_H

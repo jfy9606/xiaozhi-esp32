@@ -122,16 +122,13 @@ void AIContent::InitHandlers() {
         ESP_LOGW(TAG, "URI already registered, skipping: /api/ai/status");
     }
     
-    // WebSocket可能已被其他组件注册，检查后再注册
-    if (!server_->IsUriRegistered("/ws")) {
-        server_->RegisterWebSocket("/ws", [this](int client_index, const PSRAMString& message) {
+    // 注册WebSocket消息处理器
+    server_->RegisterWebSocketHandler("voice_command", 
+        [this](int client_index, const PSRAMString& message, const PSRAMString& type) {
             HandleWebSocketMessage(client_index, message);
         });
-        ESP_LOGI(TAG, "Registered WebSocket handler: /ws");
-    } else {
-        ESP_LOGW(TAG, "WebSocket handler already registered, skipping: /ws");
-        // 仍然需要确保接收到WebSocket消息，通过WebServer处理
-    }
+    
+    ESP_LOGI(TAG, "Registered AI WebSocket handler for voice commands");
 }
 
 esp_err_t AIContent::HandleAI(httpd_req_t *req) {

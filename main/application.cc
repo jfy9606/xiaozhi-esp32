@@ -275,6 +275,12 @@ void Application::ToggleChatState() {
         return;
     }
 
+#if !CONFIG_ENABLE_XIAOZHI_AI_CORE
+    // AI核心功能禁用时，显示提示信息
+    Alert(Lang::Strings::INFO, Lang::Strings::AI_CORE_DISABLED, "sad", Lang::Sounds::P3_EXCLAMATION);
+    return;
+#endif
+
     if (!protocol_) {
         ESP_LOGE(TAG, "Protocol not initialized");
         return;
@@ -357,7 +363,7 @@ void Application::StopListening() {
 
 void Application::Start() {
     auto& board = Board::GetInstance();
-    
+
     /* Setup the display */
     auto display = board.GetDisplay();
     SetDeviceState(kDeviceStateStarting);
@@ -538,7 +544,6 @@ void Application::Start() {
     });
     bool protocol_started = protocol_->Start();
 
-    // Initialize audio processor after protocol is started
     audio_processor_->Initialize(codec, realtime_chat_enabled_);
     audio_processor_->OnOutput([this](std::vector<int16_t>&& data) {
         background_task_->Schedule([this, data = std::move(data)]() mutable {
@@ -573,7 +578,7 @@ void Application::Start() {
 #if CONFIG_USE_WAKE_WORD_DETECT
     wake_word_detect_.Initialize(codec);
     wake_word_detect_.OnWakeWordDetected([this](const std::string& wake_word) {
-        Schedule([this, &wake_word]() {
+        Schedule([this, wake_word]() {
             if (device_state_ == kDeviceStateIdle) {
                 SetDeviceState(kDeviceStateConnecting);
                 wake_word_detect_.EncodeWakeWordData();
@@ -602,8 +607,17 @@ void Application::Start() {
     wake_word_detect_.StartDetection();
 #endif
 
+#else
+    // AI核心功能禁用时，仅显示提示信息
+    ESP_LOGW(TAG, "AI core functionality is disabled by configuration");
+    Alert(Lang::Strings::INFO, Lang::Strings::AI_CORE_DISABLED, "sad", Lang::Sounds::P3_EXCLAMATION);
+#endif // CONFIG_ENABLE_XIAOZHI_AI_CORE
+
+    // Wait for the new version check to finish
+    xEventGroupWaitBits(event_group_, CHECK_NEW_VERSION_DONE_EVENT, pdTRUE, pdFALSE, portMAX_DELAY);
     SetDeviceState(kDeviceStateIdle);
 
+#if CONFIG_ENABLE_XIAOZHI_AI_CORE
     if (protocol_started) {
         std::string message = std::string(Lang::Strings::VERSION) + ota_.GetCurrentVersion();
         display->ShowNotification(message.c_str());
@@ -612,18 +626,7 @@ void Application::Start() {
         ResetDecoder();
         PlaySound(Lang::Sounds::P3_SUCCESS);
     }
-#else
-    // AI核心功能关闭时显示提示信息
-    SetDeviceState(kDeviceStateIdle);
-    
-    std::string message = std::string(Lang::Strings::VERSION) + ota_.GetCurrentVersion();
-    display->ShowNotification(message.c_str());
-    display->SetChatMessage("system", Lang::Strings::AI_CORE_DISABLED);
-    
-    // 播放提示音
-    ResetDecoder();
-    PlaySound(Lang::Sounds::P3_SUCCESS);
-#endif // CONFIG_ENABLE_XIAOZHI_AI_CORE
+#endif
     
     // Enter the main event loop
     MainEventLoop();
@@ -825,7 +828,7 @@ void Application::SetDeviceState(DeviceState state) {
     if (device_state_ == state) {
         return;
     }
-
+    
     clock_ticks_ = 0;
     auto previous_state = device_state_;
     device_state_ = state;
@@ -844,7 +847,9 @@ void Application::SetDeviceState(DeviceState state) {
             display->SetEmotion("neutral");
             audio_processor_->Stop();
 #if CONFIG_USE_WAKE_WORD_DETECT
+#if CONFIG_ENABLE_XIAOZHI_AI_CORE
             wake_word_detect_.StartDetection();
+#endif
 #endif
 
             // 设备进入空闲状态，且WiFi已连接，启动Web服务器组件
@@ -887,6 +892,7 @@ void Application::SetDeviceState(DeviceState state) {
             display->SetStatus(Lang::Strings::LISTENING);
             display->SetEmotion("neutral");
 
+#if CONFIG_ENABLE_XIAOZHI_AI_CORE
             // Update the IoT states before sending the start listening command
             UpdateIotStates();
 
@@ -904,10 +910,16 @@ void Application::SetDeviceState(DeviceState state) {
 #endif
                 audio_processor_->Start();
             }
+#else
+            // AI核心功能禁用时
+            display->SetChatMessage("system", Lang::Strings::AI_CORE_DISABLED);
+            SetDeviceState(kDeviceStateIdle);
+#endif
             break;
         case kDeviceStateSpeaking:
             display->SetStatus(Lang::Strings::SPEAKING);
 
+#if CONFIG_ENABLE_XIAOZHI_AI_CORE
             if (listening_mode_ != kListeningModeRealtime) {
                 audio_processor_->Stop();
 #if CONFIG_USE_WAKE_WORD_DETECT
@@ -915,6 +927,11 @@ void Application::SetDeviceState(DeviceState state) {
 #endif
             }
             ResetDecoder();
+#else
+            // AI核心功能禁用时
+            display->SetChatMessage("system", Lang::Strings::AI_CORE_DISABLED);
+            SetDeviceState(kDeviceStateIdle);
+#endif
             break;
         default:
             // Do nothing
@@ -949,11 +966,15 @@ void Application::SetDecodeSampleRate(int sample_rate, int frame_duration) {
 }
 
 void Application::UpdateIotStates() {
+#if CONFIG_ENABLE_XIAOZHI_AI_CORE
     auto& thing_manager = iot::ThingManager::GetInstance();
     std::string states;
     if (thing_manager.GetStatesJson(states, true)) {
         protocol_->SendIotStates(states);
     }
+#else
+    ESP_LOGW(TAG, "Cannot update IoT states: AI core is disabled");
+#endif
 }
 
 void Application::Reboot() {
@@ -993,9 +1014,11 @@ bool Application::CanEnterSleepMode() {
         return false;
     }
 
+#if CONFIG_ENABLE_XIAOZHI_AI_CORE
     if (protocol_ && protocol_->IsAudioChannelOpened()) {
         return false;
     }
+#endif
 
     // Now it is safe to enter sleep mode
     return true;
