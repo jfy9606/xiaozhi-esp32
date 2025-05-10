@@ -327,34 +327,6 @@ public:
     servo_mode_t GetMode() const {
         return mode_;
     }
-    
-    // 映射坐标到角度 (-100到100映射到min_angle_到max_angle_)
-    int MapCoordinateToAngle(int coordinate) {
-        // 确保坐标在有效范围内
-        if (coordinate < -100) coordinate = -100;
-        if (coordinate > 100) coordinate = 100;
-        
-        // 将坐标(-100到100)映射到角度范围(min_angle_到max_angle_)
-        int angle = min_angle_ + (max_angle_ - min_angle_) * (coordinate + 100) / 200;
-        return angle;
-    }
-    
-    // 映射角度到坐标 (min_angle_到max_angle_映射到-100到100)
-    int MapAngleToCoordinate(int angle) {
-        // 确保角度在有效范围内
-        if (angle < min_angle_) angle = min_angle_;
-        if (angle > max_angle_) angle = max_angle_;
-        
-        // 将角度(min_angle_到max_angle_)映射到坐标范围(-100到100)
-        int coordinate = ((angle - min_angle_) * 200 / (max_angle_ - min_angle_)) - 100;
-        return coordinate;
-    }
-    
-    // 设置舵机坐标位置 (-100到100)
-    void SetCoordinate(int coordinate) {
-        int angle = MapCoordinateToAngle(coordinate);
-        SetAngle(angle);
-    }
 };
 
 class Motor : public Thing {
@@ -876,75 +848,6 @@ public:
             
             servos_[servo_id].Stop();
             ESP_LOGI(TAG, "Stopped servo %d", servo_id);
-        });
-        
-        // 添加舵机坐标控制方法
-        ParameterList servoCoordParams;
-        servoCoordParams.AddParameter(Parameter("servoId", "舵机ID (0-based索引)", kValueTypeNumber));
-        servoCoordParams.AddParameter(Parameter("coordinate", "坐标值 (-100到100)", kValueTypeNumber));
-        
-        methods_.AddMethod("SetServoCoordinate", "设置舵机坐标位置", servoCoordParams, [this](const ParameterList& parameters) {
-            int servo_id = parameters["servoId"].number();
-            int coordinate = parameters["coordinate"].number();
-            
-            if (servo_id < 0 || servo_id >= servos_.size()) {
-                ESP_LOGW(TAG, "Invalid servo ID: %d", servo_id);
-                return;
-            }
-            
-            // 限制坐标范围
-            if (coordinate < -100) coordinate = -100;
-            if (coordinate > 100) coordinate = 100;
-            
-            servos_[servo_id].SetCoordinate(coordinate);
-            ESP_LOGI(TAG, "Set servo %d to coordinate %d", servo_id, coordinate);
-        });
-        
-        // 添加多舵机坐标控制方法
-        ParameterList multiServoCoordParams;
-        multiServoCoordParams.AddParameter(Parameter("x", "X轴舵机坐标 (-100到100)", kValueTypeNumber));
-        multiServoCoordParams.AddParameter(Parameter("y", "Y轴舵机坐标 (-100到100)", kValueTypeNumber));
-        
-        methods_.AddMethod("SetGimbalCoordinates", "设置云台坐标位置", multiServoCoordParams, [this](const ParameterList& parameters) {
-            int x_coord = parameters["x"].number();
-            int y_coord = parameters["y"].number();
-            
-            // 确保至少有两个舵机用于云台控制
-            if (servos_.size() < 2) {
-                ESP_LOGW(TAG, "Not enough servos for gimbal control");
-                return;
-            }
-            
-            // 限制坐标范围
-            if (x_coord < -100) x_coord = -100;
-            if (x_coord > 100) x_coord = 100;
-            if (y_coord < -100) y_coord = -100;
-            if (y_coord > 100) y_coord = 100;
-            
-            // 设置水平和垂直舵机坐标
-            servos_[0].SetCoordinate(x_coord);  // 水平舵机通常为第一个舵机
-            servos_[1].SetCoordinate(y_coord);  // 垂直舵机通常为第二个舵机
-            
-            ESP_LOGI(TAG, "Set gimbal coordinates to x=%d, y=%d", x_coord, y_coord);
-        });
-        
-        // 添加获取舵机当前坐标方法
-        ParameterList getServoCoordParams;
-        getServoCoordParams.AddParameter(Parameter("servoId", "舵机ID (0-based索引)", kValueTypeNumber));
-        
-        methods_.AddMethod("GetServoCoordinate", "获取舵机当前坐标", getServoCoordParams, [this](const ParameterList& parameters) -> Value {
-            int servo_id = parameters["servoId"].number();
-            
-            if (servo_id < 0 || servo_id >= servos_.size()) {
-                ESP_LOGW(TAG, "Invalid servo ID: %d", servo_id);
-                return Value(-999);  // 返回错误值
-            }
-            
-            int angle = servos_[servo_id].GetCurrentAngle();
-            int coordinate = servos_[servo_id].MapAngleToCoordinate(angle);
-            
-            ESP_LOGI(TAG, "Servo %d current coordinate: %d (angle: %d)", servo_id, coordinate, angle);
-            return Value(coordinate);
         });
     }
     

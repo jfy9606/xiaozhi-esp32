@@ -698,266 +698,74 @@ esp_err_t WebServer::WebSocketHandler(httpd_req_t* req) {
 
 // 处理WebSocket消息
 void WebServer::HandleWebSocketMessage(int client_id, const PSRAMString& message) {
-    ESP_LOGI(WS_MSG_TAG, "收到WebSocket消息 [%d]: %s", client_id, message.c_str());
-    
-    // 尝试解析为JSON
-    cJSON* root = cJSON_Parse(message.c_str());
-    if (!root) {
-        ESP_LOGE(WS_MSG_TAG, "无效的JSON消息: %s", message.c_str());
+    if (message.empty()) {
+        ESP_LOGE(WS_MSG_TAG, "收到空的WebSocket消息");
         return;
     }
     
-    // 获取消息类型
-    cJSON* type_obj = cJSON_GetObjectItem(root, "type");
-    if (!type_obj || !cJSON_IsString(type_obj)) {
-        ESP_LOGE(WS_MSG_TAG, "消息缺少有效的'type'字段");
-        cJSON_Delete(root);
-        return;
-    }
-    
-    PSRAMString type(type_obj->valuestring);
-    
-    // 查找对应的消息处理器
-    auto it = ws_handlers_.find(type);
-    if (it != ws_handlers_.end() && it->second) {
-        ESP_LOGI(WS_MSG_TAG, "调用'%s'消息的处理器", type.c_str());
-        // 调用注册的处理器
-        it->second(client_id, message, type);
-    } else if (legacy_ws_callback_) {
-        // 如果没有特定的处理器，但有遗留回调，则调用它
-        ESP_LOGI(WS_MSG_TAG, "没有找到'%s'消息的处理器，使用遗留回调", type.c_str());
-        legacy_ws_callback_(client_id, message);
-    } else if (type == "car_control") {
-        // 处理小车控制命令
-        ESP_LOGI(WS_MSG_TAG, "处理小车控制消息");
-        
-        try {
-            // 解析速度和方向
-            cJSON* speed_obj = cJSON_GetObjectItem(root, "speed");
-            cJSON* dirX_obj = cJSON_GetObjectItem(root, "dirX");
-            cJSON* dirY_obj = cJSON_GetObjectItem(root, "dirY");
-            
-            if (speed_obj && cJSON_IsNumber(speed_obj) && 
-                dirX_obj && cJSON_IsNumber(dirX_obj) && 
-                dirY_obj && cJSON_IsNumber(dirY_obj)) {
-                
-                float speed = static_cast<float>(speed_obj->valuedouble);
-                int dirX = dirX_obj->valueint;
-                int dirY = dirY_obj->valueint;
-                
-                // 创建一个命令发送到ThingManager
-                cJSON* cmd = cJSON_CreateObject();
-                cJSON_AddStringToObject(cmd, "component", "motor");
-                cJSON_AddStringToObject(cmd, "command", "move");
-                cJSON_AddNumberToObject(cmd, "speed", speed);
-                cJSON_AddNumberToObject(cmd, "dirX", dirX);
-                cJSON_AddNumberToObject(cmd, "dirY", dirY);
-                
-                // 发送命令
-                auto& thing_manager = iot::ThingManager::GetInstance();
-                if (thing_manager.IsInitialized()) {
-                    thing_manager.Invoke(cmd);
-                    
-                    // 发送响应确认
-                    cJSON* response = cJSON_CreateObject();
-                    cJSON_AddStringToObject(response, "type", "car_control_ack");
-                    cJSON_AddStringToObject(response, "status", "ok");
-                    
-                    char* response_str = cJSON_PrintUnformatted(response);
-                    SendWebSocketMessage(client_id, response_str);
-                    free(response_str);
-                    cJSON_Delete(response);
-                } else {
-                    ESP_LOGE(WS_MSG_TAG, "ThingManager未初始化");
-                }
-                
-                cJSON_Delete(cmd);
-            } else {
-                ESP_LOGE(WS_MSG_TAG, "car_control消息缺少必要字段或字段类型错误");
-            }
-        } catch (const std::exception& e) {
-            ESP_LOGE(WS_MSG_TAG, "处理car_control消息时发生异常: %s", e.what());
-        } catch (...) {
-            ESP_LOGE(WS_MSG_TAG, "处理car_control消息时发生未知异常");
-        }
-    } else if (type == "servo_control") {
-        // 处理舵机控制命令
-        ESP_LOGI(WS_MSG_TAG, "处理舵机控制消息");
-        
-        try {
-            // 解析舵机信息
-            cJSON* servos_array = cJSON_GetObjectItem(root, "servos");
-            if (servos_array && cJSON_IsArray(servos_array)) {
-                int servos_count = cJSON_GetArraySize(servos_array);
-                
-                for (int i = 0; i < servos_count; i++) {
-                    cJSON* servo = cJSON_GetArrayItem(servos_array, i);
-                    if (servo && cJSON_IsObject(servo)) {
-                        cJSON* pin_obj = cJSON_GetObjectItem(servo, "pin");
-                        cJSON* angle_obj = cJSON_GetObjectItem(servo, "angle");
-                        
-                        if (pin_obj && cJSON_IsNumber(pin_obj) && 
-                            angle_obj && cJSON_IsNumber(angle_obj)) {
-                            
-                            int pin = pin_obj->valueint;
-                            int angle = angle_obj->valueint;
-                            
-                            // 创建一个命令发送到ThingManager
-                            cJSON* cmd = cJSON_CreateObject();
-                            cJSON_AddStringToObject(cmd, "component", "motor");
-                            cJSON_AddStringToObject(cmd, "command", "servo");
-                            cJSON_AddNumberToObject(cmd, "pin", pin);
-                            cJSON_AddNumberToObject(cmd, "angle", angle);
-                            
-                            // 发送命令
-                            auto& thing_manager = iot::ThingManager::GetInstance();
-                            if (thing_manager.IsInitialized()) {
-                                thing_manager.Invoke(cmd);
-                                ESP_LOGI(WS_MSG_TAG, "已发送舵机命令: pin=%d, angle=%d", pin, angle);
-                            } else {
-                                ESP_LOGE(WS_MSG_TAG, "ThingManager未初始化");
-                            }
-                            
-                            cJSON_Delete(cmd);
-                        } else {
-                            ESP_LOGE(WS_MSG_TAG, "舵机对象缺少必要字段或字段类型错误");
-                        }
-                    }
-                }
-                
-                // 发送响应确认
-                cJSON* response = cJSON_CreateObject();
-                cJSON_AddStringToObject(response, "type", "servo_control_ack");
-                cJSON_AddStringToObject(response, "status", "ok");
-                
-                char* response_str = cJSON_PrintUnformatted(response);
-                SendWebSocketMessage(client_id, response_str);
-                free(response_str);
-                cJSON_Delete(response);
-            } else {
-                ESP_LOGE(WS_MSG_TAG, "servo_control消息缺少servos数组");
-            }
-        } catch (const std::exception& e) {
-            ESP_LOGE(WS_MSG_TAG, "处理servo_control消息时发生异常: %s", e.what());
-        } catch (...) {
-            ESP_LOGE(WS_MSG_TAG, "处理servo_control消息时发生未知异常");
-        }
-    } else if (type == "servo_coordinate_control") {
-        // 处理舵机坐标控制命令
-        ESP_LOGI(WS_MSG_TAG, "处理舵机坐标控制消息");
-        
-        try {
-            // 解析舵机坐标信息
-            cJSON* servos_array = cJSON_GetObjectItem(root, "servos");
-            if (servos_array && cJSON_IsArray(servos_array)) {
-                int servos_count = cJSON_GetArraySize(servos_array);
-                
-                for (int i = 0; i < servos_count; i++) {
-                    cJSON* servo = cJSON_GetArrayItem(servos_array, i);
-                    if (servo && cJSON_IsObject(servo)) {
-                        cJSON* id_obj = cJSON_GetObjectItem(servo, "id");
-                        cJSON* coord_obj = cJSON_GetObjectItem(servo, "coordinate");
-                        
-                        if (id_obj && cJSON_IsNumber(id_obj) && 
-                            coord_obj && cJSON_IsNumber(coord_obj)) {
-                            
-                            int id = id_obj->valueint;
-                            int coordinate = coord_obj->valueint;
-                            
-                            // 创建一个命令发送到ThingManager
-                            cJSON* cmd = cJSON_CreateObject();
-                            cJSON_AddStringToObject(cmd, "component", "Motor");
-                            cJSON_AddStringToObject(cmd, "command", "SetServoCoordinate");
-                            cJSON_AddNumberToObject(cmd, "servoId", id);
-                            cJSON_AddNumberToObject(cmd, "coordinate", coordinate);
-                            
-                            // 发送命令
-                            auto& thing_manager = iot::ThingManager::GetInstance();
-                            if (thing_manager.IsInitialized()) {
-                                thing_manager.Invoke(cmd);
-                                ESP_LOGI(WS_MSG_TAG, "已发送舵机坐标命令: id=%d, coordinate=%d", id, coordinate);
-                            } else {
-                                ESP_LOGE(WS_MSG_TAG, "ThingManager未初始化");
-                            }
-                            
-                            cJSON_Delete(cmd);
-                        } else {
-                            ESP_LOGE(WS_MSG_TAG, "舵机对象缺少必要字段或字段类型错误");
-                        }
-                    }
-                }
-                
-                // 发送响应确认
-                cJSON* response = cJSON_CreateObject();
-                cJSON_AddStringToObject(response, "type", "servo_coordinate_control_ack");
-                cJSON_AddStringToObject(response, "status", "ok");
-                
-                char* response_str = cJSON_PrintUnformatted(response);
-                SendWebSocketMessage(client_id, response_str);
-                free(response_str);
-                cJSON_Delete(response);
-            } else {
-                ESP_LOGE(WS_MSG_TAG, "servo_coordinate_control消息缺少servos数组");
-            }
-        } catch (const std::exception& e) {
-            ESP_LOGE(WS_MSG_TAG, "处理servo_coordinate_control消息时发生异常: %s", e.what());
-        } catch (...) {
-            ESP_LOGE(WS_MSG_TAG, "处理servo_coordinate_control消息时发生未知异常");
-        }
-    } else if (type == "gimbal_coordinate_control") {
-        // 处理云台坐标控制命令
-        ESP_LOGI(WS_MSG_TAG, "处理云台坐标控制消息");
-        
-        try {
-            // 解析云台坐标信息
-            cJSON* x_obj = cJSON_GetObjectItem(root, "x");
-            cJSON* y_obj = cJSON_GetObjectItem(root, "y");
-            
-            if (x_obj && cJSON_IsNumber(x_obj) && 
-                y_obj && cJSON_IsNumber(y_obj)) {
-                
-                int x_coord = x_obj->valueint;
-                int y_coord = y_obj->valueint;
-                
-                // 创建一个命令发送到ThingManager
-                cJSON* cmd = cJSON_CreateObject();
-                cJSON_AddStringToObject(cmd, "component", "Motor");
-                cJSON_AddStringToObject(cmd, "command", "SetGimbalCoordinates");
-                cJSON_AddNumberToObject(cmd, "x", x_coord);
-                cJSON_AddNumberToObject(cmd, "y", y_coord);
-                
-                // 发送命令
-                auto& thing_manager = iot::ThingManager::GetInstance();
-                if (thing_manager.IsInitialized()) {
-                    thing_manager.Invoke(cmd);
-                    ESP_LOGI(WS_MSG_TAG, "已发送云台坐标命令: x=%d, y=%d", x_coord, y_coord);
-                } else {
-                    ESP_LOGE(WS_MSG_TAG, "ThingManager未初始化");
-                }
-                
-                cJSON_Delete(cmd);
-                
-                // 发送响应确认
-                cJSON* response = cJSON_CreateObject();
-                cJSON_AddStringToObject(response, "type", "gimbal_coordinate_control_ack");
-                cJSON_AddStringToObject(response, "status", "ok");
-                
-                char* response_str = cJSON_PrintUnformatted(response);
-                SendWebSocketMessage(client_id, response_str);
-                free(response_str);
-                cJSON_Delete(response);
-            } else {
-                ESP_LOGE(WS_MSG_TAG, "云台坐标控制消息缺少必要字段或字段类型错误");
-            }
-        } catch (const std::exception& e) {
-            ESP_LOGE(WS_MSG_TAG, "处理云台坐标控制消息时发生异常: %s", e.what());
-        } catch (...) {
-            ESP_LOGE(WS_MSG_TAG, "处理云台坐标控制消息时发生未知异常");
-        }
-    } else if (type == "camera_control") {
-        // ... existing code ...
+    // 记录收到的消息
+    if (message.length() > 200) {
+        ESP_LOGD(WS_MSG_TAG, "收到WebSocket消息 (截断): %.200s...", message.c_str());
     } else {
-        ESP_LOGW(WS_MSG_TAG, "未找到类型为 %s 的WebSocket处理器", type.c_str());
+        ESP_LOGD(WS_MSG_TAG, "收到WebSocket消息: %s", message.c_str());
+    }
+    
+    try {
+        // 检查是否是心跳消息
+        if (message.find("heartbeat") != PSRAMString::npos) {
+            // 响应心跳并发送当前系统状态
+            PSRAMString status = GetSystemStatusJson();
+            
+            // 发送心跳响应
+            SendWebSocketMessage(client_id, "{\"type\":\"heartbeat_response\",\"status\":\"ok\"}");
+            
+            // 同时发送系统状态更新
+            SendWebSocketMessage(client_id, status);
+            return;
+        }
+        
+        // 解析JSON消息
+        cJSON* json = cJSON_Parse(message.c_str());
+        if (!json) {
+            ESP_LOGW(WS_MSG_TAG, "解析WebSocket消息为JSON失败");
+            return;
+        }
+        
+        // 使用智能指针管理JSON对象
+        struct JsonGuard {
+            cJSON* json;
+            JsonGuard(cJSON* j) : json(j) {}
+            ~JsonGuard() { if (json) cJSON_Delete(json); }
+        } json_guard(json);
+        
+        // 提取消息类型
+        cJSON* type_obj = cJSON_GetObjectItem(json, "type");
+        if (!type_obj || !cJSON_IsString(type_obj)) {
+            ESP_LOGW(WS_MSG_TAG, "WebSocket消息没有类型字段");
+            return;
+        }
+        
+        PSRAMString type = type_obj->valuestring;
+        
+        // 处理系统状态请求
+        if (type == "get_system_status") {
+            PSRAMString status = GetSystemStatusJson();
+            SendWebSocketMessage(client_id, status);
+            return;
+        }
+        
+        // 查找对应的处理器
+        auto it = ws_handlers_.find(type);
+        if (it != ws_handlers_.end() && it->second) {
+            // 调用对应的处理函数
+            it->second(client_id, message, type);
+        } else {
+            ESP_LOGW(WS_MSG_TAG, "未找到类型为 %s 的WebSocket处理器", type.c_str());
+        }
+    } catch (const std::exception& e) {
+        ESP_LOGE(WS_MSG_TAG, "处理WebSocket消息异常: %s", e.what());
+    } catch (...) {
+        ESP_LOGE(WS_MSG_TAG, "处理WebSocket消息未知异常");
     }
 }
 
