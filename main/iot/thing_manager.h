@@ -27,6 +27,11 @@ public:
     std::string GetDescriptorsJson();
     bool GetStatesJson(std::string& json, bool delta = false);
     void Invoke(const cJSON* command);
+    
+    // 检查 ThingManager 是否已初始化（至少有一个 Thing 或者已有效配置）
+    bool IsInitialized() const {
+        return !things_.empty();
+    }
 
 private:
     ThingManager() = default;

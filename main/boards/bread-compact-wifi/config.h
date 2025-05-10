@@ -52,4 +52,37 @@
 #define DISPLAY_MIRROR_X true
 #define DISPLAY_MIRROR_Y true
 
+// 电机控制引脚定义
+#define MOTOR_ENA_PIN 2   // 电机A使能
+#define MOTOR_ENB_PIN 1   // 电机B使能
+#define MOTOR_IN1_PIN 47  // 电机A输入1
+#define MOTOR_IN2_PIN 21  // 电机A输入2
+#define MOTOR_IN3_PIN 20  // 电机B输入1
+#define MOTOR_IN4_PIN 19  // 电机B输入2
+
+// 舵机引脚定义
+// 可以在此添加舵机引脚 - 将在board_config_t结构体中使用
+
+// 摄像头引脚定义
+#define CAM_PWDN_PIN  -1  // 掉电引脚
+#define CAM_RESET_PIN -1  // 复位引脚
+#define CAM_XCLK_PIN  15  // XCLK时钟引脚
+#define CAM_SIOD_PIN  4   // SCCB/I2C数据引脚
+#define CAM_SIOC_PIN  5   // SCCB/I2C时钟引脚
+#define CAM_Y2_PIN    11  // Y2数据引脚
+#define CAM_Y3_PIN    9   // Y3数据引脚
+#define CAM_Y4_PIN    8   // Y4数据引脚
+#define CAM_Y5_PIN    10  // Y5数据引脚
+#define CAM_Y6_PIN    12  // Y6数据引脚
+#define CAM_Y7_PIN    18  // Y7数据引脚
+#define CAM_Y8_PIN    17  // Y8数据引脚
+#define CAM_Y9_PIN    16  // Y9数据引脚
+#define CAM_VSYNC_PIN 6   // 垂直同步引脚
+#define CAM_HREF_PIN  7   // 水平参考引脚
+#define CAM_PCLK_PIN  13  // 像素时钟引脚
+#define CAM_LED_PIN   45  // 摄像头LED闪光灯引脚
+
+// 引入通用板级配置头文件
+#include "../common/board_config.h"
+
 #endif // _BOARD_CONFIG_H_

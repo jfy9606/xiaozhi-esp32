@@ -128,10 +128,14 @@ public:
     // 静态HTTP处理器函数
     static esp_err_t RootHandler(httpd_req_t *req);
     static esp_err_t WebSocketHandler(httpd_req_t *req);
-    static esp_err_t ApiHandler(httpd_req_t* req);
+    static esp_err_t ApiHandler(httpd_req_t *req);
     static esp_err_t VisionHandler(httpd_req_t *req);
     static esp_err_t MotorHandler(httpd_req_t *req);
     static esp_err_t AIHandler(httpd_req_t *req);
+    static esp_err_t CarControlHandler(httpd_req_t *req);
+    static esp_err_t CameraControlHandler(httpd_req_t *req);
+    static esp_err_t CameraStreamHandler(httpd_req_t *req);
+    static esp_err_t SystemStatusHandler(httpd_req_t *req);
     static esp_err_t SendHttpResponse(httpd_req_t* req, const char* content_type, const char* data, size_t len);
     static const char* GetContentType(const PSRAMString& path);
 
@@ -142,6 +146,8 @@ public:
 private:
     void RegisterDefaultHandlers();
     void HandleWebSocketMessage(int client_id, const PSRAMString& message);
+    PSRAMString GetSystemStatusJson();
+    void StartPeriodicStatusUpdates();
 
     httpd_handle_t server_;
     bool running_;

@@ -46,18 +46,46 @@
       }
       .main-content {
         flex-direction: row;
-        align-items: flex-start;
+        align-items: center;
         justify-content: space-between;
         gap: 10px;
       }
-      .video-container {
-        flex: 1;
-        max-width: 60%;
-        margin-right: 10px;
+      .joystick-container {
+        width: 160px;
+        height: 160px;
       }
       .controls-container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
         flex: 1;
-        max-width: 38%;
+        max-width: none;
+      }
+      .left-controls {
+        order: 1;
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        max-width: 25%;
+      }
+      .video-container {
+        order: 2;
+        flex: 2;
+        max-width: 50%;
+        margin: 0 10px;
+      }
+      .right-controls {
+        order: 3;
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        max-width: 25%;
+      }
+      .left-controls, .right-controls {
+        padding: 15px;
+        margin: 0;
       }
       h1 {
         font-size: 1.5rem;
@@ -68,6 +96,10 @@
       .container {
         max-width: 1200px;
         padding: 15px;
+      }
+      .joystick-container {
+        width: 180px;
+        height: 180px;
       }
       h1 {
         font-size: 1.8rem;
@@ -92,6 +124,9 @@
       }
       .main-content {
         gap: 5px;
+      }
+      .left-controls, .right-controls {
+        width: 100%;
       }
     }
     /* 视频容器样式 */
@@ -152,6 +187,81 @@
       width: 160px;
       height: 160px;
       margin: 5px auto;
+      background-color: #f0f0f0;
+      border-radius: 50%;
+      box-shadow: inset 0 0 10px rgba(0,0,0,0.2);
+    }
+    /* 摇杆标题 */
+    .joystick-title {
+      text-align: center;
+      font-weight: 500;
+      color: #6200ea;
+      margin-bottom: 5px;
+      font-size: 0.9rem;
+    }
+    /* 左侧和右侧控制区域样式 */
+    .left-controls, .right-controls {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      background-color: #f9f9f9;
+      border-radius: 8px;
+      padding: 10px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      margin: 5px 0;
+    }
+    /* 摇杆样式 */
+    .joystick {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      background-color: #e0e0e0;
+      overflow: visible;
+      touch-action: none;
+      user-select: none;
+    }
+    .button {
+      position: absolute;
+      width: 40%;
+      height: 40%;
+      background-color: #6200ea;
+      border-radius: 50%;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      cursor: pointer;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+      z-index: 10;
+      touch-action: none;
+      user-select: none;
+    }
+    /* 方向指示器 */
+    .direction-indicator {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      opacity: 0.3;
+      background: radial-gradient(circle, rgba(98,0,234,0.2) 0%, rgba(98,0,234,0) 70%);
+      pointer-events: none;
+    }
+    /* 状态文本 */
+    .status {
+      margin: 8px 0;
+      font-size: 0.9rem;
+      color: #555;
+    }
+    /* 云台控制容器 */
+    .gimbal-controls {
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin-top: 10px;
+      padding: 5px;
+      background-color: #f5f5f5;
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
     }
     /* 在大屏设备上增大摇杆尺寸 */
     @media (min-width: 992px) {
@@ -174,39 +284,6 @@
         height: 140px;
       }
     }
-    .joystick {
-      position: relative;
-      width: 100%;
-      height: 100%;
-      border-radius: 50%;
-      background-color: #e0e0e0;
-      box-shadow: inset 0 0 10px rgba(0,0,0,0.3);
-      touch-action: none;
-    }
-    .button {
-      position: absolute;
-      width: 33%;
-      height: 33%;
-      background: linear-gradient(145deg, #6200ea, #3700b3);
-      border-radius: 50%;
-      top: 33.5%;
-      left: 33.5%;
-      cursor: pointer;
-      box-shadow: 0 4px 8px rgba(0,0,0,0.3);
-      touch-action: none;
-      user-select: none;
-      z-index: 10;
-    }
-    .direction-indicator {
-      position: absolute;
-      width: 10px;
-      height: 10px;
-      background-color: #ff4081;
-      border-radius: 50%;
-      transform: translate(-50%, -50%);
-      opacity: 0;
-      transition: opacity 0.3s;
-    }
     /* 状态信息样式 */
     .status-container {
       width: 100%;
@@ -215,12 +292,6 @@
       background-color: #f9f9f9;
       border-radius: 6px;
       box-shadow: 0 1px 2px rgba(0,0,0,0.1);
-    }
-    .status {
-      color: #666;
-      font-size: 0.8rem;
-      text-align: center;
-      margin: 3px 0;
     }
     .connection-status {
       display: inline-block;
@@ -279,6 +350,291 @@
       text-align: center;
       margin-top: 10px;
     }
+
+    /* 全屏模式样式 */
+    .fullscreen-mode {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 1000;
+      background-color: #000;
+      overflow: hidden;
+    }
+    
+    .fullscreen-mode .video-container {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      max-width: none;
+      background: none;
+      box-shadow: none;
+    }
+    
+    .fullscreen-mode .video-stream {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      max-width: none;
+      border-radius: 0;
+    }
+    
+    .fullscreen-mode .left-controls,
+    .fullscreen-mode .right-controls {
+      position: fixed;
+      background: rgba(0, 0, 0, 0.3);
+      border-radius: 15px;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+      padding: 15px;
+      z-index: 1010;
+      pointer-events: auto;
+    }
+    
+    .fullscreen-mode .left-controls {
+      left: 20px;
+      bottom: 50px;
+    }
+    
+    .fullscreen-mode .right-controls {
+      right: 20px;
+      bottom: 50px;
+    }
+    
+    .fullscreen-mode .joystick-title,
+    .fullscreen-mode .status {
+      color: rgba(255, 255, 255, 0.9);
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+    }
+    
+    .fullscreen-mode .joystick {
+      background-color: rgba(224, 224, 224, 0.7);
+    }
+    
+    .fullscreen-mode .button {
+      background-color: rgba(98, 0, 234, 0.8);
+    }
+    
+    /* 全屏控制按钮 */
+    .fullscreen-toggle {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background-color: rgba(98, 0, 234, 0.8);
+      color: white;
+      border: none;
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      font-size: 18px;
+      cursor: pointer;
+      z-index: 1020;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background-color 0.3s;
+    }
+    
+    .fullscreen-toggle:hover {
+      background-color: rgba(98, 0, 234, 1);
+    }
+    
+    /* 返回全屏模式下的返回按钮 */
+    .fullscreen-mode .fullscreen-toggle {
+      top: 20px;
+      right: 20px;
+    }
+    
+    /* 视频控制在全屏模式下的样式 */
+    .fullscreen-mode .video-controls {
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0, 0, 0, 0.5);
+      border-radius: 20px;
+      padding: 5px 15px;
+      z-index: 1010;
+    }
+    
+    .fullscreen-mode .video-controls button {
+      background-color: rgba(98, 0, 234, 0.8);
+      border: none;
+    }
+    
+    .fullscreen-mode .camera-controls {
+      display: none;
+    }
+    
+    /* 移动设备竖屏模式下的摇杆切换 */
+    .joystick-toggle {
+      display: none;
+      margin: 10px auto;
+      padding: 8px 15px;
+      background-color: #6200ea;
+      color: white;
+      border: none;
+      border-radius: 20px;
+      font-weight: 500;
+      cursor: pointer;
+    }
+    
+    /* 移动设备竖屏模式下默认隐藏云台控制 */
+    @media (max-width: 767px) and (orientation: portrait) {
+      .joystick-toggle {
+        display: block;
+      }
+      
+      .right-controls {
+        display: none;
+      }
+      
+      .controls-active {
+        display: flex;
+      }
+    }
+    
+    /* 移动设备横屏模式适配全屏样式 */
+    @media (max-width: 767px) and (orientation: landscape) {
+      body {
+        overflow: hidden;
+      }
+      
+      .container {
+        padding: 0;
+        margin: 0;
+        width: 100%;
+        height: 100vh;
+        max-width: none;
+        border-radius: 0;
+        box-shadow: none;
+      }
+      
+      .main-content {
+        height: 100%;
+      }
+      
+      .status-container {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        background: rgba(0, 0, 0, 0.5);
+        color: white;
+        z-index: 1010;
+      }
+      
+      h1 {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        background: rgba(0, 0, 0, 0.5);
+        color: white;
+        margin: 0;
+        padding: 5px 0;
+        z-index: 1010;
+      }
+      
+      .left-controls,
+      .right-controls {
+        background: rgba(0, 0, 0, 0.3);
+        position: fixed;
+        z-index: 1010;
+      }
+      
+      .left-controls {
+        left: 10px;
+        bottom: 30px;
+      }
+      
+      .right-controls {
+        right: 10px;
+        bottom: 30px;
+      }
+      
+      .video-container {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+      }
+      
+      .video-stream {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+      
+      .button-container {
+        position: absolute;
+        bottom: 60px;
+        left: 0;
+        width: 100%;
+        z-index: 1010;
+      }
+    }
+
+    /* 所有控制区域确保能接收触摸和鼠标事件 */
+    .left-controls,
+    .right-controls,
+    .joystick-container {
+      pointer-events: auto;
+      touch-action: none;
+      user-select: none;
+    }
+
+    /* 视频控制按钮样式 */
+    .video-toggle {
+      padding: 8px 15px;
+      background-color: #6200ea;
+      color: white;
+      border: none;
+      border-radius: 20px;
+      cursor: pointer;
+      margin: 10px auto;
+      display: block;
+      font-weight: 500;
+      font-size: 0.9rem;
+      min-width: 120px;
+    }
+    
+    /* 坐标显示区域样式 */
+    .coordinates-display {
+      background-color: rgba(0, 0, 0, 0.5);
+      color: white;
+      border-radius: 15px;
+      padding: 5px 10px;
+      font-size: 12px;
+      position: absolute;
+      bottom: 5px;
+      right: 5px;
+      display: flex;
+      flex-direction: column;
+    }
+    
+    .fullscreen-mode .coordinates-display {
+      bottom: 50px;
+      right: 20px;
+      background-color: rgba(0, 0, 0, 0.7);
+      z-index: 1010;
+    }
+    
+    .coordinates-row {
+      display: flex;
+      justify-content: space-between;
+      margin: 2px 0;
+    }
+    
+    .coordinates-label {
+      margin-right: 5px;
+      font-weight: bold;
+    }
   </style>
 </head>
 <body>
@@ -286,38 +642,66 @@
     <h1>ESP32S3 小车控制</h1>
 
     <div class="main-content">
-      <div class="video-container">
-        <img class="video-stream" id="video-stream" src="" alt="Camera Stream" crossorigin="anonymous">
-      </div>
-
-      <div class="controls-container">
+      <div class="left-controls">
+        <div class="joystick-title">车辆控制</div>
         <div class="joystick-container">
           <div class="joystick" id="joystick">
             <div class="button" id="button"></div>
             <div class="direction-indicator" id="direction-indicator"></div>
           </div>
         </div>
-
-        <div class="video-controls">
-          <button id="start-stream">启动视频</button>
-          <button id="stop-stream">停止视频</button>
+        <div class="status">
+          方向: <span id="direction-text">停止</span>
         </div>
+      </div>
 
-        <div class="status-container">
-          <div class="status">
-            <span class="connection-status" id="connection-status"></span>
-            <span id="connection-text">未连接</span>
-          </div>
-          <div class="status">
-            方向: <span id="direction-text">停止</span>
-          </div>
-          <div class="debug-info" id="debug-info"></div>
-        </div>
-
+      <div class="video-container">
+        <button class="fullscreen-toggle" id="fullscreen-toggle">⛶</button>
+        <img class="video-stream" id="video-stream" src="" alt="Camera Stream" crossorigin="anonymous">
+        
+        <button class="video-toggle" id="video-toggle">启动视频</button>
+        
         <div class="camera-controls">
           <a href="" id="camera-settings-link" target="_blank">打开摄像头设置</a>
         </div>
+        
+        <div class="coordinates-display" id="coordinates-display">
+          <div class="coordinates-row">
+            <span class="coordinates-label">X轴:</span>
+            <span id="servo-x-angle">90°</span>
+            <span id="servo-x-coord">0</span>
+          </div>
+          <div class="coordinates-row">
+            <span class="coordinates-label">Y轴:</span>
+            <span id="servo-y-angle">90°</span>
+            <span id="servo-y-coord">0</span>
+          </div>
+        </div>
       </div>
+
+      <div class="right-controls">
+        <div class="joystick-title">摄像头云台控制</div>
+        <div class="joystick-container">
+          <div class="joystick" id="gimbal-joystick">
+            <div class="button" id="gimbal-button"></div>
+            <div class="direction-indicator" id="gimbal-direction-indicator"></div>
+          </div>
+        </div>
+        <div class="status">
+          云台: <span id="gimbal-direction-text">中心</span>
+        </div>
+      </div>
+      
+      <!-- 移动端竖屏摇杆切换按钮 -->
+      <button class="joystick-toggle" id="joystick-toggle">切换到云台控制</button>
+    </div>
+
+    <div class="status-container">
+      <div class="status">
+        <span class="connection-status" id="connection-status"></span>
+        <span id="connection-text">未连接</span>
+      </div>
+      <div class="debug-info" id="debug-info"></div>
     </div>
   </div>
 
@@ -330,13 +714,85 @@
       const statusUrl = `${baseHost}/camera/status`;
 
       const stream = document.getElementById('video-stream');
-      const startStreamBtn = document.getElementById('start-stream');
-      const stopStreamBtn = document.getElementById('stop-stream');
+      const videoToggleBtn = document.getElementById('video-toggle');
 
       // 视频流控制
       let streamActive = false;
       let userWantsStream = false;
+      
+      // 摇杆控制代码
+      const button = document.getElementById('button');
+      const joystick = document.getElementById('joystick');
+      const indicator = document.getElementById('direction-indicator');
+      const directionText = document.getElementById('direction-text');
+      
+      // 云台摇杆控制
+      const gimbalButton = document.getElementById('gimbal-button');
+      const gimbalJoystick = document.getElementById('gimbal-joystick');
+      const gimbalIndicator = document.getElementById('gimbal-direction-indicator');
+      const gimbalDirectionText = document.getElementById('gimbal-direction-text');
+      
+      // 坐标显示
+      const servoXAngle = document.getElementById('servo-x-angle');
+      const servoYAngle = document.getElementById('servo-y-angle');
+      const servoXCoord = document.getElementById('servo-x-coord');
+      const servoYCoord = document.getElementById('servo-y-coord');
 
+      // 初始化状态变量
+      let isDragging = false;
+      let isGimbalDragging = false;
+      let lastDirectionX = 0;
+      let lastDirectionY = 0;
+      let lastGimbalX = 0;
+      let lastGimbalY = 0;
+      let lastGimbalAngleX = 90; // 水平舵机默认角度
+      let lastGimbalAngleY = 90; // 垂直舵机默认角度
+      
+      // 获取摇杆中心位置和属性
+      function updateJoystickProperties() {
+        const joystickRect = joystick.getBoundingClientRect();
+        return {
+          centerX: joystickRect.width / 2,
+          centerY: joystickRect.height / 2,
+          maxRadius: (joystickRect.width / 2) - (button.offsetWidth / 2)
+        };
+      }
+      
+      // 获取云台摇杆中心位置和属性
+      function updateGimbalJoystickProperties() {
+        const joystickRect = gimbalJoystick.getBoundingClientRect();
+        return {
+          centerX: joystickRect.width / 2,
+          centerY: joystickRect.height / 2,
+          maxRadius: (joystickRect.width / 2) - (gimbalButton.offsetWidth / 2)
+        };
+      }
+      
+      // 初始化摇杆属性
+      let joystickProps = updateJoystickProperties();
+      let gimbalJoystickProps = updateGimbalJoystickProperties();
+
+      // 坐标系映射函数
+      function angleToCoordinate(angleX, angleY) {
+        // 角度范围：0-180
+        // 映射到坐标系: 水平 X: -100到100, 垂直 Y: -100到100
+        const xCoord = Math.round(((angleX - 90) / 90) * 100);
+        const yCoord = Math.round(((angleY - 90) / 90) * 100);
+        return { x: xCoord, y: yCoord };
+      }
+      
+      // 更新坐标显示
+      function updateCoordinatesDisplay(angleX, angleY) {
+        const coords = angleToCoordinate(angleX, angleY);
+        servoXAngle.textContent = `${Math.round(angleX)}°`;
+        servoYAngle.textContent = `${Math.round(angleY)}°`;
+        servoXCoord.textContent = `(${coords.x})`;
+        servoYCoord.textContent = `(${coords.y})`;
+      }
+      
+      // 初始化坐标显示
+      updateCoordinatesDisplay(90, 90);
+      
       // WebSocket连接变量
       let wsConnection = null;
       let reconnectAttempt = 0;
@@ -630,11 +1086,85 @@
       // 页面加载后立即连接WebSocket
       connectWebSocket();
 
+      // 全屏模式切换
+      const container = document.querySelector('.container');
+      const fullscreenToggle = document.getElementById('fullscreen-toggle');
+      const leftControls = document.querySelector('.left-controls');
+      const rightControls = document.querySelector('.right-controls');
+      
+      fullscreenToggle.addEventListener('click', function() {
+        container.classList.toggle('fullscreen-mode');
+        if (container.classList.contains('fullscreen-mode')) {
+          fullscreenToggle.textContent = '✕';
+          document.body.style.overflow = 'hidden';
+          
+          // 重新计算摇杆属性以适应新布局
+          setTimeout(centerJoysticks, 100);
+        } else {
+          fullscreenToggle.textContent = '⛶';
+          document.body.style.overflow = '';
+          
+          // 返回常规模式后重新计算
+          setTimeout(centerJoysticks, 100);
+        }
+      });
+      
+      // 移动设备竖屏模式摇杆切换
+      const joystickToggle = document.getElementById('joystick-toggle');
+      
+      joystickToggle.addEventListener('click', function() {
+        leftControls.classList.toggle('controls-active');
+        rightControls.classList.toggle('controls-active');
+        
+        if (leftControls.classList.contains('controls-active')) {
+          joystickToggle.textContent = '切换到云台控制';
+          rightControls.style.display = 'none';
+          leftControls.style.display = 'flex';
+        } else {
+          joystickToggle.textContent = '切换到车辆控制';
+          leftControls.style.display = 'none';
+          rightControls.style.display = 'flex';
+        }
+        
+        // 切换后重新计算摇杆属性
+        setTimeout(centerJoysticks, 100);
+      });
+      
+      // 初始化移动设备竖屏模式下的摇杆显示
+      function initMobilePortraitMode() {
+        if (window.innerWidth <= 767 && window.innerHeight > window.innerWidth) {
+          leftControls.classList.add('controls-active');
+          leftControls.style.display = 'flex';
+          rightControls.style.display = 'none';
+        } else {
+          leftControls.style.display = '';
+          rightControls.style.display = '';
+        }
+        
+        // 调整后重新计算摇杆属性
+        setTimeout(centerJoysticks, 100);
+      }
+      
+      // 初始化时调用
+      initMobilePortraitMode();
+      
+      // 监听屏幕方向变化
+      window.addEventListener('resize', function() {
+        initMobilePortraitMode();
+        setTimeout(centerJoysticks, 100);
+      });
+      
       // 摇杆控制代码
       const button = document.getElementById('button');
       const joystick = document.getElementById('joystick');
       const indicator = document.getElementById('direction-indicator');
       const directionText = document.getElementById('direction-text');
+      
+      // 云台摇杆控制
+      const gimbalButton = document.getElementById('gimbal-button');
+      const gimbalJoystick = document.getElementById('gimbal-joystick');
+      const gimbalIndicator = document.getElementById('gimbal-direction-indicator');
+      const gimbalDirectionText = document.getElementById('gimbal-direction-text');
       
       // 获取摇杆中心位置和属性
       function updateJoystickProperties() {
@@ -646,7 +1176,69 @@
         };
       }
       
+      // 获取云台摇杆中心位置和属性
+      function updateGimbalJoystickProperties() {
+        const joystickRect = gimbalJoystick.getBoundingClientRect();
+        return {
+          centerX: joystickRect.width / 2,
+          centerY: joystickRect.height / 2,
+          maxRadius: (joystickRect.width / 2) - (gimbalButton.offsetWidth / 2)
+        };
+      }
+      
+      // 初始化摇杆属性
       let joystickProps = updateJoystickProperties();
+      let gimbalJoystickProps = updateGimbalJoystickProperties();
+      
+      // 确保摇杆按钮初始居中
+      function centerJoysticks() {
+        // 先移除之前可能设置的内联样式，回归到CSS默认居中
+        button.style.left = '';
+        button.style.top = '';
+        gimbalButton.style.left = '';
+        gimbalButton.style.top = '';
+        
+        // 强制重排后再计算
+        void joystick.offsetWidth; 
+        void gimbalJoystick.offsetWidth;
+        
+        joystickProps = updateJoystickProperties();
+        gimbalJoystickProps = updateGimbalJoystickProperties();
+        
+        // 设置车辆摇杆按钮位置居中
+        button.style.left = '50%';
+        button.style.top = '50%';
+        button.style.transform = 'translate(-50%, -50%)';
+        
+        // 设置云台摇杆按钮位置居中
+        gimbalButton.style.left = '50%';
+        gimbalButton.style.top = '50%';
+        gimbalButton.style.transform = 'translate(-50%, -50%)';
+      }
+      
+      // 页面加载后立即设置摇杆居中
+      centerJoysticks();
+      
+      // 尝试多次调整，确保各种情况下都能正确居中
+      setTimeout(centerJoysticks, 0);
+      setTimeout(centerJoysticks, 50);
+      setTimeout(centerJoysticks, 100);
+      setTimeout(centerJoysticks, 500);
+      
+      // 页面完全加载后再次调整，确保大小和位置正确
+      window.addEventListener('load', function() {
+        centerJoysticks();
+        setTimeout(centerJoysticks, 100);
+        setTimeout(centerJoysticks, 500);
+      });
+      
+      // 定期检查并确保摇杆位置正确（解决一些边缘情况）
+      setInterval(function() {
+        if (!isDragging && !isGimbalDragging) {
+          centerJoysticks();
+        }
+      }, 5000);
+
       let isDragging = false;
       let lastDirectionX = 0;
       let lastDirectionY = 0;
@@ -683,6 +1275,9 @@
           clientX = e.touches[0].clientX;
           clientY = e.touches[0].clientY;
         }
+        
+        // 清除transform属性，改用left/top定位
+        button.style.transform = '';
         
         const newX = clientX - joystickRect.left - (button.offsetWidth / 2);
         const newY = clientY - joystickRect.top - (button.offsetHeight / 2);
@@ -792,8 +1387,7 @@
         isDragging = false;
         
         // 重置摇杆位置
-        button.style.left = (joystickProps.centerX - button.offsetWidth / 2) + 'px';
-        button.style.top = (joystickProps.centerY - button.offsetHeight / 2) + 'px';
+        centerJoysticks();
         
         // 隐藏方向指示器
         indicator.style.opacity = 0;
@@ -814,57 +1408,263 @@
       function updateDirectionText(dirX, dirY) {
         let direction = '停止';
         
-        // 不使用容忍角度，直接根据方向值判断
+        // 简化方向描述，仅使用"前"、"后"、"左"、"右"四个方向
         if (dirX === 0 && dirY === 0) {
           direction = '停止';
+        } else if (Math.abs(dirY) > Math.abs(dirX)) {
+          // 主要是前后方向
+          direction = dirY < 0 ? '前' : '后';
         } else {
-          // 计算角度（弧度）
-          const angle = Math.atan2(dirY, dirX);
-          // 转换为角度
-          const angleDegrees = angle * 180 / Math.PI;
-          
-          // 根据角度判断方向
-          // 注意：Y轴正方向为下，负方向为上，所以需要反转前后方向
-          // 前进区域（-135度到-45度之间）
-          if (angleDegrees < -45 && angleDegrees > -135) {
-            // 纯前进
-            if (angleDegrees === -90) {
-              direction = '前';
-            }
-            // 前偏右
-            else if (angleDegrees > -90) {
-              direction = `前偏右 ${Math.round(Math.abs(angleDegrees) - 90)}°`;
-            }
-            // 前偏左
-            else {
-              direction = `前偏左 ${Math.round(90 - Math.abs(angleDegrees))}°`;
-            }
-          }
-          // 后退区域（45度到135度之间）
-          else if (angleDegrees > 45 && angleDegrees < 135) {
-            // 纯后退
-            if (angleDegrees === 90) {
-              direction = '后';
-            }
-            // 后偏右
-            else if (angleDegrees < 90) {
-              direction = `后偏右 ${Math.round(90 - angleDegrees)}°`;
-            }
-            // 后偏左
-            else {
-              direction = `后偏左 ${Math.round(angleDegrees - 90)}°`;
-            }
-          }
-          // 左右转区域
-          else if (angleDegrees >= -45 && angleDegrees <= 45) {
-            direction = '右';
-          } else {
-            direction = '左';
-          }
+          // 主要是左右方向
+          direction = dirX < 0 ? '左' : '右';
         }
         
         directionText.innerText = direction;
       }
+      
+      // 云台摇杆控制逻辑
+      let gimbalJoystickProps = updateGimbalJoystickProperties();
+      let isGimbalDragging = false;
+      let lastGimbalX = 0;
+      let lastGimbalY = 0;
+      let lastGimbalAngleX = 90; // 水平舵机默认角度
+      let lastGimbalAngleY = 90; // 垂直舵机默认角度
+      
+      // 发送舵机控制命令
+      function sendGimbalCommand(angleX, angleY) {
+        if (!wsConnection || wsConnection.readyState !== WebSocket.OPEN) {
+          console.warn('WebSocket未连接，无法发送云台命令');
+          return;
+        }
+        
+        try {
+          // 限制角度范围 (0-180)
+          angleX = Math.max(0, Math.min(180, angleX));
+          angleY = Math.max(0, Math.min(180, angleY));
+          
+          // 创建JSON格式的命令
+          const command = JSON.stringify({
+            type: "servo_control",
+            servos: [
+              { pin: 2, angle: angleX }, // 水平舵机
+              { pin: 3, angle: angleY }  // 垂直舵机
+            ]
+          });
+          
+          console.log(`发送云台命令: ${command}`);
+          wsConnection.send(command);
+          document.getElementById('debug-info').textContent = `云台: X=${angleX}°, Y=${angleY}°`;
+        } catch (e) {
+          console.error('发送云台命令失败:', e);
+          document.getElementById('debug-info').textContent = `云台错误: ${e.message}`;
+        }
+      }
+      
+      // 节流功能：限制发送云台命令的频率
+      const gimbalThrottleDelay = 100; // 100ms节流延迟
+      let lastGimbalSendTime = 0;
+      let lastGimbalCommand = { angleX: 90, angleY: 90 };
+      let gimbalThrottleTimer = null;
+      
+      function throttledSendGimbalCommand(angleX, angleY) {
+        const now = Date.now();
+        
+        // 保存最新命令
+        lastGimbalCommand = { angleX, angleY };
+        
+        if (now - lastGimbalSendTime >= gimbalThrottleDelay) {
+          sendGimbalCommand(angleX, angleY);
+          lastGimbalSendTime = now;
+          
+          if (gimbalThrottleTimer) {
+            clearTimeout(gimbalThrottleTimer);
+            gimbalThrottleTimer = null;
+          }
+        } else if (!gimbalThrottleTimer) {
+          gimbalThrottleTimer = setTimeout(function() {
+            sendGimbalCommand(lastGimbalCommand.angleX, lastGimbalCommand.angleY);
+            lastGimbalSendTime = Date.now();
+            gimbalThrottleTimer = null;
+          }, gimbalThrottleDelay - (now - lastGimbalSendTime));
+        }
+      }
+      
+      // 初始化云台按钮位置
+      gimbalButton.style.left = (gimbalJoystickProps.centerX - gimbalButton.offsetWidth / 2) + 'px';
+      gimbalButton.style.top = (gimbalJoystickProps.centerY - gimbalButton.offsetHeight / 2) + 'px';
+      
+      // 云台摇杆事件监听
+      gimbalButton.addEventListener('mousedown', startGimbalDrag);
+      gimbalButton.addEventListener('touchstart', function(e) {
+        e.preventDefault();
+        startGimbalDrag(e);
+      });
+      
+      gimbalJoystick.addEventListener('mousedown', function(e) {
+        if (e.target === gimbalButton) return;
+        moveGimbalButtonToPosition(e);
+        startGimbalDrag(e);
+      });
+      
+      gimbalJoystick.addEventListener('touchstart', function(e) {
+        if (e.target === gimbalButton) return;
+        e.preventDefault();
+        moveGimbalButtonToPosition(e);
+        startGimbalDrag(e);
+      });
+      
+      function moveGimbalButtonToPosition(e) {
+        const joystickRect = gimbalJoystick.getBoundingClientRect();
+        let clientX = e.clientX;
+        let clientY = e.clientY;
+        
+        if (e.type === 'touchstart' || e.type === 'touchmove') {
+          clientX = e.touches[0].clientX;
+          clientY = e.touches[0].clientY;
+        }
+        
+        // 清除transform属性，改用left/top定位
+        gimbalButton.style.transform = '';
+        
+        const newX = clientX - joystickRect.left - (gimbalButton.offsetWidth / 2);
+        const newY = clientY - joystickRect.top - (gimbalButton.offsetHeight / 2);
+        
+        // 限制在摇杆范围内
+        const props = updateGimbalJoystickProperties();
+        const offsetX = (clientX - joystickRect.left) - props.centerX;
+        const offsetY = (clientY - joystickRect.top) - props.centerY;
+        let distance = Math.sqrt(offsetX * offsetX + offsetY * offsetY);
+        const angle = Math.atan2(offsetY, offsetX);
+        
+        if (distance > props.maxRadius) {
+          distance = props.maxRadius;
+          const limitedX = props.centerX + distance * Math.cos(angle) - (gimbalButton.offsetWidth / 2);
+          const limitedY = props.centerY + distance * Math.sin(angle) - (gimbalButton.offsetHeight / 2);
+          gimbalButton.style.left = limitedX + 'px';
+          gimbalButton.style.top = limitedY + 'px';
+        } else {
+          gimbalButton.style.left = newX + 'px';
+          gimbalButton.style.top = newY + 'px';
+        }
+      }
+      
+      function startGimbalDrag(e) {
+        if (isGimbalDragging) return;
+        
+        isGimbalDragging = true;
+        
+        if (e.type === 'touchstart' && e.target === gimbalJoystick) {
+          moveGimbalButtonToPosition(e);
+        }
+        
+        processGimbalPosition(e);
+        
+        document.addEventListener('mousemove', gimbalDrag);
+        document.addEventListener('touchmove', gimbalDrag, { passive: false });
+        document.addEventListener('mouseup', stopGimbalDrag);
+        document.addEventListener('touchend', stopGimbalDrag);
+      }
+      
+      function gimbalDrag(e) {
+        if (!isGimbalDragging) return;
+        e.preventDefault();
+        processGimbalPosition(e);
+      }
+      
+      function processGimbalPosition(e) {
+        let clientX = e.clientX;
+        let clientY = e.clientY;
+        
+        if (e.type === 'touchstart' || e.type === 'touchmove') {
+          clientX = e.touches[0].clientX;
+          clientY = e.touches[0].clientY;
+        }
+        
+        gimbalJoystickProps = updateGimbalJoystickProperties();
+        
+        const joystickRect = gimbalJoystick.getBoundingClientRect();
+        const offsetX = clientX - joystickRect.left - gimbalJoystickProps.centerX;
+        const offsetY = clientY - joystickRect.top - gimbalJoystickProps.centerY;
+        
+        let distance = Math.sqrt(offsetX * offsetX + offsetY * offsetY);
+        const angle = Math.atan2(offsetY, offsetX);
+        
+        if (distance > gimbalJoystickProps.maxRadius) {
+          distance = gimbalJoystickProps.maxRadius;
+        }
+        
+        const newX = gimbalJoystickProps.centerX + distance * Math.cos(angle) - (gimbalButton.offsetWidth / 2);
+        const newY = gimbalJoystickProps.centerY + distance * Math.sin(angle) - (gimbalButton.offsetHeight / 2);
+        
+        gimbalButton.style.left = newX + 'px';
+        gimbalButton.style.top = newY + 'px';
+        
+        gimbalIndicator.style.opacity = 0.7;
+        gimbalIndicator.style.left = gimbalJoystickProps.centerX + (distance * 1.2) * Math.cos(angle) + 'px';
+        gimbalIndicator.style.top = gimbalJoystickProps.centerY + (distance * 1.2) * Math.sin(angle) + 'px';
+        
+        // 计算舵机角度 (0-180)
+        // X: 从-1到1映射到0-180度，这样摇杆左侧对应0度，右侧对应180度
+        const normalizedX = offsetX / gimbalJoystickProps.maxRadius;
+        // Y: 从-1到1映射到0-180度，这样摇杆上侧对应0度，下侧对应180度
+        const normalizedY = offsetY / gimbalJoystickProps.maxRadius;
+        
+        // 映射到舵机角度范围
+        const angleX = 90 + normalizedX * 90; // 水平舵机: 0-180度
+        const angleY = 90 + normalizedY * 90; // 垂直舵机: 0-180度
+        
+        // 更新云台方向文本
+        updateGimbalDirectionText(normalizedX, normalizedY);
+        
+        // 发送舵机命令
+        lastGimbalX = normalizedX;
+        lastGimbalY = normalizedY;
+        lastGimbalAngleX = angleX;
+        lastGimbalAngleY = angleY;
+        
+        // 更新坐标显示
+        updateCoordinatesDisplay(angleX, angleY);
+        
+        throttledSendGimbalCommand(Math.round(angleX), Math.round(angleY));
+      }
+      
+      function stopGimbalDrag() {
+        if (!isGimbalDragging) return;
+        isGimbalDragging = false;
+        
+        // 不重置按钮位置，让舵机保持在最后位置
+        gimbalIndicator.style.opacity = 0;
+        
+        // 移除事件监听器
+        document.removeEventListener('mousemove', gimbalDrag);
+        document.removeEventListener('touchmove', gimbalDrag);
+        document.removeEventListener('mouseup', stopGimbalDrag);
+        document.removeEventListener('touchend', stopGimbalDrag);
+      }
+      
+      function updateGimbalDirectionText(normalizedX, normalizedY) {
+        // 如果摇杆在中心位置附近，显示"中心"
+        if (Math.abs(normalizedX) < 0.1 && Math.abs(normalizedY) < 0.1) {
+          gimbalDirectionText.innerText = "中心";
+          return;
+        }
+        
+        // 根据normalizedX和normalizedY确定主要方向
+        if (Math.abs(normalizedY) > Math.abs(normalizedX)) {
+          // Y轴为主导方向
+          gimbalDirectionText.innerText = normalizedY < 0 ? "上" : "下";
+        } else {
+          // X轴为主导方向
+          gimbalDirectionText.innerText = normalizedX < 0 ? "左" : "右";
+        }
+      }
+      
+      // 在页面加载时发送初始化命令
+      setTimeout(function() {
+        if (wsConnection && wsConnection.readyState === WebSocket.OPEN) {
+          throttledSendGimbalCommand(90, 90); // 初始化舵机位置到中心
+        }
+      }, 1000);
       
       // 页面可见性变化处理
       document.addEventListener('visibilitychange', function() {
@@ -891,41 +1691,11 @@
         }
       });
 
-      // 获取视频控制按钮
-      const startVideoBtn = document.getElementById('start-video');
-      const stopVideoBtn = document.getElementById('stop-video');
-      
-      if(startVideoBtn) {
-        startVideoBtn.addEventListener('click', function() {
-          console.log('启动视频按钮点击');
-          if(wsConnection && wsConnection.readyState === WebSocket.OPEN) {
-            // 添加正确的WebSocket消息格式
-            const videoCmd = JSON.stringify({
-              type: "camera_control",
-              cmd: "stream",
-              enable: true
-            });
-            wsConnection.send(videoCmd);
-            console.log('发送视频启动命令:', videoCmd);
-            
-            // 更新视频流显示
-            const videoStream = document.getElementById('video-stream');
-            if(videoStream) {
-              const streamUrl = window.location.protocol + '//' + window.location.host + '/stream';
-              videoStream.src = streamUrl + '?t=' + new Date().getTime();
-              streamActive = true;
-            }
-          } else {
-            console.error('WebSocket未连接，无法发送视频启动命令');
-          }
-        });
-      }
-      
-      if(stopVideoBtn) {
-        stopVideoBtn.addEventListener('click', function() {
-          console.log('停止视频按钮点击');
-          if(wsConnection && wsConnection.readyState === WebSocket.OPEN) {
-            // 添加正确的WebSocket消息格式
+      // 视频流切换控制
+      videoToggleBtn.addEventListener('click', function() {
+        if (streamActive) {
+          // 停止视频流
+          if (wsConnection && wsConnection.readyState === WebSocket.OPEN) {
             const videoCmd = JSON.stringify({
               type: "camera_control",
               cmd: "stream",
@@ -934,18 +1704,37 @@
             wsConnection.send(videoCmd);
             console.log('发送视频停止命令:', videoCmd);
             
-            // 停止视频流显示
             const videoStream = document.getElementById('video-stream');
-            if(videoStream) {
+            if (videoStream) {
               videoStream.removeAttribute('src');
               videoStream.load();
               streamActive = false;
             }
-          } else {
-            console.error('WebSocket未连接，无法发送视频停止命令');
+            videoToggleBtn.textContent = '启动视频';
           }
-        });
-      }
+        } else {
+          // 启动视频流
+          if (wsConnection && wsConnection.readyState === WebSocket.OPEN) {
+            const videoCmd = JSON.stringify({
+              type: "camera_control",
+              cmd: "stream",
+              enable: true
+            });
+            wsConnection.send(videoCmd);
+            console.log('发送视频启动命令:', videoCmd);
+            
+            const videoStream = document.getElementById('video-stream');
+            if (videoStream) {
+              const streamUrl = window.location.protocol + '//' + window.location.host + '/stream';
+              videoStream.src = streamUrl + '?t=' + new Date().getTime();
+              streamActive = true;
+            }
+            videoToggleBtn.textContent = '停止视频';
+          } else {
+            console.error('WebSocket未连接，无法发送视频启动命令');
+          }
+        }
+      });
     });
   </script>
 

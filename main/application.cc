@@ -275,12 +275,6 @@ void Application::ToggleChatState() {
         return;
     }
 
-#if !CONFIG_ENABLE_XIAOZHI_AI_CORE
-    // AI核心功能禁用时，显示提示信息
-    Alert(Lang::Strings::INFO, Lang::Strings::AI_CORE_DISABLED, "sad", Lang::Sounds::P3_EXCLAMATION);
-    return;
-#endif
-
     if (!protocol_) {
         ESP_LOGE(TAG, "Protocol not initialized");
         return;
@@ -307,17 +301,6 @@ void Application::ToggleChatState() {
 }
 
 void Application::StartListening() {
-#if !CONFIG_ENABLE_XIAOZHI_AI_CORE
-    // AI核心功能禁用时，显示提示信息
-    Alert(Lang::Strings::INFO, Lang::Strings::AI_CORE_DISABLED, "sad", Lang::Sounds::P3_EXCLAMATION);
-    return;
-#endif
-
-    if (device_state_ == kDeviceStateActivating) {
-        SetDeviceState(kDeviceStateIdle);
-        return;
-    }
-
     if (!protocol_) {
         ESP_LOGE(TAG, "Protocol not initialized");
         return;
@@ -627,7 +610,6 @@ void Application::Start() {
         PlaySound(Lang::Sounds::P3_SUCCESS);
     }
 #endif
-    
     // Enter the main event loop
     MainEventLoop();
 }

@@ -1,28 +1,22 @@
 #include "web_server.h"
-#include <esp_log.h>
-#include <esp_timer.h>
-#include <cstring>
-#include <cJSON.h>
-#include "sdkconfig.h"
 #include "web_content.h"
-#if CONFIG_ENABLE_WEB_CONTENT
 #include "html_content.h"
-#include "../motor/motor_content.h"
-#include "../ai/ai_content.h"
-#include "../vision/vision_content.h"
-#endif
-#include "../vision/vision_controller.h"
+#include <esp_log.h>
+#include <esp_http_server.h>
+#include <esp_chip_info.h>
+#include <system_info.h>
+#include <components.h>
+#include <iot/thing_manager.h>
+#include <cJSON.h>
+#include <cstring>
+#include <map>
+#include <memory>
+#include <sstream>
+#include <string>
+#include <algorithm>
+#include <esp_timer.h>
 #include <esp_heap_caps.h>
-#if defined(CONFIG_ENABLE_MOTOR_CONTROLLER)
-#include "../motor/motor_controller.h"
-#include "../motor/motor_content.h"
-#endif
-#if defined(CONFIG_ENABLE_AI_CONTROLLER)
-#include "../ai/ai_controller.h"
-#include "../ai/ai_content.h"
-#endif
-#if defined(CONFIG_ENABLE_VISION_CONTROLLER)
-#include "../vision/vision_controller.h"
+#if defined(CONFIG_ENABLE_VISION_CONTENT)
 #include "../vision/vision_content.h"
 #endif
 
@@ -125,9 +119,10 @@ bool WebServer::Start() {
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.task_priority = CONFIG_WEB_SERVER_PRIORITY;
     config.server_port = CONFIG_WEB_SERVER_PORT;
-    config.max_uri_handlers = 16;
+    config.max_uri_handlers = 32;  // 增加URI处理器上限，原先是16
     config.max_open_sockets = MAX_WS_CLIENTS + 3;  // 符合lwip限制: 7+3=10, 服务器内部使用3个
     config.lru_purge_enable = true;
+    config.uri_match_fn = httpd_uri_match_wildcard; // 启用通配符匹配
     
     // 使用PSRAM优化
     #if WEB_SERVER_USE_PSRAM 
@@ -160,6 +155,50 @@ bool WebServer::Start() {
     
     running_ = true;
     ESP_LOGI(TAG, "Web server started successfully");
+    
+    // 开始定期广播系统状态
+    StartPeriodicStatusUpdates();
+    
+    // 注册所有URI处理器
+    for (const auto& pair : http_handlers_) {
+        httpd_uri_t uri_config = {
+            .uri = pair.first.c_str(),
+            .method = pair.second.first,
+            .handler = [](httpd_req_t *req) -> esp_err_t {
+                WebServer* server = static_cast<WebServer*>(req->user_ctx);
+                PSRAMString uri_path(req->uri);
+                auto it = server->http_handlers_.find(uri_path);
+                if (it != server->http_handlers_.end()) {
+                    return it->second.second(req);
+                }
+                
+                // 尝试使用通配符路径
+                for (const auto& pair : server->http_handlers_) {
+                    if (pair.first.find('*') != PSRAMString::npos) {
+                        // 简单的通配符匹配 - 检查前缀
+                        size_t wildcard_pos = pair.first.find('*');
+                        if (wildcard_pos > 0) {
+                            PSRAMString prefix = pair.first.substr(0, wildcard_pos);
+                            if (uri_path.find(prefix) == 0) {
+                                return pair.second.second(req);
+                            }
+                        }
+                    }
+                }
+                
+                httpd_resp_send_404(req);
+                return ESP_OK;
+            },
+            .user_ctx = this
+        };
+        
+        ESP_LOGI(TAG, "注册URI处理器: %s", pair.first.c_str());
+        ret = httpd_register_uri_handler(server_, &uri_config);
+        if (ret != ESP_OK) {
+            ESP_LOGW(TAG, "注册URI处理器失败 %s: %s", pair.first.c_str(), esp_err_to_name(ret));
+        }
+    }
+    
     return true;
 }
 
@@ -190,7 +229,7 @@ void WebServer::Stop() {
 }
 
 bool WebServer::IsRunning() const {
-    return running_;
+    return running_ && server_ != nullptr;
 }
 
 const char* WebServer::GetName() const {
@@ -200,7 +239,14 @@ const char* WebServer::GetName() const {
 void WebServer::RegisterDefaultHandlers() {
     // Register handlers for default endpoints
     RegisterHttpHandler("/", HTTP_GET, RootHandler);     // 主页
-    RegisterHttpHandler("/ws", HTTP_GET, WebSocketHandler);  // WebSocket端点
+    
+    // Only register WebSocket handler if not already registered
+    if (http_handlers_.find("/ws") == http_handlers_.end()) {
+        RegisterHttpHandler("/ws", HTTP_GET, WebSocketHandler);  // WebSocket端点
+        ESP_LOGI(TAG, "注册WebSocket处理器: /ws");
+    } else {
+        ESP_LOGI(TAG, "WebSocket处理器 /ws 已注册，跳过重复注册");
+    }
     
     // API处理器需要明确类型转换为httpd_method_t
     RegisterHttpHandler("/api/*", static_cast<httpd_method_t>(HTTP_ANY), ApiHandler);  // API处理器处理所有/api/前缀的请求
@@ -209,6 +255,17 @@ void WebServer::RegisterDefaultHandlers() {
     RegisterHttpHandler("/vision", HTTP_GET, VisionHandler);
     RegisterHttpHandler("/motor", HTTP_GET, MotorHandler);
     RegisterHttpHandler("/ai", HTTP_GET, AIHandler);  // 添加AI页面路由
+    
+    // Register car control endpoints
+    RegisterHttpHandler("/car/stop", HTTP_GET, CarControlHandler);
+    RegisterHttpHandler("/car/*", HTTP_GET, CarControlHandler);
+    
+    // Register camera control endpoints
+    RegisterHttpHandler("/camera/control", HTTP_GET, CameraControlHandler);
+    RegisterHttpHandler("/camera/stream", HTTP_GET, CameraStreamHandler);
+    
+    // Register API status endpoint directly
+    RegisterHttpHandler("/api/status", HTTP_GET, SystemStatusHandler);
 }
 
 void WebServer::RegisterHttpHandler(const PSRAMString& path, httpd_method_t method, HttpRequestHandler handler) {
@@ -219,6 +276,46 @@ void WebServer::RegisterHttpHandler(const PSRAMString& path, httpd_method_t meth
     
     http_handlers_[path] = std::make_pair(method, handler);
     ESP_LOGI(TAG, "注册HTTP处理器: %s", path.c_str());
+    
+    // 如果服务器已经运行，立即注册处理器
+    if (running_ && server_) {
+        httpd_uri_t uri_config = {
+            .uri = path.c_str(),
+            .method = method,
+            .handler = [](httpd_req_t *req) -> esp_err_t {
+                WebServer* server = static_cast<WebServer*>(req->user_ctx);
+                PSRAMString uri_path(req->uri);
+                auto it = server->http_handlers_.find(uri_path);
+                if (it != server->http_handlers_.end()) {
+                    return it->second.second(req);
+                }
+                
+                // 尝试使用通配符路径
+                for (const auto& pair : server->http_handlers_) {
+                    if (pair.first.find('*') != PSRAMString::npos) {
+                        // 简单的通配符匹配 - 检查前缀
+                        size_t wildcard_pos = pair.first.find('*');
+                        if (wildcard_pos > 0) {
+                            PSRAMString prefix = pair.first.substr(0, wildcard_pos);
+                            if (uri_path.find(prefix) == 0) {
+                                return pair.second.second(req);
+                            }
+                        }
+                    }
+                }
+                
+                httpd_resp_send_404(req);
+                return ESP_OK;
+            },
+            .user_ctx = this
+        };
+        
+        ESP_LOGI(TAG, "立即注册URI处理器: %s", path.c_str());
+        esp_err_t ret = httpd_register_uri_handler(server_, &uri_config);
+        if (ret != ESP_OK) {
+            ESP_LOGW(TAG, "注册URI处理器失败 %s: %s", path.c_str(), esp_err_to_name(ret));
+        }
+    }
 }
 
 void WebServer::RegisterWebSocketHandler(const PSRAMString& message_type, WebSocketMessageHandler handler) {
@@ -250,9 +347,10 @@ const char* WebServer::GetContentType(const PSRAMString& path) {
     return "application/octet-stream";
 }
 
-// 发送HTTP响应
+// Helper method to send HTTP responses
 esp_err_t WebServer::SendHttpResponse(httpd_req_t* req, const char* content_type, const char* data, size_t len) {
     httpd_resp_set_type(req, content_type);
+    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
     return httpd_resp_send(req, data, len);
 }
 
@@ -426,10 +524,21 @@ esp_err_t WebServer::ApiHandler(httpd_req_t* req) {
             
             // 添加系统信息
             uint32_t free_heap = esp_get_free_heap_size();
-            uint32_t uptime = esp_timer_get_time() / 1000000;
+            uint32_t uptime = esp_timer_get_time() / 1000000; // 转换为秒
             
             cJSON_AddNumberToObject(response, "free_heap", free_heap);
             cJSON_AddNumberToObject(response, "uptime", uptime);
+            
+            // 添加系统版本信息
+            #ifdef CONFIG_IDF_TARGET
+            cJSON_AddStringToObject(response, "idf_target", CONFIG_IDF_TARGET);
+            #endif
+            
+            #ifdef CONFIG_IDF_FIRMWARE_VERSION
+            cJSON_AddStringToObject(response, "firmware_version", CONFIG_IDF_FIRMWARE_VERSION);
+            #else
+            cJSON_AddStringToObject(response, "firmware_version", "1.0.0"); // 默认版本
+            #endif
             
             char* json_str = cJSON_PrintUnformatted(response);
             esp_err_t ret = SendHttpResponse(req, "application/json", json_str, strlen(json_str));
@@ -589,63 +698,335 @@ esp_err_t WebServer::WebSocketHandler(httpd_req_t* req) {
 
 // 处理WebSocket消息
 void WebServer::HandleWebSocketMessage(int client_id, const PSRAMString& message) {
-    if (message.empty()) {
-        ESP_LOGE(WS_MSG_TAG, "收到空的WebSocket消息");
+    ESP_LOGI(WS_MSG_TAG, "收到WebSocket消息 [%d]: %s", client_id, message.c_str());
+    
+    // 尝试解析为JSON
+    cJSON* root = cJSON_Parse(message.c_str());
+    if (!root) {
+        ESP_LOGE(WS_MSG_TAG, "无效的JSON消息: %s", message.c_str());
         return;
     }
     
-    // 记录收到的消息
-    if (message.length() > 200) {
-        ESP_LOGD(WS_MSG_TAG, "收到WebSocket消息 (截断): %.200s...", message.c_str());
-    } else {
-        ESP_LOGD(WS_MSG_TAG, "收到WebSocket消息: %s", message.c_str());
+    // 获取消息类型
+    cJSON* type_obj = cJSON_GetObjectItem(root, "type");
+    if (!type_obj || !cJSON_IsString(type_obj)) {
+        ESP_LOGE(WS_MSG_TAG, "消息缺少有效的'type'字段");
+        cJSON_Delete(root);
+        return;
     }
     
-    try {
-        // 检查是否是心跳消息
-        if (message.find("heartbeat") != PSRAMString::npos) {
-            // 响应心跳
-            BroadcastWebSocketMessage("{\"type\":\"heartbeat_response\",\"status\":\"ok\"}", 
-                                      ws_clients_[client_id].client_type);
-            return;
+    PSRAMString type(type_obj->valuestring);
+    
+    // 查找对应的消息处理器
+    auto it = ws_handlers_.find(type);
+    if (it != ws_handlers_.end() && it->second) {
+        ESP_LOGI(WS_MSG_TAG, "调用'%s'消息的处理器", type.c_str());
+        // 调用注册的处理器
+        it->second(client_id, message, type);
+    } else if (legacy_ws_callback_) {
+        // 如果没有特定的处理器，但有遗留回调，则调用它
+        ESP_LOGI(WS_MSG_TAG, "没有找到'%s'消息的处理器，使用遗留回调", type.c_str());
+        legacy_ws_callback_(client_id, message);
+    } else if (type == "car_control") {
+        // 处理小车控制命令
+        ESP_LOGI(WS_MSG_TAG, "处理小车控制消息");
+        
+        try {
+            // 解析速度和方向
+            cJSON* speed_obj = cJSON_GetObjectItem(root, "speed");
+            cJSON* dirX_obj = cJSON_GetObjectItem(root, "dirX");
+            cJSON* dirY_obj = cJSON_GetObjectItem(root, "dirY");
+            
+            if (speed_obj && cJSON_IsNumber(speed_obj) && 
+                dirX_obj && cJSON_IsNumber(dirX_obj) && 
+                dirY_obj && cJSON_IsNumber(dirY_obj)) {
+                
+                float speed = static_cast<float>(speed_obj->valuedouble);
+                int dirX = dirX_obj->valueint;
+                int dirY = dirY_obj->valueint;
+                
+                // 创建一个命令发送到ThingManager
+                cJSON* cmd = cJSON_CreateObject();
+                cJSON_AddStringToObject(cmd, "component", "motor");
+                cJSON_AddStringToObject(cmd, "command", "move");
+                cJSON_AddNumberToObject(cmd, "speed", speed);
+                cJSON_AddNumberToObject(cmd, "dirX", dirX);
+                cJSON_AddNumberToObject(cmd, "dirY", dirY);
+                
+                // 发送命令
+                auto& thing_manager = iot::ThingManager::GetInstance();
+                if (thing_manager.IsInitialized()) {
+                    thing_manager.Invoke(cmd);
+                    
+                    // 发送响应确认
+                    cJSON* response = cJSON_CreateObject();
+                    cJSON_AddStringToObject(response, "type", "car_control_ack");
+                    cJSON_AddStringToObject(response, "status", "ok");
+                    
+                    char* response_str = cJSON_PrintUnformatted(response);
+                    SendWebSocketMessage(client_id, response_str);
+                    free(response_str);
+                    cJSON_Delete(response);
+                } else {
+                    ESP_LOGE(WS_MSG_TAG, "ThingManager未初始化");
+                }
+                
+                cJSON_Delete(cmd);
+            } else {
+                ESP_LOGE(WS_MSG_TAG, "car_control消息缺少必要字段或字段类型错误");
+            }
+        } catch (const std::exception& e) {
+            ESP_LOGE(WS_MSG_TAG, "处理car_control消息时发生异常: %s", e.what());
+        } catch (...) {
+            ESP_LOGE(WS_MSG_TAG, "处理car_control消息时发生未知异常");
         }
+    } else if (type == "servo_control") {
+        // 处理舵机控制命令
+        ESP_LOGI(WS_MSG_TAG, "处理舵机控制消息");
         
-        // 解析JSON消息
-        cJSON* json = cJSON_Parse(message.c_str());
-        if (!json) {
-            ESP_LOGW(WS_MSG_TAG, "解析WebSocket消息为JSON失败");
-            return;
+        try {
+            // 解析舵机信息
+            cJSON* servos_array = cJSON_GetObjectItem(root, "servos");
+            if (servos_array && cJSON_IsArray(servos_array)) {
+                int servos_count = cJSON_GetArraySize(servos_array);
+                
+                for (int i = 0; i < servos_count; i++) {
+                    cJSON* servo = cJSON_GetArrayItem(servos_array, i);
+                    if (servo && cJSON_IsObject(servo)) {
+                        cJSON* pin_obj = cJSON_GetObjectItem(servo, "pin");
+                        cJSON* angle_obj = cJSON_GetObjectItem(servo, "angle");
+                        
+                        if (pin_obj && cJSON_IsNumber(pin_obj) && 
+                            angle_obj && cJSON_IsNumber(angle_obj)) {
+                            
+                            int pin = pin_obj->valueint;
+                            int angle = angle_obj->valueint;
+                            
+                            // 创建一个命令发送到ThingManager
+                            cJSON* cmd = cJSON_CreateObject();
+                            cJSON_AddStringToObject(cmd, "component", "motor");
+                            cJSON_AddStringToObject(cmd, "command", "servo");
+                            cJSON_AddNumberToObject(cmd, "pin", pin);
+                            cJSON_AddNumberToObject(cmd, "angle", angle);
+                            
+                            // 发送命令
+                            auto& thing_manager = iot::ThingManager::GetInstance();
+                            if (thing_manager.IsInitialized()) {
+                                thing_manager.Invoke(cmd);
+                                ESP_LOGI(WS_MSG_TAG, "已发送舵机命令: pin=%d, angle=%d", pin, angle);
+                            } else {
+                                ESP_LOGE(WS_MSG_TAG, "ThingManager未初始化");
+                            }
+                            
+                            cJSON_Delete(cmd);
+                        } else {
+                            ESP_LOGE(WS_MSG_TAG, "舵机对象缺少必要字段或字段类型错误");
+                        }
+                    }
+                }
+                
+                // 发送响应确认
+                cJSON* response = cJSON_CreateObject();
+                cJSON_AddStringToObject(response, "type", "servo_control_ack");
+                cJSON_AddStringToObject(response, "status", "ok");
+                
+                char* response_str = cJSON_PrintUnformatted(response);
+                SendWebSocketMessage(client_id, response_str);
+                free(response_str);
+                cJSON_Delete(response);
+            } else {
+                ESP_LOGE(WS_MSG_TAG, "servo_control消息缺少servos数组");
+            }
+        } catch (const std::exception& e) {
+            ESP_LOGE(WS_MSG_TAG, "处理servo_control消息时发生异常: %s", e.what());
+        } catch (...) {
+            ESP_LOGE(WS_MSG_TAG, "处理servo_control消息时发生未知异常");
         }
+    } else if (type == "servo_coordinate_control") {
+        // 处理舵机坐标控制命令
+        ESP_LOGI(WS_MSG_TAG, "处理舵机坐标控制消息");
         
-        // 使用智能指针管理JSON对象
-        struct JsonGuard {
-            cJSON* json;
-            JsonGuard(cJSON* j) : json(j) {}
-            ~JsonGuard() { if (json) cJSON_Delete(json); }
-        } json_guard(json);
-        
-        // 提取消息类型
-        cJSON* type_obj = cJSON_GetObjectItem(json, "type");
-        if (!type_obj || !cJSON_IsString(type_obj)) {
-            ESP_LOGW(WS_MSG_TAG, "WebSocket消息没有类型字段");
-            return;
+        try {
+            // 解析舵机坐标信息
+            cJSON* servos_array = cJSON_GetObjectItem(root, "servos");
+            if (servos_array && cJSON_IsArray(servos_array)) {
+                int servos_count = cJSON_GetArraySize(servos_array);
+                
+                for (int i = 0; i < servos_count; i++) {
+                    cJSON* servo = cJSON_GetArrayItem(servos_array, i);
+                    if (servo && cJSON_IsObject(servo)) {
+                        cJSON* id_obj = cJSON_GetObjectItem(servo, "id");
+                        cJSON* coord_obj = cJSON_GetObjectItem(servo, "coordinate");
+                        
+                        if (id_obj && cJSON_IsNumber(id_obj) && 
+                            coord_obj && cJSON_IsNumber(coord_obj)) {
+                            
+                            int id = id_obj->valueint;
+                            int coordinate = coord_obj->valueint;
+                            
+                            // 创建一个命令发送到ThingManager
+                            cJSON* cmd = cJSON_CreateObject();
+                            cJSON_AddStringToObject(cmd, "component", "Motor");
+                            cJSON_AddStringToObject(cmd, "command", "SetServoCoordinate");
+                            cJSON_AddNumberToObject(cmd, "servoId", id);
+                            cJSON_AddNumberToObject(cmd, "coordinate", coordinate);
+                            
+                            // 发送命令
+                            auto& thing_manager = iot::ThingManager::GetInstance();
+                            if (thing_manager.IsInitialized()) {
+                                thing_manager.Invoke(cmd);
+                                ESP_LOGI(WS_MSG_TAG, "已发送舵机坐标命令: id=%d, coordinate=%d", id, coordinate);
+                            } else {
+                                ESP_LOGE(WS_MSG_TAG, "ThingManager未初始化");
+                            }
+                            
+                            cJSON_Delete(cmd);
+                        } else {
+                            ESP_LOGE(WS_MSG_TAG, "舵机对象缺少必要字段或字段类型错误");
+                        }
+                    }
+                }
+                
+                // 发送响应确认
+                cJSON* response = cJSON_CreateObject();
+                cJSON_AddStringToObject(response, "type", "servo_coordinate_control_ack");
+                cJSON_AddStringToObject(response, "status", "ok");
+                
+                char* response_str = cJSON_PrintUnformatted(response);
+                SendWebSocketMessage(client_id, response_str);
+                free(response_str);
+                cJSON_Delete(response);
+            } else {
+                ESP_LOGE(WS_MSG_TAG, "servo_coordinate_control消息缺少servos数组");
+            }
+        } catch (const std::exception& e) {
+            ESP_LOGE(WS_MSG_TAG, "处理servo_coordinate_control消息时发生异常: %s", e.what());
+        } catch (...) {
+            ESP_LOGE(WS_MSG_TAG, "处理servo_coordinate_control消息时发生未知异常");
         }
+    } else if (type == "gimbal_coordinate_control") {
+        // 处理云台坐标控制命令
+        ESP_LOGI(WS_MSG_TAG, "处理云台坐标控制消息");
         
-        PSRAMString type = type_obj->valuestring;
-        
-        // 查找对应的处理器
-        auto it = ws_handlers_.find(type);
-        if (it != ws_handlers_.end() && it->second) {
-            // 调用对应的处理函数
-            it->second(client_id, message, type);
-        } else {
-            ESP_LOGW(WS_MSG_TAG, "未找到类型为 %s 的WebSocket处理器", type.c_str());
+        try {
+            // 解析云台坐标信息
+            cJSON* x_obj = cJSON_GetObjectItem(root, "x");
+            cJSON* y_obj = cJSON_GetObjectItem(root, "y");
+            
+            if (x_obj && cJSON_IsNumber(x_obj) && 
+                y_obj && cJSON_IsNumber(y_obj)) {
+                
+                int x_coord = x_obj->valueint;
+                int y_coord = y_obj->valueint;
+                
+                // 创建一个命令发送到ThingManager
+                cJSON* cmd = cJSON_CreateObject();
+                cJSON_AddStringToObject(cmd, "component", "Motor");
+                cJSON_AddStringToObject(cmd, "command", "SetGimbalCoordinates");
+                cJSON_AddNumberToObject(cmd, "x", x_coord);
+                cJSON_AddNumberToObject(cmd, "y", y_coord);
+                
+                // 发送命令
+                auto& thing_manager = iot::ThingManager::GetInstance();
+                if (thing_manager.IsInitialized()) {
+                    thing_manager.Invoke(cmd);
+                    ESP_LOGI(WS_MSG_TAG, "已发送云台坐标命令: x=%d, y=%d", x_coord, y_coord);
+                } else {
+                    ESP_LOGE(WS_MSG_TAG, "ThingManager未初始化");
+                }
+                
+                cJSON_Delete(cmd);
+                
+                // 发送响应确认
+                cJSON* response = cJSON_CreateObject();
+                cJSON_AddStringToObject(response, "type", "gimbal_coordinate_control_ack");
+                cJSON_AddStringToObject(response, "status", "ok");
+                
+                char* response_str = cJSON_PrintUnformatted(response);
+                SendWebSocketMessage(client_id, response_str);
+                free(response_str);
+                cJSON_Delete(response);
+            } else {
+                ESP_LOGE(WS_MSG_TAG, "云台坐标控制消息缺少必要字段或字段类型错误");
+            }
+        } catch (const std::exception& e) {
+            ESP_LOGE(WS_MSG_TAG, "处理云台坐标控制消息时发生异常: %s", e.what());
+        } catch (...) {
+            ESP_LOGE(WS_MSG_TAG, "处理云台坐标控制消息时发生未知异常");
         }
-    } catch (const std::exception& e) {
-        ESP_LOGE(WS_MSG_TAG, "处理WebSocket消息异常: %s", e.what());
-    } catch (...) {
-        ESP_LOGE(WS_MSG_TAG, "处理WebSocket消息未知异常");
+    } else if (type == "camera_control") {
+        // ... existing code ...
+    } else {
+        ESP_LOGW(WS_MSG_TAG, "未找到类型为 %s 的WebSocket处理器", type.c_str());
     }
+}
+
+// Make GetSystemStatusJson static so it can be called from static methods
+static PSRAMString GetSystemStatusJson() {
+    // Create system status JSON response
+    cJSON* response = cJSON_CreateObject();
+    cJSON_AddStringToObject(response, "type", "status_response");
+    
+    // System info section
+    cJSON* system = cJSON_CreateObject();
+    cJSON_AddItemToObject(response, "system", system);
+    
+    // Add uptime
+    uint32_t uptime = esp_timer_get_time() / 1000000; // microseconds to seconds
+    cJSON_AddNumberToObject(system, "uptime", uptime);
+    
+    // Add memory info
+    uint32_t free_heap = esp_get_free_heap_size();
+    uint32_t min_free_heap = esp_get_minimum_free_heap_size();
+    cJSON_AddNumberToObject(system, "free_heap", free_heap);
+    cJSON_AddNumberToObject(system, "min_free_heap", min_free_heap);
+    
+    // Add ESP-IDF version
+    cJSON_AddStringToObject(system, "esp_idf_version", esp_get_idf_version());
+    
+    // Add chip info
+    esp_chip_info_t chip_info;
+    esp_chip_info(&chip_info);
+    
+    char chip_model[32];
+    snprintf(chip_model, sizeof(chip_model), "%s Rev %d", 
+             chip_info.model == CHIP_ESP32 ? "ESP32" :
+             chip_info.model == CHIP_ESP32S2 ? "ESP32-S2" :
+             chip_info.model == CHIP_ESP32S3 ? "ESP32-S3" :
+             chip_info.model == CHIP_ESP32C3 ? "ESP32-C3" : "Unknown",
+             chip_info.revision);
+    
+    cJSON_AddStringToObject(system, "chip", chip_model);
+    cJSON_AddNumberToObject(system, "cores", chip_info.cores);
+    
+    // PSRAM info if available
+    size_t psram_size = heap_caps_get_total_size(MALLOC_CAP_SPIRAM);
+    if (psram_size > 0) {
+        size_t psram_free = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+        cJSON_AddNumberToObject(system, "psram_total", psram_size);
+        cJSON_AddNumberToObject(system, "psram_free", psram_free);
+    }
+    
+    // Format and return the response
+    char* json_str = cJSON_PrintUnformatted(response);
+    PSRAMString result(json_str);
+    free(json_str);
+    cJSON_Delete(response);
+    return result;
+}
+
+// Update the WebServer member method to call the static function
+PSRAMString WebServer::GetSystemStatusJson() {
+    return ::GetSystemStatusJson();
+}
+
+// System status handler - provides detailed system status
+esp_err_t WebServer::SystemStatusHandler(httpd_req_t *req) {
+    ESP_LOGI(TAG, "System status request: %s", req->uri);
+    
+    // Call the static function directly
+    PSRAMString status_json = ::GetSystemStatusJson();
+    return SendHttpResponse(req, "application/json", status_json.c_str(), status_json.length());
 }
 
 bool WebServer::SendWebSocketMessage(int client_index, const PSRAMString& message) {
@@ -826,6 +1207,39 @@ void WebServer::CheckWebSocketTimeouts() {
     }
 }
 
+// 创建一个定期任务发送系统状态更新
+void WebServer::StartPeriodicStatusUpdates() {
+    esp_timer_handle_t timer_handle;
+    esp_timer_create_args_t timer_args = {
+        .callback = [](void* arg) {
+            WebServer* server = static_cast<WebServer*>(arg);
+            if (server && server->IsRunning()) {
+                // 生成系统状态并广播给所有客户端
+                PSRAMString status_json = server->GetSystemStatusJson();
+                server->BroadcastWebSocketMessage(status_json);
+            }
+        },
+        .arg = this,
+        .name = "ws_status_update"
+    };
+    
+    esp_err_t ret = esp_timer_create(&timer_args, &timer_handle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "创建系统状态定时器失败: %s", esp_err_to_name(ret));
+        return;
+    }
+    
+    // 每5秒发送一次系统状态更新
+    ret = esp_timer_start_periodic(timer_handle, 5000000); // 5秒 = 5,000,000 微秒
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "启动系统状态定时器失败: %s", esp_err_to_name(ret));
+        esp_timer_delete(timer_handle);
+        return;
+    }
+    
+    ESP_LOGI(TAG, "系统状态定期更新已启动");
+}
+
 // 初始化Web组件
 void WebServer::InitWebComponents() {
 #if defined(CONFIG_ENABLE_WEB_SERVER)
@@ -845,6 +1259,9 @@ void WebServer::InitWebComponents() {
         manager.RegisterComponent(web_server);
         ESP_LOGI(TAG, "已创建新的WebServer实例");
     }
+    
+    // 延迟初始化其他组件，确保应用程序主流程已经完成初始化
+    vTaskDelay(pdMS_TO_TICKS(2000));
     
     // 注册WebContent组件
 #if defined(CONFIG_ENABLE_WEB_CONTENT)
@@ -1128,4 +1545,436 @@ void WebServer::CallWebSocketCallback(int client_index, const PSRAMString& messa
         // 如果没有旧回调，尝试使用新的消息处理系统
         HandleWebSocketMessage(client_index, message);
     }
+}
+
+// Car control handler - manages motor commands
+esp_err_t WebServer::CarControlHandler(httpd_req_t *req) {
+    ESP_LOGI(TAG, "Car control request: %s", req->uri);
+    
+    std::string uri(req->uri);
+    std::string action = uri.substr(5); // Remove "/car/" prefix
+    
+    cJSON* response = cJSON_CreateObject();
+    cJSON_AddStringToObject(response, "status", "ok");
+    cJSON_AddStringToObject(response, "action", action.c_str());
+    
+#if defined(CONFIG_ENABLE_MOTOR_CONTROLLER)
+    // Get motor controller component
+    auto& manager = ComponentManager::GetInstance();
+    Component* motor_comp = manager.GetComponent("MotorController");
+    
+    if (motor_comp) {
+        ESP_LOGI(TAG, "Processing car control action: %s", action.c_str());
+        
+        // Actual implementation of motor control
+        bool success = false;
+        
+        // Try to call the MotorController methods if they exist
+        // These method names are based on common motor controller interfaces
+        if (action == "stop") {
+            // Try to dynamically call the Stop method
+            try {
+                // Use a generic approach since we don't know the exact type
+                cJSON* cmd = cJSON_CreateObject();
+                cJSON_AddStringToObject(cmd, "command", "stop");
+                
+                // Try to invoke the component through JSON command
+                auto& thing_manager = iot::ThingManager::GetInstance();
+                
+                // 添加安全检查，防止空指针崩溃
+                if (cmd) {
+                    // 检查ThingManager是否已初始化
+                    if (thing_manager.IsInitialized()) {
+                        thing_manager.Invoke(cmd);
+                        success = true;
+                    } else {
+                        ESP_LOGE(TAG, "ThingManager not initialized");
+                        success = false;
+                    }
+                }
+                
+                cJSON_Delete(cmd);
+                cJSON_AddStringToObject(response, "message", "Car stopped");
+            } catch (const std::exception& e) {
+                ESP_LOGE(TAG, "Error stopping motor: %s", e.what());
+                success = false;
+            } catch (...) {
+                ESP_LOGE(TAG, "Unknown error stopping motor");
+                success = false;
+            }
+        } else if (action.find("forward") != std::string::npos) {
+            try {
+                cJSON* cmd = cJSON_CreateObject();
+                if (!cmd) {
+                    success = false;
+                } else {
+                    cJSON_AddStringToObject(cmd, "command", "forward");
+                    
+                    // Parse speed parameter if present
+                    size_t speed_pos = action.find("speed=");
+                    if (speed_pos != std::string::npos) {
+                        int speed = atoi(action.c_str() + speed_pos + 6);
+                        cJSON_AddNumberToObject(cmd, "speed", speed);
+                    }
+                    
+                    // 安全检查
+                    auto& thing_manager = iot::ThingManager::GetInstance();
+                    if (thing_manager.IsInitialized()) {
+                        thing_manager.Invoke(cmd);
+                        success = true;
+                    } else {
+                        ESP_LOGE(TAG, "ThingManager not initialized");
+                        success = false;
+                    }
+                    
+                    cJSON_Delete(cmd);
+                }
+                cJSON_AddStringToObject(response, "message", "Moving forward");
+            } catch (const std::exception& e) {
+                ESP_LOGE(TAG, "Error moving forward: %s", e.what());
+                success = false;
+            } catch (...) {
+                ESP_LOGE(TAG, "Unknown error moving forward");
+                success = false;
+            }
+        } else if (action.find("backward") != std::string::npos) {
+            try {
+                cJSON* cmd = cJSON_CreateObject();
+                if (!cmd) {
+                    success = false;
+                } else {
+                    cJSON_AddStringToObject(cmd, "command", "backward");
+                    
+                    // Parse speed parameter if present
+                    size_t speed_pos = action.find("speed=");
+                    if (speed_pos != std::string::npos) {
+                        int speed = atoi(action.c_str() + speed_pos + 6);
+                        cJSON_AddNumberToObject(cmd, "speed", speed);
+                    }
+                    
+                    // 安全检查
+                    auto& thing_manager = iot::ThingManager::GetInstance();
+                    if (thing_manager.IsInitialized()) {
+                        thing_manager.Invoke(cmd);
+                        success = true;
+                    } else {
+                        ESP_LOGE(TAG, "ThingManager not initialized");
+                        success = false;
+                    }
+                    
+                    cJSON_Delete(cmd);
+                }
+                cJSON_AddStringToObject(response, "message", "Moving backward");
+            } catch (const std::exception& e) {
+                ESP_LOGE(TAG, "Error moving backward: %s", e.what());
+                success = false;
+            } catch (...) {
+                ESP_LOGE(TAG, "Unknown error moving backward");
+                success = false;
+            }
+        } else if (action.find("left") != std::string::npos) {
+            try {
+                cJSON* cmd = cJSON_CreateObject();
+                if (!cmd) {
+                    success = false;
+                } else {
+                    cJSON_AddStringToObject(cmd, "command", "left");
+                    
+                    // Parse angle parameter if present
+                    size_t angle_pos = action.find("angle=");
+                    if (angle_pos != std::string::npos) {
+                        int angle = atoi(action.c_str() + angle_pos + 6);
+                        cJSON_AddNumberToObject(cmd, "angle", angle);
+                    }
+                    
+                    // 安全检查
+                    auto& thing_manager = iot::ThingManager::GetInstance();
+                    if (thing_manager.IsInitialized()) {
+                        thing_manager.Invoke(cmd);
+                        success = true;
+                    } else {
+                        ESP_LOGE(TAG, "ThingManager not initialized");
+                        success = false;
+                    }
+                    
+                    cJSON_Delete(cmd);
+                }
+                cJSON_AddStringToObject(response, "message", "Turning left");
+            } catch (const std::exception& e) {
+                ESP_LOGE(TAG, "Error turning left: %s", e.what());
+                success = false;
+            } catch (...) {
+                ESP_LOGE(TAG, "Unknown error turning left");
+                success = false;
+            }
+        } else if (action.find("right") != std::string::npos) {
+            try {
+                cJSON* cmd = cJSON_CreateObject();
+                if (!cmd) {
+                    success = false;
+                } else {
+                    cJSON_AddStringToObject(cmd, "command", "right");
+                    
+                    // Parse angle parameter if present
+                    size_t angle_pos = action.find("angle=");
+                    if (angle_pos != std::string::npos) {
+                        int angle = atoi(action.c_str() + angle_pos + 6);
+                        cJSON_AddNumberToObject(cmd, "angle", angle);
+                    }
+                    
+                    // 安全检查
+                    auto& thing_manager = iot::ThingManager::GetInstance();
+                    if (thing_manager.IsInitialized()) {
+                        thing_manager.Invoke(cmd);
+                        success = true;
+                    } else {
+                        ESP_LOGE(TAG, "ThingManager not initialized");
+                        success = false;
+                    }
+                    
+                    cJSON_Delete(cmd);
+                }
+                cJSON_AddStringToObject(response, "message", "Turning right");
+            } catch (const std::exception& e) {
+                ESP_LOGE(TAG, "Error turning right: %s", e.what());
+                success = false;
+            } catch (...) {
+                ESP_LOGE(TAG, "Unknown error turning right");
+                success = false;
+            }
+        } else {
+            cJSON_AddStringToObject(response, "message", "Unknown command");
+        }
+        
+        if (!success) {
+            cJSON_AddStringToObject(response, "status", "error");
+            cJSON_AddStringToObject(response, "message", "Failed to execute motor command");
+        }
+    } else {
+        cJSON_AddStringToObject(response, "status", "error");
+        cJSON_AddStringToObject(response, "message", "Motor controller not available");
+    }
+#else
+    cJSON_AddStringToObject(response, "status", "error");
+    cJSON_AddStringToObject(response, "message", "Motor control not enabled in this build");
+#endif
+
+    char* json_str = cJSON_PrintUnformatted(response);
+    esp_err_t ret = SendHttpResponse(req, "application/json", json_str, strlen(json_str));
+    free(json_str);
+    cJSON_Delete(response);
+    return ret;
+}
+
+// Camera control handler - handles camera settings
+esp_err_t WebServer::CameraControlHandler(httpd_req_t *req) {
+    ESP_LOGI(TAG, "Camera control request: %s", req->uri);
+    
+    // Parse query parameters
+    char query_buf[256] = {0};
+    esp_err_t ret = httpd_req_get_url_query_str(req, query_buf, sizeof(query_buf));
+    
+    cJSON* response = cJSON_CreateObject();
+    cJSON_AddStringToObject(response, "status", "ok");
+    
+#if defined(CONFIG_ENABLE_VISION_CONTROLLER)
+    // Get vision controller component
+    auto& manager = ComponentManager::GetInstance();
+    Component* vision_comp = manager.GetComponent("VisionController");
+    
+    if (vision_comp && ret == ESP_OK) {
+        char var[32] = {0};
+        char val[32] = {0};
+        
+        // Parse var and val parameters
+        if (httpd_query_key_value(query_buf, "var", var, sizeof(var)) == ESP_OK &&
+            httpd_query_key_value(query_buf, "val", val, sizeof(val)) == ESP_OK) {
+            
+            ESP_LOGI(TAG, "Camera setting: %s = %s", var, val);
+            cJSON_AddStringToObject(response, "variable", var);
+            cJSON_AddStringToObject(response, "value", val);
+            
+            // Create a JSON command to send to the VisionController through ThingManager
+            cJSON* cmd = cJSON_CreateObject();
+            cJSON_AddStringToObject(cmd, "component", "camera");
+            cJSON_AddStringToObject(cmd, "command", "set_property");
+            cJSON_AddStringToObject(cmd, "property", var);
+            
+            bool success = false;
+            
+            // Apply camera settings
+            if (strcmp(var, "framesize") == 0) {
+                int frame_size = atoi(val);
+                cJSON_AddNumberToObject(cmd, "value", frame_size);
+                
+                try {
+                    auto& thing_manager = iot::ThingManager::GetInstance();
+                    thing_manager.Invoke(cmd);
+                    success = true;
+                    cJSON_AddStringToObject(response, "message", "Frame size updated");
+                } catch (const std::exception& e) {
+                    ESP_LOGE(TAG, "Error setting framesize: %s", e.what());
+                    success = false;
+                }
+            } else if (strcmp(var, "quality") == 0) {
+                int quality = atoi(val);
+                cJSON_AddNumberToObject(cmd, "value", quality);
+                
+                try {
+                    auto& thing_manager = iot::ThingManager::GetInstance();
+                    thing_manager.Invoke(cmd);
+                    success = true;
+                    cJSON_AddStringToObject(response, "message", "Quality updated");
+                } catch (const std::exception& e) {
+                    ESP_LOGE(TAG, "Error setting quality: %s", e.what());
+                    success = false;
+                }
+            } else if (strcmp(var, "brightness") == 0 || 
+                      strcmp(var, "contrast") == 0 ||
+                      strcmp(var, "saturation") == 0 ||
+                      strcmp(var, "hmirror") == 0 ||
+                      strcmp(var, "vflip") == 0) {
+                // Handle other common camera settings
+                int value = atoi(val);
+                cJSON_AddNumberToObject(cmd, "value", value);
+                
+                try {
+                    auto& thing_manager = iot::ThingManager::GetInstance();
+                    thing_manager.Invoke(cmd);
+                    success = true;
+                    char msg[64];
+                    snprintf(msg, sizeof(msg), "%s updated to %d", var, value);
+                    cJSON_AddStringToObject(response, "message", msg);
+                } catch (const std::exception& e) {
+                    ESP_LOGE(TAG, "Error setting %s: %s", var, e.what());
+                    success = false;
+                }
+            } else {
+                cJSON_AddStringToObject(response, "message", "Unknown camera parameter");
+                success = false;
+            }
+            
+            cJSON_Delete(cmd);
+            
+            if (!success) {
+                cJSON_AddStringToObject(response, "status", "error");
+                cJSON_AddStringToObject(response, "message", "Failed to set camera parameter");
+            }
+        } else {
+            cJSON_AddStringToObject(response, "message", "Missing var or val parameters");
+        }
+    } else {
+        if (vision_comp) {
+            cJSON_AddStringToObject(response, "message", "Missing query parameters");
+        } else {
+            cJSON_AddStringToObject(response, "status", "error");
+            cJSON_AddStringToObject(response, "message", "Vision controller not available");
+        }
+    }
+#else
+    cJSON_AddStringToObject(response, "status", "error");
+    cJSON_AddStringToObject(response, "message", "Camera control not enabled in this build");
+#endif
+
+    char* json_str = cJSON_PrintUnformatted(response);
+    ret = SendHttpResponse(req, "application/json", json_str, strlen(json_str));
+    free(json_str);
+    cJSON_Delete(response);
+    return ret;
+}
+
+// Camera stream handler - provides MJPEG streaming
+esp_err_t WebServer::CameraStreamHandler(httpd_req_t *req) {
+    ESP_LOGI(TAG, "Camera stream request: %s", req->uri);
+    
+#if defined(CONFIG_ENABLE_VISION_CONTROLLER)
+    // Get vision controller component
+    auto& manager = ComponentManager::GetInstance();
+    Component* vision_comp = manager.GetComponent("VisionController");
+    
+    if (vision_comp) {
+        // Set response content type to multipart/x-mixed-replace
+        httpd_resp_set_type(req, "multipart/x-mixed-replace; boundary=frame");
+        httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+        
+        // Create a JSON command to start streaming via ThingManager
+        cJSON* start_cmd = cJSON_CreateObject();
+        cJSON_AddStringToObject(start_cmd, "component", "camera");
+        cJSON_AddStringToObject(start_cmd, "command", "start_streaming");
+        
+        bool streaming_started = false;
+        try {
+            auto& thing_manager = iot::ThingManager::GetInstance();
+            thing_manager.Invoke(start_cmd);
+            streaming_started = true;
+        } catch (const std::exception& e) {
+            ESP_LOGE(TAG, "Error starting camera stream: %s", e.what());
+            streaming_started = false;
+        }
+        cJSON_Delete(start_cmd);
+        
+        if (streaming_started) {
+            // In a real implementation we would:
+            // 1. Set up a callback to receive frames from the vision controller
+            // 2. For each frame, send it with the appropriate MJPEG format headers
+            // 3. Continue until client disconnects
+            
+            // For a basic implementation, we'll just generate a mock stream
+            // In a real implementation, you would get frames from the camera and stream them
+            const char* frame_header = "--frame\r\nContent-Type: image/jpeg\r\nContent-Length: ";
+            const char* frame_separator = "\r\n\r\n";
+            
+            // Send a few mock frames to show it's working
+            for (int i = 0; i < 10; i++) {
+                // In a real implementation, this would be:
+                // 1. Get a frame from the camera as JPEG data
+                // 2. Send the frame with appropriate headers
+                
+                // Here we just use a placeholder message instead of real image data
+                const char* placeholder = "This would be JPEG image data in a real implementation.";
+                char buffer[128];
+                sprintf(buffer, "%s%d%s", frame_header, (int)strlen(placeholder), frame_separator);
+                
+                // Send the header
+                httpd_resp_send_chunk(req, buffer, strlen(buffer));
+                
+                // Send the "image data" (placeholder text)
+                httpd_resp_send_chunk(req, placeholder, strlen(placeholder));
+                
+                // Short delay to simulate frame rate
+                vTaskDelay(pdMS_TO_TICKS(100));
+            }
+            
+            // End the stream with an empty chunk
+            httpd_resp_send_chunk(req, NULL, 0);
+            
+            // Stop streaming
+            cJSON* stop_cmd = cJSON_CreateObject();
+            cJSON_AddStringToObject(stop_cmd, "component", "camera");
+            cJSON_AddStringToObject(stop_cmd, "command", "stop_streaming");
+            
+            try {
+                auto& thing_manager = iot::ThingManager::GetInstance();
+                thing_manager.Invoke(stop_cmd);
+            } catch (const std::exception& e) {
+                ESP_LOGE(TAG, "Error stopping camera stream: %s", e.what());
+            }
+            cJSON_Delete(stop_cmd);
+        } else {
+            // Return error message if streaming couldn't be started
+            httpd_resp_set_type(req, "text/plain");
+            httpd_resp_send(req, "Failed to start camera streaming", -1);
+        }
+    } else {
+        // Return error message if vision controller not available
+        httpd_resp_set_type(req, "text/plain");
+        httpd_resp_send(req, "Vision controller not available", -1);
+    }
+#else
+    // Return error message if vision module is not enabled
+    httpd_resp_set_type(req, "text/plain");
+    httpd_resp_send(req, "Camera streaming not enabled in this build", -1);
+#endif
+
+    return ESP_OK;
 } 
