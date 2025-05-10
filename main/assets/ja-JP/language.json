@@ -15,7 +15,12 @@
         "REGISTERING_NETWORK": "ネットワーク接続待機中...",
         "CHECKING_NEW_VERSION": "アップデートを確認中...",
         "CHECK_NEW_VERSION_FAILED": "更新確認に失敗しました。%d 秒後に再試行します: %s",
+<<<<<<< HEAD
         "AI_CORE_DISABLED": "小知AIコア機能が無効",
+=======
+        "SWITCH_TO_WIFI_NETWORK": "Wi-Fiに切り替え中...",
+        "SWITCH_TO_4G_NETWORK": "4Gに切り替え中...",
+>>>>>>> upstream/main
 
         "STANDBY": "スタンバイ",
         "CONNECT_TO": "接続先 ",

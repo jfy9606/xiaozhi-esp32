@@ -144,6 +144,8 @@ bool Ota::CheckVersion() {
             }
         }
         has_mqtt_config_ = true;
+    } else {
+        ESP_LOGI(TAG, "No mqtt section found !");
     }
 
     has_websocket_config_ = false;
@@ -159,6 +161,8 @@ bool Ota::CheckVersion() {
             }
         }
         has_websocket_config_ = true;
+    } else {
+        ESP_LOGI(TAG, "No websocket section found!");
     }
 
     has_server_time_ = false;
@@ -182,6 +186,8 @@ bool Ota::CheckVersion() {
             settimeofday(&tv, NULL);
             has_server_time_ = true;
         }
+    } else {
+        ESP_LOGW(TAG, "No server_time section found!");
     }
 
     has_new_version_ = false;
@@ -210,7 +216,10 @@ bool Ota::CheckVersion() {
                 has_new_version_ = true;
             }
         }
+    } else {
+        ESP_LOGW(TAG, "No firmware section found!");
     }
+
     cJSON_Delete(root);
     return true;
 }
