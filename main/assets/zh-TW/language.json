@@ -15,12 +15,9 @@
         "REGISTERING_NETWORK": "等待網絡...",
         "CHECKING_NEW_VERSION": "檢查新版本...",
         "CHECK_NEW_VERSION_FAILED": "檢查新版本失敗，將在 %d 秒後重試：%s",
-<<<<<<< HEAD
         "AI_CORE_DISABLED": "小智AI核心功能已禁用",
-=======
         "SWITCH_TO_WIFI_NETWORK": "切換到 Wi-Fi...",
         "SWITCH_TO_4G_NETWORK": "切換到 4G...",
->>>>>>> upstream/main
 
         "STANDBY": "待命",
         "CONNECT_TO": "連接 ",

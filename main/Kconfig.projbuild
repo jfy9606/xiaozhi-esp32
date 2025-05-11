@@ -260,7 +260,6 @@ config USE_DEVICE_AEC
     default n
     depends on USE_AUDIO_PROCESSOR && (BOARD_TYPE_ESP_BOX_3 || BOARD_TYPE_ESP_BOX || BOARD_TYPE_ESP_BOX_LITE || BOARD_TYPE_LICHUANG_DEV || BOARD_TYPE_ESP32S3_KORVO2_V3)
     help
-<<<<<<< HEAD
         需要 ESP32 S3 与 AEC 开启，因为性能不够，不建议和微信聊天界面风格同时开启
         
 menu "Components Manager"
@@ -327,7 +326,6 @@ menu "Components Manager"
 
 endmenu
         
-=======
         因为性能不够，不建议和微信聊天界面风格同时开启
 
 config USE_SERVER_AEC
@@ -337,5 +335,4 @@ config USE_SERVER_AEC
     help
         启用服务器端 AEC，需要服务器支持
 
->>>>>>> upstream/main
 endmenu

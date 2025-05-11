@@ -372,7 +372,6 @@ void Application::Start() {
     }
     codec->Start();
 
-<<<<<<< HEAD
     // Initialize all components before starting tasks
     InitializeComponents();
     
@@ -381,9 +380,7 @@ void Application::Start() {
     StartComponents();
     
     // Now start the background audio loop task
-=======
 #if CONFIG_USE_AUDIO_PROCESSOR
->>>>>>> upstream/main
     xTaskCreatePinnedToCore([](void* arg) {
         Application* app = (Application*)arg;
         app->AudioLoop();
