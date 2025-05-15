@@ -17,6 +17,32 @@ board_config_t* board_get_config(void) {
         config.servo_pins = servo_pins_array;
         config.servo_count = 0;  // 默认没有舵机
         
+        // 舵机引脚配置
+        #if defined(SERVO_COUNT) && (SERVO_COUNT > 0)
+        config.servo_count = SERVO_COUNT > 4 ? 4 : SERVO_COUNT; // 限制最多4个舵机
+        
+        #if defined(SERVO_PAN_PIN)
+        servo_pins_array[0] = SERVO_PAN_PIN;
+        #endif
+        
+        #if defined(SERVO_TILT_PIN)
+        servo_pins_array[1] = SERVO_TILT_PIN;
+        #endif
+        
+        // 支持额外舵机引脚定义
+        #if defined(SERVO_3_PIN) && config.servo_count > 2
+        servo_pins_array[2] = SERVO_3_PIN;
+        #endif
+        
+        #if defined(SERVO_4_PIN) && config.servo_count > 3
+        servo_pins_array[3] = SERVO_4_PIN;
+        #endif
+        
+        ESP_LOGI(TAG, "Servo configuration: count=%d, pins=[%d, %d, %d, %d]",
+                config.servo_count, servo_pins_array[0], servo_pins_array[1],
+                servo_pins_array[2], servo_pins_array[3]);
+        #endif
+        
         // 尝试根据板子的配置头文件初始化引脚
         #if defined(MOTOR_ENA_PIN)
         config.ena_pin = MOTOR_ENA_PIN;

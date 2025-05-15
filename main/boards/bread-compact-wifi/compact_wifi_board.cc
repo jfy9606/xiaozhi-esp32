@@ -15,6 +15,11 @@
 #include <esp_lcd_panel_ops.h>
 #include <esp_lcd_panel_vendor.h>
 
+// 添加多路复用器头文件
+#ifdef CONFIG_ENABLE_PCA9548A
+#include "include/multiplexer.h"
+#endif
+
 #ifdef SH1106
 #include <esp_lcd_panel_sh1106.h>
 #endif
@@ -23,6 +28,8 @@
 
 LV_FONT_DECLARE(font_puhui_14_1);
 LV_FONT_DECLARE(font_awesome_14_1);
+
+namespace iot {
 
 class CompactWifiBoard : public WifiBoard {
 private:
@@ -50,6 +57,15 @@ private:
             },
         };
         ESP_ERROR_CHECK(i2c_new_master_bus(&bus_config, &display_i2c_bus_));
+        
+        // 初始化共享同一个I2C总线的多路复用器
+        #ifdef CONFIG_ENABLE_PCA9548A
+        ESP_LOGI(TAG, "Initializing multiplexer with shared I2C bus");
+        esp_err_t ret = multiplexer_init_with_bus(display_i2c_bus_);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to initialize multiplexer: %s", esp_err_to_name(ret));
+        }
+        #endif
     }
 
     void InitializeSsd1306Display() {
@@ -155,6 +171,12 @@ private:
         auto& thing_manager = iot::ThingManager::GetInstance();
         thing_manager.AddThing(iot::CreateThing("Speaker"));
         thing_manager.AddThing(iot::CreateThing("Lamp"));
+        
+        // 根据配置选项添加舵机控制器
+        #ifdef CONFIG_ENABLE_SERVO_CONTROLLER
+        thing_manager.AddThing(iot::CreateThing("ServoThing"));
+        ESP_LOGI(TAG, "Servo controller enabled");
+        #endif
     }
 
 public:
@@ -167,6 +189,9 @@ public:
         InitializeSsd1306Display();
         InitializeButtons();
         InitializeIot();
+
+        // board_config.cc 现在会自动从宏定义读取舵机配置信息
+        ESP_LOGI(TAG, "Bread Compact WiFi Board Initialized with Servo support");
     }
 
     virtual Led* GetLed() override {
@@ -190,4 +215,7 @@ public:
     }
 };
 
-DECLARE_BOARD(CompactWifiBoard);
+} // namespace iot
+
+// Move DECLARE_BOARD outside of the namespace to define create_board in global scope
+DECLARE_BOARD(iot::CompactWifiBoard);

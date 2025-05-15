@@ -260,9 +260,16 @@ config USE_DEVICE_AEC
     default n
     depends on USE_AUDIO_PROCESSOR && (BOARD_TYPE_ESP_BOX_3 || BOARD_TYPE_ESP_BOX || BOARD_TYPE_ESP_BOX_LITE || BOARD_TYPE_LICHUANG_DEV || BOARD_TYPE_ESP32S3_KORVO2_V3)
     help
-        需要 ESP32 S3 与 AEC 开启，因为性能不够，不建议和微信聊天界面风格同时开启
+        因为性能不够，不建议和微信聊天界面风格同时开启
         
-menu "Components Manager"
+config USE_SERVER_AEC
+    bool "在通话过程中启用服务器端 AEC"
+    default n
+    depends on USE_AUDIO_PROCESSOR
+    help
+        启用服务器端 AEC，需要服务器支持
+        
+menu "组件管理器"
     # Web服务器配置
     menu "Web Server"
         config ENABLE_WEB_SERVER
@@ -297,6 +304,146 @@ menu "Components Manager"
                 关闭此选项将只提供基本的Web API接口，不包含HTML页面。
     endmenu
     
+    # Multiplexer配置
+    menu "Multiplexer"
+        config ENABLE_MULTIPLEXER
+            bool "启用多路复用器支持"
+            default n
+            help
+                启用多路复用器支持，可使用PCA9548A或HW-178等多路复用器扩展I/O或I2C设备
+
+        config ENABLE_PCA9548A
+            bool "启用PCA9548A I2C多路复用器"
+            default n
+            depends on ENABLE_MULTIPLEXER
+            help
+                启用PCA9548A I2C多路复用器支持，可扩展I2C设备连接。
+                PCA9548A通过SDA、SCL输入，SC0-7、SD0-7输出，可连接多达8个I2C设备。
+
+        config PCA9548A_I2C_PORT
+            int "PCA9548A I2C端口号"
+            default 0
+            range 0 1
+            depends on ENABLE_PCA9548A
+            help
+                PCA9548A使用的I2C端口号。ESP32支持两个I2C端口: 0和1。
+
+        config PCA9548A_I2C_ADDR
+            hex "PCA9548A I2C地址"
+            default 0x70
+            range 0x70 0x77
+            depends on ENABLE_PCA9548A
+            help
+                PCA9548A的I2C地址，默认为0x70。
+                可通过A0-A2引脚设置为0x70-0x77之间的值。
+
+        config PCA9548A_SDA_PIN
+            int "PCA9548A SDA引脚"
+            default 21
+            range 0 48
+            depends on ENABLE_PCA9548A
+            help
+                连接到PCA9548A的SDA引脚的GPIO编号。
+
+        config PCA9548A_SCL_PIN
+            int "PCA9548A SCL引脚"
+            default 22
+            range 0 48
+            depends on ENABLE_PCA9548A
+            help
+                连接到PCA9548A的SCL引脚的GPIO编号。
+
+        config PCA9548A_RESET_PIN
+            int "PCA9548A复位引脚"
+            default -1
+            range -1 48
+            depends on ENABLE_PCA9548A
+            help
+                连接到PCA9548A的复位引脚的GPIO编号。
+                如果不使用复位引脚，设置为-1。
+
+        config PCA9548A_I2C_FREQ_HZ
+            int "PCA9548A I2C频率 (Hz)"
+            default 400000
+            range 100000 1000000
+            depends on ENABLE_PCA9548A
+            help
+                PCA9548A使用的I2C总线频率，单位Hz。
+                标准模式为100000Hz (100KHz)，快速模式为400000Hz (400KHz)。
+
+        config PCA9548A_I2C_TIMEOUT_MS
+            int "PCA9548A I2C超时时间 (ms)"
+            default 1000
+            range 100 10000
+            depends on ENABLE_PCA9548A
+            help
+                PCA9548A I2C通信的超时时间，单位毫秒。
+
+        config ENABLE_HW178
+            bool "启用HW-178 16路模拟多路复用器"
+            default n
+            depends on ENABLE_MULTIPLEXER
+            help
+                启用HW-178多路复用器支持，可扩展模拟输入接口。
+                HW-178通过S0-S3四路选择引脚控制，可连接多达16个模拟信号(C0-C15)。
+
+        config HW178_S0_PIN
+            int "HW-178 S0控制引脚"
+            default 17
+            range 0 48
+            depends on ENABLE_HW178
+            help
+                HW-178多路复用器的S0控制引脚。与S1-S3一起决定选择哪个通道。
+
+        config HW178_S1_PIN
+            int "HW-178 S1控制引脚"
+            default 18
+            range 0 48
+            depends on ENABLE_HW178
+            help
+                HW-178多路复用器的S1控制引脚。与S0,S2,S3一起决定选择哪个通道。
+
+        config HW178_S2_PIN
+            int "HW-178 S2控制引脚"
+            default 19
+            range 0 48
+            depends on ENABLE_HW178
+            help
+                HW-178多路复用器的S2控制引脚。与S0,S1,S3一起决定选择哪个通道。
+
+        config HW178_S3_PIN
+            int "HW-178 S3控制引脚"
+            default 20
+            range 0 48
+            depends on ENABLE_HW178
+            help
+                HW-178多路复用器的S3控制引脚。与S0-S2一起决定选择哪个通道。
+
+        config HW178_EN_PIN
+            int "HW-178使能引脚"
+            default 16
+            range -1 48
+            depends on ENABLE_HW178
+            help
+                HW-178多路复用器的使能引脚。如果不使用，设置为-1。
+
+        config HW178_EN_ACTIVE_HIGH
+            bool "HW-178使能引脚高电平有效"
+            default y
+            depends on ENABLE_HW178 && HW178_EN_PIN != -1
+            help
+                如果HW-178的使能引脚是高电平有效，选择此项。
+                如果是低电平有效，取消选择。
+
+        config HW178_ADC_CHANNEL
+            int "HW-178输出ADC通道"
+            default 3
+            range 0 9
+            depends on ENABLE_HW178
+            help
+                连接HW-178输出的ADC通道号。
+    endmenu
+    
     # 电机控制器配置
     menu "Motor Controller"
         config ENABLE_MOTOR_CONTROLLER
@@ -304,6 +451,33 @@ menu "Components Manager"
             default y
             help
                 启用电机控制器，用于小车移动功能
+    endmenu
+    
+    # 舵机控制器配置
+    menu "Servo Controller"
+        config ENABLE_SERVO_CONTROLLER
+            bool "启用舵机控制器"
+            default y
+            help
+                启用舵机控制器，用于舵机云台、机械臂等控制功能
+                
+        config SERVO_MIN_PULSE_WIDTH
+            int "舵机最小脉冲宽度(μs)"
+            default 500
+            range 400 1500
+            depends on ENABLE_SERVO_CONTROLLER
+            help
+                舵机控制信号的最小脉冲宽度，单位为微秒。
+                通常标准舵机为500-600μs，数字舵机可能更低。
+                
+        config SERVO_MAX_PULSE_WIDTH
+            int "舵机最大脉冲宽度(μs)"
+            default 2500
+            range 1500 3000
+            depends on ENABLE_SERVO_CONTROLLER
+            help
+                舵机控制信号的最大脉冲宽度，单位为微秒。
+                通常标准舵机为2400-2500μs，数字舵机可能更高。
     endmenu
     
     # AI控制器配置
@@ -324,15 +498,48 @@ menu "Components Manager"
                 启用视觉控制器，用于摄像头功能
     endmenu
 
-endmenu
-        
-        因为性能不够，不建议和微信聊天界面风格同时开启
+    # 超声波传感器配置
+    menu "Ultrasonic Sensor"
+        config ENABLE_US_SENSOR
+            bool "启用超声波传感器"
+            default y
+            help
+                启用超声波传感器，用于距离测量和障碍物检测
 
-config USE_SERVER_AEC
-    bool "在通话过程中启用服务器端 AEC"
-    default n
-    depends on USE_AUDIO_PROCESSOR
-    help
-        启用服务器端 AEC，需要服务器支持
+        config US_TRIG_PIN
+            int "超声波传感器触发引脚"
+            default 21
+            range 0 48
+            depends on ENABLE_US_SENSOR
+            help
+                连接到超声波传感器的触发引脚(TRIG)的GPIO编号
+
+        config US_ECHO_PIN
+            int "超声波传感器回响引脚"
+            default 22
+            range 0 48
+            depends on ENABLE_US_SENSOR
+            help
+                连接到超声波传感器的回响引脚(ECHO)的GPIO编号
+
+        config US_SAFE_DISTANCE
+            int "超声波传感器安全距离(cm)"
+            default 15
+            range 2 100
+            depends on ENABLE_US_SENSOR
+            help
+                超声波传感器的安全距离阈值，单位厘米
+                当检测距离小于此值时，认为有障碍物
+
+        config US_MAX_DISTANCE
+            int "超声波传感器最大距离(cm)"
+            default 400
+            range 50 800
+            depends on ENABLE_US_SENSOR
+            help
+                超声波传感器的最大测量距离，单位厘米
+    endmenu
+
+endmenu
 
 endmenu

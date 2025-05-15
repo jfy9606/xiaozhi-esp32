@@ -63,3 +63,8 @@ CONFIG_LV_USE_WIN=n
 
 CONFIG_LV_BUILD_EXAMPLES=n
 
+# Enable WebSocket support in ESP HTTP Server
+CONFIG_HTTPD_WS_SUPPORT=y
+
+# Increase maximum sockets for WebSocket support
+CONFIG_LWIP_MAX_SOCKETS=16

@@ -153,6 +153,12 @@ private:
         thing_manager.AddThing(iot::CreateThing("Speaker"));
         thing_manager.AddThing(iot::CreateThing("Screen"));
         thing_manager.AddThing(iot::CreateThing("Lamp"));
+        
+        // 根据配置选项添加舵机控制器
+        #ifdef CONFIG_ENABLE_SERVO_CONTROLLER
+        thing_manager.AddThing(iot::CreateThing("ServoThing"));
+        ESP_LOGI(TAG, "Servo controller enabled");
+        #endif
     }
 
 public:
@@ -166,6 +172,8 @@ public:
             GetBacklight()->RestoreBrightness();
         }
         
+        // board_config.cc 现在会自动从宏定义读取舵机配置信息
+        ESP_LOGI(TAG, "Bread Compact WiFi LCD Board Initialized with Servo support");
     }
 
     virtual Led* GetLed() override {

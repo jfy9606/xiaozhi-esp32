@@ -34,6 +34,10 @@
 #define VOLUME_UP_BUTTON_GPIO   GPIO_NUM_NC
 #define VOLUME_DOWN_BUTTON_GPIO GPIO_NUM_NC
 
+// 舵机引脚定义
+#define SERVO_PAN_PIN  10  // 水平舵机引脚
+#define SERVO_TILT_PIN 13  // 垂直舵机引脚
+#define SERVO_COUNT    2   // 舵机数量
 
 #define DISPLAY_BACKLIGHT_PIN GPIO_NUM_42
 #define DISPLAY_MOSI_PIN      GPIO_NUM_47

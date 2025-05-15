@@ -243,6 +243,12 @@ if(CONFIG_IDF_TARGET_ESP32)
                              )
 endif()
 
+# 添加外部扩展组件文件
+file(GLOB EXT_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/ext/*.c)
+file(GLOB EXT_HEADERS ${CMAKE_CURRENT_SOURCE_DIR}/ext/include/*.h)
+list(APPEND SOURCES ${EXT_SOURCES})
+list(APPEND INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/ext ${CMAKE_CURRENT_SOURCE_DIR}/ext/include)
+
 idf_component_register(SRCS ${SOURCES}
                     EMBED_FILES ${EMBED_FILES}
                     INCLUDE_DIRS ${INCLUDE_DIRS}

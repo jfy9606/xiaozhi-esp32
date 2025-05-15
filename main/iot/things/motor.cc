@@ -32,7 +32,7 @@
 // SG90舵机控制参数
 #define SERVO_FREQ 50              // 50Hz，周期为20ms
 #define SERVO_TIMER LEDC_TIMER_1   // 使用计时器1（避免与电机冲突）
-#define SERVO_RESOLUTION LEDC_TIMER_16_BIT // 16位分辨率
+#define SERVO_RESOLUTION LEDC_TIMER_10_BIT // 10位分辨率 - 兼容ESP-IDF最新版本
 #define SERVO_MIN_PULSEWIDTH 500   // 0.5ms - 0度
 #define SERVO_MAX_PULSEWIDTH 2500  // 2.5ms - 180度
 #define SERVO_MAX_DEGREE 180       // 最大角度
