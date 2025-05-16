@@ -126,26 +126,37 @@ const char* MotorContent::GetName() const {
 }
 
 void MotorContent::InitHandlers() {
-    // 检查URI是否已注册，避免重复注册
+    // 检查URI是否已经注册，避免重复注册
     if (!server_->IsUriRegistered("/car")) {
-        server_->RegisterUri("/car", HTTP_GET, HandleCar, this);
+        // 使用lambda表达式创建HttpRequestHandler类型
+        server_->RegisterHttpHandler("/car", HTTP_GET, 
+            [this](httpd_req_t* req) -> esp_err_t {
+                return HandleCar(req);
+            });
         ESP_LOGI(TAG, "Registered URI handler: /car");
     } else {
-        ESP_LOGW(TAG, "URI already registered, skipping: /car");
+        ESP_LOGI(TAG, "URI /car already registered, skipping");
     }
     
     if (!server_->IsUriRegistered("/motor/control")) {
-        server_->RegisterUri("/motor/control", HTTP_POST, HandleMotorControl);
+        // 对于不需要this指针的静态函数，可以直接使用lambda来适配
+        server_->RegisterHttpHandler("/motor/control", HTTP_POST, 
+            [](httpd_req_t* req) -> esp_err_t {
+                return HandleMotorControl(req);
+            });
         ESP_LOGI(TAG, "Registered URI handler: /motor/control");
     } else {
-        ESP_LOGW(TAG, "URI already registered, skipping: /motor/control");
+        ESP_LOGI(TAG, "URI /motor/control already registered, skipping");
     }
     
     if (!server_->IsUriRegistered("/motor/status")) {
-        server_->RegisterUri("/motor/status", HTTP_GET, HandleMotorStatus);
+        server_->RegisterHttpHandler("/motor/status", HTTP_GET, 
+            [](httpd_req_t* req) -> esp_err_t {
+                return HandleMotorStatus(req);
+            });
         ESP_LOGI(TAG, "Registered URI handler: /motor/status");
     } else {
-        ESP_LOGW(TAG, "URI already registered, skipping: /motor/status");
+        ESP_LOGI(TAG, "URI /motor/status already registered, skipping");
     }
     
     // 使用RegisterWebSocketHandler而不是RegisterWebSocket

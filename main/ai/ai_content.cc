@@ -93,33 +93,46 @@ void AIContent::InitHandlers() {
         return;
     }
 
-    // 检查URI是否已注册，避免重复注册
+    // 检查URI是否已经注册，避免重复注册
     if (!server_->IsUriRegistered("/ai")) {
-        server_->RegisterUri("/ai", HTTP_GET, HandleAI, this);
+        // 使用lambda捕获this指针，将C风格的静态函数适配为新的HttpRequestHandler类型
+        server_->RegisterHttpHandler("/ai", HTTP_GET, 
+            [this](httpd_req_t* req) -> esp_err_t {
+                return HandleAI(req);
+            });
         ESP_LOGI(TAG, "Registered URI handler: /ai");
     } else {
-        ESP_LOGW(TAG, "URI already registered, skipping: /ai");
+        ESP_LOGI(TAG, "URI /ai already registered, skipping");
     }
     
     if (!server_->IsUriRegistered("/api/speak")) {
-        server_->RegisterUri("/api/speak", HTTP_POST, HandleSpeakText, this);
+        server_->RegisterHttpHandler("/api/speak", HTTP_POST, 
+            [this](httpd_req_t* req) -> esp_err_t {
+                return HandleSpeakText(req);
+            });
         ESP_LOGI(TAG, "Registered URI handler: /api/speak");
     } else {
-        ESP_LOGW(TAG, "URI already registered, skipping: /api/speak");
+        ESP_LOGI(TAG, "URI /api/speak already registered, skipping");
     }
     
     if (!server_->IsUriRegistered("/api/set_key")) {
-        server_->RegisterUri("/api/set_key", HTTP_POST, HandleSetApiKey, this);
+        server_->RegisterHttpHandler("/api/set_key", HTTP_POST, 
+            [this](httpd_req_t* req) -> esp_err_t {
+                return HandleSetApiKey(req);
+            });
         ESP_LOGI(TAG, "Registered URI handler: /api/set_key");
     } else {
-        ESP_LOGW(TAG, "URI already registered, skipping: /api/set_key");
+        ESP_LOGI(TAG, "URI /api/set_key already registered, skipping");
     }
     
     if (!server_->IsUriRegistered("/api/ai/status")) {
-        server_->RegisterUri("/api/ai/status", HTTP_GET, HandleStatus, this);
+        server_->RegisterHttpHandler("/api/ai/status", HTTP_GET, 
+            [this](httpd_req_t* req) -> esp_err_t {
+                return HandleStatus(req);
+            });
         ESP_LOGI(TAG, "Registered URI handler: /api/ai/status");
     } else {
-        ESP_LOGW(TAG, "URI already registered, skipping: /api/ai/status");
+        ESP_LOGI(TAG, "URI /api/ai/status already registered, skipping");
     }
     
     // 注册WebSocket消息处理器

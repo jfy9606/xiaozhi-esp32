@@ -308,7 +308,7 @@ public:
             return false;
         }
         
-        ESP_LOGD(TAG, "Servo set to %d degrees (pulse width: %d us)", angle, pulse_width_us);
+        ESP_LOGD(TAG, "Servo set to %d degrees (pulse width: %" PRIu32 " us)", angle, pulse_width_us);
         return true;
     }
     

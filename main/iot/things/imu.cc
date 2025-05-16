@@ -17,9 +17,10 @@
 #include <cmath>
 
 #include "esp_log.h"
-#include "driver/i2c.h"
+#include "driver/i2c_master.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "driver/gpio.h"
 
 #include "board_config.h"
 #include "../thing.h"
@@ -165,8 +166,8 @@ public:
                     
                     if (params["sda_pin"].type() == kValueTypeNumber && 
                         params["scl_pin"].type() == kValueTypeNumber) {
-                        sda_pin_ = params["sda_pin"].number();
-                        scl_pin_ = params["scl_pin"].number();
+                        sda_pin_ = static_cast<gpio_num_t>(params["sda_pin"].number());
+                        scl_pin_ = static_cast<gpio_num_t>(params["scl_pin"].number());
                         updated = true;
                     }
                     
@@ -189,11 +190,13 @@ public:
         ESP_LOGI(TAG, "Initializing IMU...");
 
         // Use default I2C pins if not already set
-        if (sda_pin_ < 0) sda_pin_ = CONFIG_I2C_SDA_PIN;
-        if (scl_pin_ < 0) scl_pin_ = CONFIG_I2C_SCL_PIN;
+        int sda = CONFIG_I2C_SDA_PIN;
+        int scl = CONFIG_I2C_SCL_PIN;
+        if (sda_pin_ == GPIO_NUM_NC && sda >= 0 && sda < GPIO_NUM_MAX) sda_pin_ = static_cast<gpio_num_t>(sda);
+        if (scl_pin_ == GPIO_NUM_NC && scl >= 0 && scl < GPIO_NUM_MAX) scl_pin_ = static_cast<gpio_num_t>(scl);
         if (i2c_port_ < 0) i2c_port_ = CONFIG_I2C_PORT;
 
-        if (sda_pin_ < 0 || scl_pin_ < 0) {
+        if (sda_pin_ == GPIO_NUM_NC || scl_pin_ == GPIO_NUM_NC) {
             ESP_LOGE(TAG, "I2C pins not configured for this board");
             return;
         }
@@ -201,69 +204,95 @@ public:
         ESP_LOGI(TAG, "Using I2C - Port: %d, SDA: %d, SCL: %d", 
                 i2c_port_, sda_pin_, scl_pin_);
 
-        // Configure I2C
-        i2c_config_t i2c_conf = {};
-        i2c_conf.mode = I2C_MODE_MASTER;
-        i2c_conf.sda_io_num = static_cast<gpio_num_t>(sda_pin_);
-        i2c_conf.scl_io_num = static_cast<gpio_num_t>(scl_pin_);
-        i2c_conf.sda_pullup_en = GPIO_PULLUP_ENABLE;
-        i2c_conf.scl_pullup_en = GPIO_PULLUP_ENABLE;
-        i2c_conf.master.clk_speed = I2C_MASTER_FREQ_HZ;
-        
-        esp_err_t ret = i2c_param_config(i2c_port_, &i2c_conf);
+        // 新I2C驱动：配置总线
+        i2c_master_bus_config_t bus_config = {
+            .i2c_port = i2c_port_,
+            .sda_io_num = sda_pin_,
+            .scl_io_num = scl_pin_,
+            .clk_source = I2C_CLK_SRC_DEFAULT,
+            .glitch_ignore_cnt = 7,
+            .intr_priority = 0,
+            .trans_queue_depth = 0,
+            .flags = {
+                .enable_internal_pullup = 1,
+            },
+        };
+        esp_err_t ret = i2c_new_master_bus(&bus_config, &bus_handle_);
         if (ret != ESP_OK) {
-            ESP_LOGE(TAG, "Failed to configure I2C parameters: %s", esp_err_to_name(ret));
+            ESP_LOGE(TAG, "Failed to create I2C bus: %s", esp_err_to_name(ret));
             return;
         }
-        
-        ret = i2c_driver_install(i2c_port_, I2C_MODE_MASTER, 0, 0, 0);
+
+        // 新I2C驱动：配置设备（默认用MPU6050地址，后续可动态切换）
+        i2c_device_config_t dev_cfg = {
+            .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+            .device_address = MPU6050_ADDR,
+            .scl_speed_hz = I2C_MASTER_FREQ_HZ,
+        };
+        ret = i2c_master_bus_add_device(bus_handle_, &dev_cfg, &dev_handle_);
         if (ret != ESP_OK) {
-            ESP_LOGE(TAG, "Failed to install I2C driver: %s", esp_err_to_name(ret));
+            ESP_LOGE(TAG, "Failed to add I2C device: %s", esp_err_to_name(ret));
+            i2c_del_master_bus(bus_handle_);
+            bus_handle_ = NULL;
             return;
         }
-        
+
         // Initialize sensors
         mpu6050_initialized_ = InitMPU6050();
-        
         if (mpu6050_initialized_) {
             // Enable access to the QMC5883L through the MPU6050 bypass
             EnableHMC5883LAccess();
+            // 切换设备地址为QMC5883L
+            i2c_master_bus_rm_device(dev_handle_);
+            dev_cfg.device_address = QMC5883L_ADDR;
+            i2c_master_bus_add_device(bus_handle_, &dev_cfg, &dev_handle_);
             qmc5883l_initialized_ = InitQMC5883L();
+            // 切换设备地址为BMP180
+            i2c_master_bus_rm_device(dev_handle_);
+            dev_cfg.device_address = BMP180_ADDR;
+            i2c_master_bus_add_device(bus_handle_, &dev_cfg, &dev_handle_);
             bmp180_initialized_ = InitBMP180();
+            // 恢复为MPU6050
+            i2c_master_bus_rm_device(dev_handle_);
+            dev_cfg.device_address = MPU6050_ADDR;
+            i2c_master_bus_add_device(bus_handle_, &dev_cfg, &dev_handle_);
         }
-        
-        // Initialize sensor data
         memset(&sensor_data_, 0, sizeof(sensor_data_));
-
-        // Start a task to update the sensor data periodically
         if (mpu6050_initialized_ || qmc5883l_initialized_ || bmp180_initialized_) {
             xTaskCreate(IMUUpdateTask, "imu_update_task", 4096, this, 5, &update_task_);
             initialized_ = true;
             ESP_LOGI(TAG, "IMU initialized successfully");
             return;
         }
-
         ESP_LOGE(TAG, "Failed to initialize IMU sensors");
     }
 
     void DeInit() {
         if (!initialized_) return;
-        
         ESP_LOGI(TAG, "De-initializing IMU...");
         if (update_task_ != nullptr) {
             vTaskDelete(update_task_);
             update_task_ = nullptr;
         }
-        i2c_driver_delete(i2c_port_);
+        if (dev_handle_) {
+            i2c_master_bus_rm_device(dev_handle_);
+            dev_handle_ = NULL;
+        }
+        if (bus_handle_) {
+            i2c_del_master_bus(bus_handle_);
+            bus_handle_ = NULL;
+        }
         initialized_ = false;
     }
 
 private:
     i2c_port_t i2c_port_ = I2C_NUM_0;
-    int sda_pin_ = -1;
-    int scl_pin_ = -1;
+    gpio_num_t sda_pin_ = GPIO_NUM_NC;
+    gpio_num_t scl_pin_ = GPIO_NUM_NC;
     TaskHandle_t update_task_ = nullptr;
     bool initialized_ = false;
+    i2c_master_bus_handle_t bus_handle_ = NULL;
+    i2c_master_dev_handle_t dev_handle_ = NULL;
     
     bool mpu6050_initialized_ = false;
     bool qmc5883l_initialized_ = false;
@@ -451,32 +480,31 @@ private:
 
     // I2C utility functions
     esp_err_t I2CWrite(uint8_t dev_addr, uint8_t reg_addr, uint8_t data) {
-        i2c_cmd_handle_t cmd = i2c_cmd_link_create();
-        i2c_master_start(cmd);
-        i2c_master_write_byte(cmd, (dev_addr << 1) | I2C_MASTER_WRITE, true);
-        i2c_master_write_byte(cmd, reg_addr, true);
-        i2c_master_write_byte(cmd, data, true);
-        i2c_master_stop(cmd);
-        esp_err_t ret = i2c_master_cmd_begin(i2c_port_, cmd, I2C_TIMEOUT_MS / portTICK_PERIOD_MS);
-        i2c_cmd_link_delete(cmd);
-        return ret;
+        // 切换设备地址
+        i2c_device_config_t dev_cfg = {
+            .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+            .device_address = dev_addr,
+            .scl_speed_hz = I2C_MASTER_FREQ_HZ,
+        };
+        i2c_master_bus_rm_device(dev_handle_);
+        i2c_master_bus_add_device(bus_handle_, &dev_cfg, &dev_handle_);
+        uint8_t buf[2] = {reg_addr, data};
+        return i2c_master_transmit(dev_handle_, buf, 2, I2C_TIMEOUT_MS / portTICK_PERIOD_MS);
     }
     
     esp_err_t I2CRead(uint8_t dev_addr, uint8_t reg_addr, uint8_t* data, size_t len) {
-        i2c_cmd_handle_t cmd = i2c_cmd_link_create();
-        i2c_master_start(cmd);
-        i2c_master_write_byte(cmd, (dev_addr << 1) | I2C_MASTER_WRITE, true);
-        i2c_master_write_byte(cmd, reg_addr, true);
-        i2c_master_start(cmd);
-        i2c_master_write_byte(cmd, (dev_addr << 1) | I2C_MASTER_READ, true);
-        if (len > 1) {
-            i2c_master_read(cmd, data, len - 1, I2C_MASTER_ACK);
-        }
-        i2c_master_read_byte(cmd, data + len - 1, I2C_MASTER_NACK);
-        i2c_master_stop(cmd);
-        esp_err_t ret = i2c_master_cmd_begin(i2c_port_, cmd, I2C_TIMEOUT_MS / portTICK_PERIOD_MS);
-        i2c_cmd_link_delete(cmd);
-        return ret;
+        // 切换设备地址
+        i2c_device_config_t dev_cfg = {
+            .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+            .device_address = dev_addr,
+            .scl_speed_hz = I2C_MASTER_FREQ_HZ,
+        };
+        i2c_master_bus_rm_device(dev_handle_);
+        i2c_master_bus_add_device(bus_handle_, &dev_cfg, &dev_handle_);
+        // 先写寄存器地址，再读数据
+        esp_err_t ret = i2c_master_transmit(dev_handle_, &reg_addr, 1, I2C_TIMEOUT_MS / portTICK_PERIOD_MS);
+        if (ret != ESP_OK) return ret;
+        return i2c_master_receive(dev_handle_, data, len, I2C_TIMEOUT_MS / portTICK_PERIOD_MS);
     }
     
     // Read sensor data

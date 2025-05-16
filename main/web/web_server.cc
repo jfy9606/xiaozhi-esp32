@@ -237,8 +237,11 @@ const char* WebServer::GetName() const {
 }
 
 void WebServer::RegisterDefaultHandlers() {
-    // Register handlers for default endpoints
-    RegisterHttpHandler("/", HTTP_GET, RootHandler);     // 主页
+    // Register handlers for default endpoints，先检查是否已注册
+    if (http_handlers_.find("/") == http_handlers_.end()) {
+        RegisterHttpHandler("/", HTTP_GET, RootHandler);     // 主页
+        ESP_LOGI(TAG, "注册主页处理器: /");
+    }
     
     // Only register WebSocket handler if not already registered
     if (http_handlers_.find("/ws") == http_handlers_.end()) {
@@ -249,23 +252,54 @@ void WebServer::RegisterDefaultHandlers() {
     }
     
     // API处理器需要明确类型转换为httpd_method_t
-    RegisterHttpHandler("/api/*", static_cast<httpd_method_t>(HTTP_ANY), ApiHandler);  // API处理器处理所有/api/前缀的请求
+    if (http_handlers_.find("/api/*") == http_handlers_.end()) {
+        RegisterHttpHandler("/api/*", static_cast<httpd_method_t>(HTTP_ANY), ApiHandler);  // API处理器处理所有/api/前缀的请求
+        ESP_LOGI(TAG, "注册API通配符处理器: /api/*");
+    }
     
     // Register handlers for special endpoints
-    RegisterHttpHandler("/vision", HTTP_GET, VisionHandler);
-    RegisterHttpHandler("/motor", HTTP_GET, MotorHandler);
-    RegisterHttpHandler("/ai", HTTP_GET, AIHandler);  // 添加AI页面路由
+    if (http_handlers_.find("/vision") == http_handlers_.end()) {
+        RegisterHttpHandler("/vision", HTTP_GET, VisionHandler);
+        ESP_LOGI(TAG, "注册视觉页面处理器: /vision");
+    }
+    
+    if (http_handlers_.find("/motor") == http_handlers_.end()) {
+        RegisterHttpHandler("/motor", HTTP_GET, MotorHandler);
+        ESP_LOGI(TAG, "注册电机页面处理器: /motor");
+    }
+    
+    if (http_handlers_.find("/ai") == http_handlers_.end()) {
+        RegisterHttpHandler("/ai", HTTP_GET, AIHandler);  // 添加AI页面路由
+        ESP_LOGI(TAG, "注册AI页面处理器: /ai");
+    }
     
     // Register car control endpoints
-    RegisterHttpHandler("/car/stop", HTTP_GET, CarControlHandler);
-    RegisterHttpHandler("/car/*", HTTP_GET, CarControlHandler);
+    if (http_handlers_.find("/car/stop") == http_handlers_.end()) {
+        RegisterHttpHandler("/car/stop", HTTP_GET, CarControlHandler);
+        ESP_LOGI(TAG, "注册停车控制处理器: /car/stop");
+    }
+    
+    if (http_handlers_.find("/car/*") == http_handlers_.end()) {
+        RegisterHttpHandler("/car/*", HTTP_GET, CarControlHandler);
+        ESP_LOGI(TAG, "注册小车控制通配符处理器: /car/*");
+    }
     
     // Register camera control endpoints
-    RegisterHttpHandler("/camera/control", HTTP_GET, CameraControlHandler);
-    RegisterHttpHandler("/camera/stream", HTTP_GET, CameraStreamHandler);
+    if (http_handlers_.find("/camera/control") == http_handlers_.end()) {
+        RegisterHttpHandler("/camera/control", HTTP_GET, CameraControlHandler);
+        ESP_LOGI(TAG, "注册相机控制处理器: /camera/control");
+    }
+    
+    if (http_handlers_.find("/camera/stream") == http_handlers_.end()) {
+        RegisterHttpHandler("/camera/stream", HTTP_GET, CameraStreamHandler);
+        ESP_LOGI(TAG, "注册相机流处理器: /camera/stream");
+    }
     
     // Register API status endpoint directly
-    RegisterHttpHandler("/api/status", HTTP_GET, SystemStatusHandler);
+    if (http_handlers_.find("/api/status") == http_handlers_.end()) {
+        RegisterHttpHandler("/api/status", HTTP_GET, SystemStatusHandler);
+        ESP_LOGI(TAG, "注册系统状态API处理器: /api/status");
+    }
 }
 
 void WebServer::RegisterHttpHandler(const PSRAMString& path, httpd_method_t method, HttpRequestHandler handler) {
@@ -1280,7 +1314,28 @@ bool WebServer::StartWebComponents() {
 // 判断URI是否已注册 (向后兼容)
 bool WebServer::IsUriRegistered(const char* uri) {
     PSRAMString uri_str(uri);
-    return http_handlers_.find(uri_str) != http_handlers_.end();
+    // 检查具体URI是否在http_handlers_中已注册
+    if (http_handlers_.find(uri_str) != http_handlers_.end()) {
+        return true;
+    }
+    
+    // 检查是否有通配符URI可能匹配当前URI
+    // 例如，检查"/api/*"是否已注册，如果请求的是"/api/status"
+    for (const auto& handler : http_handlers_) {
+        const PSRAMString& registered_uri = handler.first;
+        if (registered_uri.find('*') != PSRAMString::npos) {
+            size_t wildcard_pos = registered_uri.find('*');
+            if (wildcard_pos > 0) {
+                PSRAMString prefix = registered_uri.substr(0, wildcard_pos);
+                if (uri_str.find(prefix) == 0) {
+                    ESP_LOGI(TAG, "URI %s 匹配已注册的通配符 %s", uri, registered_uri.c_str());
+                    return true;
+                }
+            }
+        }
+    }
+    
+    return false;
 }
 
 // 注册URI处理函数 (向后兼容)
@@ -1384,25 +1439,48 @@ esp_err_t WebServer::CarControlHandler(httpd_req_t *req) {
             try {
                 // Use a generic approach since we don't know the exact type
                 cJSON* cmd = cJSON_CreateObject();
-                cJSON_AddStringToObject(cmd, "command", "stop");
-                
-                // Try to invoke the component through JSON command
-                auto& thing_manager = iot::ThingManager::GetInstance();
-                
-                // 添加安全检查，防止空指针崩溃
-                if (cmd) {
-                    // 检查ThingManager是否已初始化
-                    if (thing_manager.IsInitialized()) {
-                        thing_manager.Invoke(cmd);
-                        success = true;
+                if (!cmd) {
+                    ESP_LOGE(TAG, "Failed to create JSON command");
+                    cJSON_AddStringToObject(response, "status", "error");
+                    cJSON_AddStringToObject(response, "message", "Memory allocation failed");
+                    success = false;
+                } else {
+                    // 为兼容Thing::Invoke方法的预期格式，必须添加method和parameters字段
+                    cJSON_AddStringToObject(cmd, "command", "stop");
+                    cJSON_AddStringToObject(cmd, "method", "Stop");  // 修正方法名称大小写
+                    
+                    // 添加必要的parameters对象及brake参数
+                    cJSON* params = cJSON_CreateObject();
+                    if (params) {
+                        cJSON_AddBoolToObject(params, "brake", false);  // 默认使用非制动模式
+                        cJSON_AddItemToObject(cmd, "parameters", params);
                     } else {
-                        ESP_LOGE(TAG, "ThingManager not initialized");
+                        ESP_LOGW(TAG, "Failed to create parameters object");
+                    }
+                    
+                    // Try to invoke the component through JSON command
+                    auto& thing_manager = iot::ThingManager::GetInstance();
+                    
+                    // 添加安全检查，防止空指针崩溃
+                    if (thing_manager.IsInitialized()) {
+                        try {
+                            thing_manager.Invoke(cmd);
+                            success = true;
+                        } catch (const std::exception& e) {
+                            ESP_LOGE(TAG, "Exception when invoking 'Stop' command: %s", e.what());
+                            success = false;
+                        } catch (...) {
+                            ESP_LOGE(TAG, "Unknown exception when invoking 'Stop' command");
+                            success = false;
+                        }
+                    } else {
+                        ESP_LOGW(TAG, "ThingManager not initialized, cannot handle 'Stop' command");
                         success = false;
                     }
+                    
+                    cJSON_Delete(cmd);
+                    cJSON_AddStringToObject(response, "message", success ? "Car stopped" : "Failed to stop car");
                 }
-                
-                cJSON_Delete(cmd);
-                cJSON_AddStringToObject(response, "message", "Car stopped");
             } catch (const std::exception& e) {
                 ESP_LOGE(TAG, "Error stopping motor: %s", e.what());
                 success = false;
@@ -1414,30 +1492,49 @@ esp_err_t WebServer::CarControlHandler(httpd_req_t *req) {
             try {
                 cJSON* cmd = cJSON_CreateObject();
                 if (!cmd) {
+                    ESP_LOGE(TAG, "Failed to create JSON command");
                     success = false;
                 } else {
+                    // 为兼容Thing::Invoke方法的预期格式，必须添加method和parameters字段
                     cJSON_AddStringToObject(cmd, "command", "forward");
+                    cJSON_AddStringToObject(cmd, "method", "Forward");  // 修正方法名称大小写
                     
-                    // Parse speed parameter if present
-                    size_t speed_pos = action.find("speed=");
-                    if (speed_pos != std::string::npos) {
-                        int speed = atoi(action.c_str() + speed_pos + 6);
-                        cJSON_AddNumberToObject(cmd, "speed", speed);
+                    // 添加parameters对象
+                    cJSON* params = cJSON_CreateObject();
+                    if (params) {
+                        // 解析速度参数
+                        size_t speed_pos = action.find("speed=");
+                        if (speed_pos != std::string::npos) {
+                            int speed = atoi(action.c_str() + speed_pos + 6);
+                            cJSON_AddNumberToObject(params, "speed", speed);
+                        }
+                        
+                        cJSON_AddItemToObject(cmd, "parameters", params);
+                    } else {
+                        ESP_LOGW(TAG, "Failed to create parameters object");
                     }
                     
                     // 安全检查
                     auto& thing_manager = iot::ThingManager::GetInstance();
                     if (thing_manager.IsInitialized()) {
-                        thing_manager.Invoke(cmd);
-                        success = true;
+                        try {
+                            thing_manager.Invoke(cmd);
+                            success = true;
+                        } catch (const std::exception& e) {
+                            ESP_LOGE(TAG, "Exception when invoking 'Forward' command: %s", e.what());
+                            success = false;
+                        } catch (...) {
+                            ESP_LOGE(TAG, "Unknown exception when invoking 'Forward' command");
+                            success = false;
+                        }
                     } else {
-                        ESP_LOGE(TAG, "ThingManager not initialized");
+                        ESP_LOGW(TAG, "ThingManager not initialized, cannot handle 'Forward' command");
                         success = false;
                     }
                     
                     cJSON_Delete(cmd);
                 }
-                cJSON_AddStringToObject(response, "message", "Moving forward");
+                cJSON_AddStringToObject(response, "message", success ? "Moving forward" : "Failed to move forward");
             } catch (const std::exception& e) {
                 ESP_LOGE(TAG, "Error moving forward: %s", e.what());
                 success = false;
@@ -1449,30 +1546,49 @@ esp_err_t WebServer::CarControlHandler(httpd_req_t *req) {
             try {
                 cJSON* cmd = cJSON_CreateObject();
                 if (!cmd) {
+                    ESP_LOGE(TAG, "Failed to create JSON command");
                     success = false;
                 } else {
+                    // 为兼容Thing::Invoke方法的预期格式，必须添加method和parameters字段
                     cJSON_AddStringToObject(cmd, "command", "backward");
+                    cJSON_AddStringToObject(cmd, "method", "Backward");  // 修正方法名称大小写
                     
-                    // Parse speed parameter if present
-                    size_t speed_pos = action.find("speed=");
-                    if (speed_pos != std::string::npos) {
-                        int speed = atoi(action.c_str() + speed_pos + 6);
-                        cJSON_AddNumberToObject(cmd, "speed", speed);
+                    // 添加parameters对象
+                    cJSON* params = cJSON_CreateObject();
+                    if (params) {
+                        // 解析速度参数
+                        size_t speed_pos = action.find("speed=");
+                        if (speed_pos != std::string::npos) {
+                            int speed = atoi(action.c_str() + speed_pos + 6);
+                            cJSON_AddNumberToObject(params, "speed", speed);
+                        }
+                        
+                        cJSON_AddItemToObject(cmd, "parameters", params);
+                    } else {
+                        ESP_LOGW(TAG, "Failed to create parameters object");
                     }
                     
                     // 安全检查
                     auto& thing_manager = iot::ThingManager::GetInstance();
                     if (thing_manager.IsInitialized()) {
-                        thing_manager.Invoke(cmd);
-                        success = true;
+                        try {
+                            thing_manager.Invoke(cmd);
+                            success = true;
+                        } catch (const std::exception& e) {
+                            ESP_LOGE(TAG, "Exception when invoking 'Backward' command: %s", e.what());
+                            success = false;
+                        } catch (...) {
+                            ESP_LOGE(TAG, "Unknown exception when invoking 'Backward' command");
+                            success = false;
+                        }
                     } else {
-                        ESP_LOGE(TAG, "ThingManager not initialized");
+                        ESP_LOGW(TAG, "ThingManager not initialized, cannot handle 'Backward' command");
                         success = false;
                     }
                     
                     cJSON_Delete(cmd);
                 }
-                cJSON_AddStringToObject(response, "message", "Moving backward");
+                cJSON_AddStringToObject(response, "message", success ? "Moving backward" : "Failed to move backward");
             } catch (const std::exception& e) {
                 ESP_LOGE(TAG, "Error moving backward: %s", e.what());
                 success = false;
@@ -1484,30 +1600,49 @@ esp_err_t WebServer::CarControlHandler(httpd_req_t *req) {
             try {
                 cJSON* cmd = cJSON_CreateObject();
                 if (!cmd) {
+                    ESP_LOGE(TAG, "Failed to create JSON command");
                     success = false;
                 } else {
+                    // 为兼容Thing::Invoke方法的预期格式，必须添加method和parameters字段
                     cJSON_AddStringToObject(cmd, "command", "left");
+                    cJSON_AddStringToObject(cmd, "method", "TurnLeft");  // 修正方法名称为正确的方法
                     
-                    // Parse angle parameter if present
-                    size_t angle_pos = action.find("angle=");
-                    if (angle_pos != std::string::npos) {
-                        int angle = atoi(action.c_str() + angle_pos + 6);
-                        cJSON_AddNumberToObject(cmd, "angle", angle);
+                    // 添加parameters对象
+                    cJSON* params = cJSON_CreateObject();
+                    if (params) {
+                        // 解析角度参数
+                        size_t angle_pos = action.find("angle=");
+                        if (angle_pos != std::string::npos) {
+                            int angle = atoi(action.c_str() + angle_pos + 6);
+                            cJSON_AddNumberToObject(params, "speed", angle);  // 注意：TurnLeft使用speed参数，而不是angle
+                        }
+                        
+                        cJSON_AddItemToObject(cmd, "parameters", params);
+                    } else {
+                        ESP_LOGW(TAG, "Failed to create parameters object");
                     }
                     
                     // 安全检查
                     auto& thing_manager = iot::ThingManager::GetInstance();
                     if (thing_manager.IsInitialized()) {
-                        thing_manager.Invoke(cmd);
-                        success = true;
+                        try {
+                            thing_manager.Invoke(cmd);
+                            success = true;
+                        } catch (const std::exception& e) {
+                            ESP_LOGE(TAG, "Exception when invoking 'TurnLeft' command: %s", e.what());
+                            success = false;
+                        } catch (...) {
+                            ESP_LOGE(TAG, "Unknown exception when invoking 'TurnLeft' command");
+                            success = false;
+                        }
                     } else {
-                        ESP_LOGE(TAG, "ThingManager not initialized");
+                        ESP_LOGW(TAG, "ThingManager not initialized, cannot handle 'TurnLeft' command");
                         success = false;
                     }
                     
                     cJSON_Delete(cmd);
                 }
-                cJSON_AddStringToObject(response, "message", "Turning left");
+                cJSON_AddStringToObject(response, "message", success ? "Turning left" : "Failed to turn left");
             } catch (const std::exception& e) {
                 ESP_LOGE(TAG, "Error turning left: %s", e.what());
                 success = false;
@@ -1519,30 +1654,49 @@ esp_err_t WebServer::CarControlHandler(httpd_req_t *req) {
             try {
                 cJSON* cmd = cJSON_CreateObject();
                 if (!cmd) {
+                    ESP_LOGE(TAG, "Failed to create JSON command");
                     success = false;
                 } else {
+                    // 为兼容Thing::Invoke方法的预期格式，必须添加method和parameters字段
                     cJSON_AddStringToObject(cmd, "command", "right");
+                    cJSON_AddStringToObject(cmd, "method", "TurnRight");  // 修正方法名称为正确的方法
                     
-                    // Parse angle parameter if present
-                    size_t angle_pos = action.find("angle=");
-                    if (angle_pos != std::string::npos) {
-                        int angle = atoi(action.c_str() + angle_pos + 6);
-                        cJSON_AddNumberToObject(cmd, "angle", angle);
+                    // 添加parameters对象
+                    cJSON* params = cJSON_CreateObject();
+                    if (params) {
+                        // 解析角度参数
+                        size_t angle_pos = action.find("angle=");
+                        if (angle_pos != std::string::npos) {
+                            int angle = atoi(action.c_str() + angle_pos + 6);
+                            cJSON_AddNumberToObject(params, "speed", angle);  // 注意：TurnRight使用speed参数，而不是angle
+                        }
+                        
+                        cJSON_AddItemToObject(cmd, "parameters", params);
+                    } else {
+                        ESP_LOGW(TAG, "Failed to create parameters object");
                     }
                     
                     // 安全检查
                     auto& thing_manager = iot::ThingManager::GetInstance();
                     if (thing_manager.IsInitialized()) {
-                        thing_manager.Invoke(cmd);
-                        success = true;
+                        try {
+                            thing_manager.Invoke(cmd);
+                            success = true;
+                        } catch (const std::exception& e) {
+                            ESP_LOGE(TAG, "Exception when invoking 'TurnRight' command: %s", e.what());
+                            success = false;
+                        } catch (...) {
+                            ESP_LOGE(TAG, "Unknown exception when invoking 'TurnRight' command");
+                            success = false;
+                        }
                     } else {
-                        ESP_LOGE(TAG, "ThingManager not initialized");
+                        ESP_LOGW(TAG, "ThingManager not initialized, cannot handle 'TurnRight' command");
                         success = false;
                     }
                     
                     cJSON_Delete(cmd);
                 }
-                cJSON_AddStringToObject(response, "message", "Turning right");
+                cJSON_AddStringToObject(response, "message", success ? "Turning right" : "Failed to turn right");
             } catch (const std::exception& e) {
                 ESP_LOGE(TAG, "Error turning right: %s", e.what());
                 success = false;

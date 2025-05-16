@@ -106,7 +106,7 @@ static esp_err_t pca9548a_config_device(void)
         .scl_speed_hz = 400 * 1000, // 设置为400 kHz，与OLED显示屏一致
     };
     
-    ESP_LOGI(TAG, "Adding PCA9548A device to I2C bus at address 0x%02X with SCL speed %d Hz", 
+    ESP_LOGI(TAG, "Adding PCA9548A device to I2C bus at address 0x%02X with SCL speed %" PRIu32 " Hz", 
              PCA9548A_I2C_ADDR, dev_cfg.scl_speed_hz);
     
     // 创建设备句柄
@@ -146,7 +146,7 @@ static adc_oneshot_unit_handle_t adc_init(void)
     
     adc_oneshot_chan_cfg_t config = {
         .bitwidth = ADC_BITWIDTH_12,
-        .atten = ADC_ATTEN_DB_11,
+        .atten = ADC_ATTEN_DB_12,
     };
     
     // Configure the ADC channel with the integer channel number
@@ -206,8 +206,12 @@ esp_err_t pca9548a_init(void)
         ESP_LOGI(TAG, "PCA9548A reset successful");
     }
 
-    // Default to no channels selected
-    ESP_ERROR_CHECK(pca9548a_select_channels(pca9548a_handle, PCA9548A_CHANNEL_NONE));
+    // Default to no channels selected - 使用普通错误处理代替ESP_ERROR_CHECK
+    esp_err_t ret_select = pca9548a_select_channels(pca9548a_handle, PCA9548A_CHANNEL_NONE);
+    if (ret_select != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to select default channels: %s", esp_err_to_name(ret_select));
+        // 不中断程序，继续执行
+    }
     
     ESP_LOGI(TAG, "PCA9548A initialized successfully");
     return ESP_OK;
