@@ -42,6 +42,12 @@
 #define LED_LEDC_DUTY_RES  LEDC_TIMER_8_BIT  // 8位分辨率，0-255
 #define LED_LEDC_FREQ      5000              // PWM频率5kHz
 
+// 摄像头默认参数 - 替代Kconfig
+#define DEFAULT_XCLK_FREQ_HZ  15000000
+#define DEFAULT_I2C_PORT      1
+#define DEFAULT_FRAME_SIZE    FRAMESIZE_VGA
+#define DEFAULT_JPEG_QUALITY  12
+
 namespace iot {
 
 class Cam : public Thing {
@@ -69,6 +75,12 @@ private:
     int href_pin_;
     int pclk_pin_;
     int led_pin_;
+    
+    // 摄像头配置参数 - 动态可调整
+    int xclk_freq_hz_;
+    int i2c_port_;
+    framesize_t frame_size_;
+    int jpeg_quality_;
     
     // 初始化摄像头引脚
     void InitCameraPins() {
@@ -159,19 +171,19 @@ private:
         // 摄像头基本配置
         config.ledc_channel = LEDC_CHANNEL_0;
         config.ledc_timer = LEDC_TIMER_0;
-        config.xclk_freq_hz = 20000000;
+        config.xclk_freq_hz = xclk_freq_hz_;  // 使用类成员变量
         config.pixel_format = PIXFORMAT_JPEG;
         config.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
         
-        // 将I2C通道从默认的0更改为1（SCCB是I2C的一种变体，用于相机通信）
-        config.sccb_i2c_port = 1;
+        // 使用类成员变量中的I2C配置
+        config.sccb_i2c_port = i2c_port_;
         
         // 使用与car_idf项目相同的分阶段初始化策略
         esp_err_t ret = ESP_FAIL;
         
-        // 尝试不同的配置，从高质量到低质量
-        framesize_t framesizes[] = {FRAMESIZE_VGA, FRAMESIZE_HVGA, FRAMESIZE_QVGA};
-        int qualities[] = {10, 12, 15};
+        // 使用类成员变量定义的帧大小
+        framesize_t framesizes[] = {frame_size_, FRAMESIZE_QVGA, FRAMESIZE_QQVGA};
+        int qualities[] = {jpeg_quality_, jpeg_quality_ + 2, jpeg_quality_ + 5};
         int fb_counts[] = {2, 1, 1};
         
         for (int attempt = 0; attempt < 3 && ret != ESP_OK; attempt++) {
@@ -181,22 +193,22 @@ private:
                 config.frame_size = framesizes[0];
                 config.jpeg_quality = qualities[0];
                 config.fb_count = fb_counts[0];
-                ESP_LOGI(TAG, "Attempt %d: High memory config: %s, quality %d, %d buffers", 
-                         attempt+1, "VGA", qualities[0], fb_counts[0]);
+                ESP_LOGI(TAG, "Attempt %d: High memory config: %d, quality %d, %d buffers", 
+                         attempt+1, config.frame_size, qualities[0], fb_counts[0]);
             } else if (psram_size > 400 * 1024 && attempt <= 1) {
                 // 中等内存配置
                 config.frame_size = framesizes[1];
                 config.jpeg_quality = qualities[1];
                 config.fb_count = fb_counts[1];
-                ESP_LOGI(TAG, "Attempt %d: Medium memory config: %s, quality %d, %d buffers", 
-                         attempt+1, "HVGA", qualities[1], fb_counts[1]);
+                ESP_LOGI(TAG, "Attempt %d: Medium memory config: %d, quality %d, %d buffers", 
+                         attempt+1, config.frame_size, qualities[1], fb_counts[1]);
             } else {
                 // 低内存配置
                 config.frame_size = framesizes[2];
                 config.jpeg_quality = qualities[2];
                 config.fb_count = fb_counts[2];
-                ESP_LOGI(TAG, "Attempt %d: Low memory config: %s, quality %d, %d buffers", 
-                         attempt+1, "QVGA", qualities[2], fb_counts[2]);
+                ESP_LOGI(TAG, "Attempt %d: Low memory config: %d, quality %d, %d buffers", 
+                         attempt+1, config.frame_size, qualities[2], fb_counts[2]);
             }
             
             // 根据尝试次数降低时钟频率
@@ -384,7 +396,11 @@ public:
             vsync_pin_(VSYNC_GPIO_NUM),
             href_pin_(HREF_GPIO_NUM),
             pclk_pin_(PCLK_GPIO_NUM),
-            led_pin_(LED_PIN) {
+            led_pin_(LED_PIN),
+            xclk_freq_hz_(DEFAULT_XCLK_FREQ_HZ),
+            i2c_port_(DEFAULT_I2C_PORT),
+            frame_size_(DEFAULT_FRAME_SIZE),
+            jpeg_quality_(DEFAULT_JPEG_QUALITY) {
         
         // 创建互斥量
         cam_mutex_ = xSemaphoreCreateMutex();
@@ -423,6 +439,23 @@ public:
             return led_intensity_;
         });
         
+        // 添加摄像头配置参数属性
+        properties_.AddNumberProperty("xclkFrequency", "XCLK频率(Hz)", [this]() -> int {
+            return xclk_freq_hz_;
+        });
+        
+        properties_.AddNumberProperty("i2cPort", "I2C端口号", [this]() -> int {
+            return i2c_port_;
+        });
+        
+        properties_.AddNumberProperty("frameSize", "帧大小", [this]() -> int {
+            return static_cast<int>(frame_size_);
+        });
+        
+        properties_.AddNumberProperty("jpegQuality", "JPEG品质(5-63)", [this]() -> int {
+            return jpeg_quality_;
+        });
+        
         // 定义设备可以被远程执行的指令
         methods_.AddMethod("StartStreaming", "开始直播", ParameterList(), [this](const ParameterList& parameters) {
             if (!running_) {
@@ -450,6 +483,102 @@ public:
             
             led_intensity_ = intensity;
             UpdateLed();
+        });
+        
+        // 添加摄像头参数配置方法
+        ParameterList xclkParams;
+        xclkParams.AddParameter(Parameter("frequency", "频率(Hz)", kValueTypeNumber));
+        
+        methods_.AddMethod("SetXclkFrequency", "设置XCLK频率", xclkParams, [this](const ParameterList& parameters) {
+            int frequency = parameters["frequency"].number();
+            if (frequency < 10000000) frequency = 10000000;  // 最小10MHz
+            if (frequency > 20000000) frequency = 20000000;  // 最大20MHz
+            
+            xclk_freq_hz_ = frequency;
+            ESP_LOGI(TAG, "XCLK frequency set to %d Hz, restart required to take effect", xclk_freq_hz_);
+        });
+        
+        ParameterList i2cParams;
+        i2cParams.AddParameter(Parameter("port", "I2C端口号(0/1)", kValueTypeNumber));
+        
+        methods_.AddMethod("SetI2CPort", "设置I2C端口号", i2cParams, [this](const ParameterList& parameters) {
+            int port = parameters["port"].number();
+            if (port != 0 && port != 1) {
+                ESP_LOGW(TAG, "Invalid I2C port %d, must be 0 or 1", port);
+                return;
+            }
+            
+            i2c_port_ = port;
+            ESP_LOGI(TAG, "I2C port set to %d, restart required to take effect", i2c_port_);
+        });
+        
+        ParameterList frameSizeParams;
+        frameSizeParams.AddParameter(Parameter("size", "帧大小(0-9)", kValueTypeNumber));
+        
+        methods_.AddMethod("SetFrameSize", "设置帧大小", frameSizeParams, [this](const ParameterList& parameters) {
+            int size = parameters["size"].number();
+            if (size < 0) size = 0;  // QQVGA
+            if (size > 9) size = 9;  // UXGA
+            
+            framesize_t frameSize = static_cast<framesize_t>(size);
+            
+            // 如果摄像头正在运行，直接应用新设置
+            if (running_) {
+                sensor_t* s = esp_camera_sensor_get();
+                if (s) {
+                    s->set_framesize(s, frameSize);
+                    ESP_LOGI(TAG, "Camera frame size updated to %d", size);
+                } else {
+                    ESP_LOGW(TAG, "Failed to get camera sensor");
+                }
+            }
+            
+            frame_size_ = frameSize;
+        });
+        
+        ParameterList qualityParams;
+        qualityParams.AddParameter(Parameter("quality", "JPEG品质(5-63)", kValueTypeNumber));
+        
+        methods_.AddMethod("SetJpegQuality", "设置JPEG品质", qualityParams, [this](const ParameterList& parameters) {
+            int quality = parameters["quality"].number();
+            if (quality < 5) quality = 5;     // 最高品质
+            if (quality > 63) quality = 63;   // 最低品质
+            
+            // 如果摄像头正在运行，直接应用新设置
+            if (running_) {
+                sensor_t* s = esp_camera_sensor_get();
+                if (s) {
+                    s->set_quality(s, quality);
+                    ESP_LOGI(TAG, "Camera JPEG quality updated to %d", quality);
+                } else {
+                    ESP_LOGW(TAG, "Failed to get camera sensor");
+                }
+            }
+            
+            jpeg_quality_ = quality;
+        });
+        
+        // 重新初始化摄像头方法
+        methods_.AddMethod("RestartCamera", "重新初始化摄像头", ParameterList(), [this](const ParameterList& parameters) {
+            ESP_LOGI(TAG, "Restarting camera with new parameters");
+            
+            // 关闭摄像头
+            if (running_) {
+                running_ = false;
+                streaming_ = false;
+                esp_camera_deinit();
+                
+                // 短暂延迟确保资源释放
+                vTaskDelay(pdMS_TO_TICKS(100));
+            }
+            
+            // 重新初始化摄像头
+            if (InitCamera()) {
+                running_ = true;
+                ESP_LOGI(TAG, "Camera restarted successfully");
+            } else {
+                ESP_LOGE(TAG, "Failed to restart camera");
+            }
         });
         
         methods_.AddMethod("TakePhoto", "拍照", ParameterList(), [this](const ParameterList& parameters) {
@@ -527,6 +656,12 @@ public:
             esp_camera_fb_return(fb);
         }
     }
+    
+    // 获取配置参数方法
+    int GetXclkFrequency() const { return xclk_freq_hz_; }
+    int GetI2CPort() const { return i2c_port_; }
+    framesize_t GetFrameSize() const { return frame_size_; }
+    int GetJpegQuality() const { return jpeg_quality_; }
 };
 
 } // namespace iot

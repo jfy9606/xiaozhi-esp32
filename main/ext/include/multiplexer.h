@@ -19,6 +19,9 @@
 #include "sdkconfig.h"
 #include "driver/i2c_master.h"
 
+// 定义默认I2C端口
+#define DEFAULT_MULTIPLEXER_I2C_PORT 0
+
 #ifdef CONFIG_ENABLE_HW178
 #include "include/hw178.h"
 #endif
@@ -36,6 +39,17 @@ extern "C" {
  * @return ESP_OK on success, or an error code if initialization failed
  */
 esp_err_t multiplexer_init(void);
+
+/**
+ * @brief Initialize the multiplexer components with specific I2C port
+ * 
+ * This function initializes both PCA9548A and HW-178 multiplexers
+ * and allows specifying which I2C port to use.
+ * 
+ * @param i2c_port I2C port number to use (0 or 1)
+ * @return ESP_OK on success, or an error code if initialization failed
+ */
+esp_err_t multiplexer_init_with_i2c_port(int i2c_port);
 
 /**
  * @brief Initialize the multiplexer components with existing I2C bus
@@ -56,6 +70,16 @@ esp_err_t multiplexer_init_with_bus(i2c_master_bus_handle_t i2c_bus_handle);
  */
 void multiplexer_deinit(void);
 
+/**
+ * @brief Reset the multiplexer components
+ * 
+ * This function resets all multiplexers using their reset pins
+ * (if configured).
+ * 
+ * @return ESP_OK on success, or an error code if reset failed
+ */
+esp_err_t multiplexer_reset(void);
+
 #ifdef CONFIG_ENABLE_PCA9548A
 /**
  * @brief Select a specific channel on the PCA9548A multiplexer
@@ -64,6 +88,13 @@ void multiplexer_deinit(void);
  * @return ESP_OK on success, or an error code if selection failed
  */
 esp_err_t pca9548a_select_channel(uint8_t channel);
+
+/**
+ * @brief Check if PCA9548A is initialized
+ * 
+ * @return true if initialized, false otherwise
+ */
+bool pca9548a_is_initialized(void);
 #endif
 
 #ifdef CONFIG_ENABLE_HW178

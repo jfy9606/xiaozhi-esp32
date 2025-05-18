@@ -270,6 +270,24 @@ config USE_SERVER_AEC
         启用服务器端 AEC，需要服务器支持
         
 menu "组件管理器"
+    # I2C总线配置
+    menu "I2C Bus Configuration"
+        config CAMERA_I2C_PORT
+            int "摄像头I2C端口号"
+            range 0 1
+            default 1
+            help
+                摄像头使用的I2C端口号。ESP32支持两个I2C端口：0和1。
+                
+        config DISPLAY_I2C_PORT
+            int "显示屏和多路复用器I2C端口号"
+            range 0 1
+            default 0
+            help
+                显示屏和多路复用器共享使用的I2C端口号。
+                ESP32支持两个I2C端口：0和1。
+    endmenu
+    
     # Web服务器配置
     menu "Web Server"
         config ENABLE_WEB_SERVER
@@ -437,7 +455,7 @@ menu "组件管理器"
 
         config HW178_ADC_CHANNEL
             int "HW-178输出ADC通道"
-            default 3
+            default 4
             range 0 9
             depends on ENABLE_HW178
             help
@@ -451,6 +469,54 @@ menu "组件管理器"
             default y
             help
                 启用电机控制器，用于小车移动功能
+                
+        config MOTOR_ENA_PIN
+            int "电机A使能引脚"
+            default 2
+            range 0 48
+            depends on ENABLE_MOTOR_CONTROLLER
+            help
+                连接到电机驱动的PWMA/ENA引脚的GPIO编号
+                
+        config MOTOR_ENB_PIN
+            int "电机B使能引脚"
+            default 1
+            range 0 48
+            depends on ENABLE_MOTOR_CONTROLLER
+            help
+                连接到电机驱动的PWMB/ENB引脚的GPIO编号
+                
+        config MOTOR_IN1_PIN
+            int "电机A输入1引脚"
+            default 47
+            range 0 48
+            depends on ENABLE_MOTOR_CONTROLLER
+            help
+                连接到电机驱动的IN1引脚的GPIO编号
+                
+        config MOTOR_IN2_PIN
+            int "电机A输入2引脚"
+            default 21
+            range 0 48
+            depends on ENABLE_MOTOR_CONTROLLER
+            help
+                连接到电机驱动的IN2引脚的GPIO编号
+                
+        config MOTOR_IN3_PIN
+            int "电机B输入1引脚"
+            default 20
+            range 0 48
+            depends on ENABLE_MOTOR_CONTROLLER
+            help
+                连接到电机驱动的IN3引脚的GPIO编号
+                
+        config MOTOR_IN4_PIN
+            int "电机B输入2引脚"
+            default 19
+            range 0 48
+            depends on ENABLE_MOTOR_CONTROLLER
+            help
+                连接到电机驱动的IN4引脚的GPIO编号
     endmenu
     
     # 舵机控制器配置
@@ -460,6 +526,78 @@ menu "组件管理器"
             default y
             help
                 启用舵机控制器，用于舵机云台、机械臂等控制功能
+                
+        config SERVO_COUNT
+            int "舵机数量"
+            default 2
+            range 1 8
+            depends on ENABLE_SERVO_CONTROLLER
+            help
+                使用的舵机数量，最多支持8个
+                
+        config SERVO_PIN_1
+            int "舵机1引脚(水平舵机)"
+            default 46
+            range 0 48
+            depends on ENABLE_SERVO_CONTROLLER && SERVO_COUNT >= 1
+            help
+                连接到舵机1的信号引脚，通常用作水平舵机(云台水平转向)
+                
+        config SERVO_PIN_2
+            int "舵机2引脚(垂直舵机)"
+            default 14
+            range 0 48
+            depends on ENABLE_SERVO_CONTROLLER && SERVO_COUNT >= 2
+            help
+                连接到舵机2的信号引脚，通常用作垂直舵机(云台俯仰)
+                
+        config SERVO_PIN_3
+            int "舵机3引脚"
+            default -1
+            range -1 48
+            depends on ENABLE_SERVO_CONTROLLER && SERVO_COUNT >= 3
+            help
+                连接到舵机3的信号引脚
+                
+        config SERVO_PIN_4
+            int "舵机4引脚"
+            default -1
+            range -1 48
+            depends on ENABLE_SERVO_CONTROLLER && SERVO_COUNT >= 4
+            help
+                连接到舵机4的信号引脚
+                
+        config SERVO_PIN_5
+            int "舵机5引脚"
+            default -1
+            range -1 48
+            depends on ENABLE_SERVO_CONTROLLER && SERVO_COUNT >= 5
+            help
+                连接到舵机5的信号引脚
+                
+        config SERVO_PIN_6
+            int "舵机6引脚"
+            default -1
+            range -1 48
+            depends on ENABLE_SERVO_CONTROLLER && SERVO_COUNT >= 6
+            help
+                连接到舵机6的信号引脚
+                
+        config SERVO_PIN_7
+            int "舵机7引脚"
+            default -1
+            range -1 48
+            depends on ENABLE_SERVO_CONTROLLER && SERVO_COUNT >= 7
+            help
+                连接到舵机7的信号引脚
+                
+        config SERVO_PIN_8
+            int "舵机8引脚"
+            default -1
+            range -1 48
+            depends on ENABLE_SERVO_CONTROLLER && SERVO_COUNT >= 8
+            help
+                连接到舵机8的信号引脚
                 
         config SERVO_MIN_PULSE_WIDTH
             int "舵机最小脉冲宽度(μs)"
@@ -506,22 +644,6 @@ menu "组件管理器"
             help
                 启用超声波传感器，用于距离测量和障碍物检测
 
-        config US_TRIG_PIN
-            int "超声波传感器触发引脚"
-            default 21
-            range 0 48
-            depends on ENABLE_US_SENSOR
-            help
-                连接到超声波传感器的触发引脚(TRIG)的GPIO编号
-
-        config US_ECHO_PIN
-            int "超声波传感器回响引脚"
-            default 22
-            range 0 48
-            depends on ENABLE_US_SENSOR
-            help
-                连接到超声波传感器的回响引脚(ECHO)的GPIO编号
-
         config US_SAFE_DISTANCE
             int "超声波传感器安全距离(cm)"
             default 15
@@ -538,6 +660,59 @@ menu "组件管理器"
             depends on ENABLE_US_SENSOR
             help
                 超声波传感器的最大测量距离，单位厘米
+                
+        choice US_CONNECTION_TYPE
+            prompt "超声波传感器连接方式"
+            default US_CONNECTION_PCA9548A
+            depends on ENABLE_US_SENSOR
+            help
+                选择超声波传感器的连接方式
+                
+            config US_CONNECTION_DIRECT
+                bool "直接连接GPIO引脚"
+                help
+                    超声波传感器直接连接到ESP32的GPIO引脚
+                    
+            config US_CONNECTION_PCA9548A
+                bool "通过PCA9548A多路复用器连接"
+                depends on ENABLE_PCA9548A
+                help
+                    超声波传感器通过PCA9548A I2C多路复用器连接
+                    前置传感器连接在SD0/SA0通道(通道0)
+                    后置传感器连接在SD1/SA1通道(通道1)
+        endchoice
+        
+        config US_FRONT_TRIG_PIN
+            int "前置超声波传感器触发引脚"
+            default 21
+            range 0 48
+            depends on ENABLE_US_SENSOR && US_CONNECTION_DIRECT
+            help
+                连接到前置超声波传感器的触发引脚(TRIG)的GPIO编号
+
+        config US_FRONT_ECHO_PIN
+            int "前置超声波传感器回响引脚"
+            default 22
+            range 0 48
+            depends on ENABLE_US_SENSOR && US_CONNECTION_DIRECT
+            help
+                连接到前置超声波传感器的回响引脚(ECHO)的GPIO编号
+                
+        config US_REAR_TRIG_PIN
+            int "后置超声波传感器触发引脚"
+            default 23
+            range 0 48
+            depends on ENABLE_US_SENSOR && US_CONNECTION_DIRECT
+            help
+                连接到后置超声波传感器的触发引脚(TRIG)的GPIO编号
+
+        config US_REAR_ECHO_PIN
+            int "后置超声波传感器回响引脚"
+            default 24
+            range 0 48
+            depends on ENABLE_US_SENSOR && US_CONNECTION_DIRECT
+            help
+                连接到后置超声波传感器的回响引脚(ECHO)的GPIO编号
     endmenu
 
 endmenu

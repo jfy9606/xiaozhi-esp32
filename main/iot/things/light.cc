@@ -145,7 +145,7 @@ public:
             ESP_LOGE(TAG, "Failed to create I2C bus: %s", esp_err_to_name(ret));
             return;
         }
-
+        
         // 新I2C驱动：配置设备
         i2c_device_config_t dev_cfg = {
             .dev_addr_length = I2C_ADDR_BIT_LEN_7,
@@ -159,7 +159,7 @@ public:
             bus_handle_ = NULL;
             return;
         }
-
+        
         // Try to detect the BH1750 sensor on both possible addresses
         if (DetectSensor(BH1750_ADDR_L)) {
             sensor_addr_ = BH1750_ADDR_L;
@@ -179,7 +179,7 @@ public:
             bus_handle_ = NULL;
             return;
         }
-
+        
         // Initialize the sensor
         ret = I2CWrite(sensor_addr_, BH1750_POWER_ON);
         if (ret != ESP_OK) {

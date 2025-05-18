@@ -42,6 +42,26 @@
 #define WEB_SERVER_FREE(ptr) free(ptr)
 #endif
 
+// ESP-IDF WebSocket相关函数声明（如果没有包含在esp_http_server.h中）
+#ifndef ESP_IDF_VERSION_VAL
+#define ESP_IDF_VERSION_VAL(major, minor, patch) ((major << 16) | (minor << 8) | (patch))
+#endif
+
+#if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(4, 4, 0)
+// 为旧版本ESP-IDF添加WebSocket函数声明
+#ifndef httpd_ws_get_fd_session_ctx
+extern "C" httpd_req_t *httpd_ws_get_fd_session_ctx(httpd_handle_t hd, int sockfd);
+#endif
+
+#ifndef httpd_sess_is_async
+extern "C" bool httpd_sess_is_async(httpd_handle_t handle, int sockfd);
+#endif
+
+#ifndef httpd_ws_get_frame_type
+extern "C" httpd_ws_type_t httpd_ws_get_frame_type(httpd_req_t *req);
+#endif
+#endif
+
 // 使用PSRAM的字符串类型
 #if WEB_SERVER_USE_PSRAM
 class PSRAMString : public std::string {
@@ -117,6 +137,9 @@ public:
 
     // 关闭所有WebSocket连接
     void CloseAllWebSocketConnections();
+
+    // 获取当前活动的WebSocket客户端数量
+    int GetActiveWebSocketClientCount() const;
 
     // 向后兼容方法
     bool IsUriRegistered(const char* uri);

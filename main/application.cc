@@ -8,6 +8,12 @@
 #include "websocket_protocol.h"
 #include "font_awesome_symbols.h"
 #include "iot/thing_manager.h"
+#include "iot/things/us.h"
+#include "iot/things/cam.h"
+#include "iot/things/imu.h"
+#include "iot/things/light.h"
+#include "iot/things/motor.h"
+#include "iot/things/servo.h"
 #include "assets/lang_config.h"
 #include "web/web_server.h"
 #include "wifi_station.h"
@@ -26,6 +32,13 @@
 
 #define TAG "Application"
 
+// 添加全局变量跟踪协议完全初始化状态
+static bool protocol_fully_initialized = false;
+
+// 协议就绪检查辅助函数
+static bool IsProtocolReady() {
+    return protocol_fully_initialized;
+}
 
 static const char* const STATE_STRINGS[] = {
     "unknown",
@@ -277,6 +290,13 @@ void Application::ToggleChatState() {
 
     if (!protocol_) {
         ESP_LOGE(TAG, "Protocol not initialized");
+        Alert(Lang::Strings::ERROR, "通信协议未初始化，无法启动对话功能", "sad", Lang::Sounds::P3_EXCLAMATION);
+        return;
+    }
+    
+    if (!IsProtocolReady()) {
+        ESP_LOGW(TAG, "Protocol initialization not complete, waiting...");
+        Alert(Lang::Strings::WARNING, "通信协议初始化中，请稍候...", "neutral", "");
         return;
     }
 
@@ -303,6 +323,13 @@ void Application::ToggleChatState() {
 void Application::StartListening() {
     if (!protocol_) {
         ESP_LOGE(TAG, "Protocol not initialized");
+        Alert(Lang::Strings::ERROR, "通信协议未初始化，无法启动语音识别", "sad", Lang::Sounds::P3_EXCLAMATION);
+        return;
+    }
+    
+    if (!IsProtocolReady()) {
+        ESP_LOGW(TAG, "Protocol initialization not complete, waiting...");
+        Alert(Lang::Strings::WARNING, "通信协议初始化中，请稍候...", "neutral", "");
         return;
     }
     
@@ -408,6 +435,7 @@ void Application::Start() {
     CheckNewVersion();
 
     // Initialize the protocol before other components that might use it
+    ESP_LOGI(TAG, "Initializing protocol");
     display->SetStatus(Lang::Strings::LOADING_PROTOCOL);
 
 #if CONFIG_ENABLE_XIAOZHI_AI_CORE
@@ -421,6 +449,7 @@ void Application::Start() {
     }
 
     protocol_->OnNetworkError([this](const std::string& message) {
+        protocol_fully_initialized = false;  // 网络错误时重置初始化状态
         SetDeviceState(kDeviceStateIdle);
         Alert(Lang::Strings::ERROR, message.c_str(), "sad", Lang::Sounds::P3_EXCLAMATION);
     });
@@ -444,6 +473,10 @@ void Application::Start() {
         if (thing_manager.GetStatesJson(states, false)) {
             protocol_->SendIotStates(states);
         }
+        
+        // 确认完整通信成功
+        protocol_fully_initialized = true;
+        ESP_LOGI(TAG, "Protocol fully initialized and tested with successful communication");
     });
     protocol_->OnAudioChannelClosed([this, &board]() {
         board.SetPowerSaveMode(true);
@@ -533,7 +566,63 @@ void Application::Start() {
             }
         }
     });
-    bool protocol_started = protocol_->Start();
+    
+    // 使用更强大的重试机制初始化协议
+    bool protocol_started = false;
+    int protocol_retry_count = 0;
+    const int max_protocol_retries = 5;  // 增加最大重试次数
+    int retry_delay_ms = 500;  // 初始重试延迟
+    
+    while (!protocol_started && protocol_retry_count < max_protocol_retries) {
+        ESP_LOGI(TAG, "Attempting to initialize protocol (attempt %d/%d)...", 
+                protocol_retry_count + 1, max_protocol_retries);
+        
+        // 重试时更新状态显示
+        char status_msg[64];
+        snprintf(status_msg, sizeof(status_msg), "%s (%d/%d)", Lang::Strings::LOADING_PROTOCOL, 
+                protocol_retry_count + 1, max_protocol_retries);
+        display->SetStatus(status_msg);
+        
+        // 尝试启动协议
+        protocol_started = protocol_->Start();
+        
+        if (!protocol_started) {
+            protocol_retry_count++;
+            ESP_LOGW(TAG, "Protocol initialization failed, retrying in %dms (%d/%d)...", 
+                    retry_delay_ms, protocol_retry_count, max_protocol_retries);
+            
+            // 使用指数退避策略增加延迟时间
+            vTaskDelay(pdMS_TO_TICKS(retry_delay_ms));
+            retry_delay_ms = std::min(retry_delay_ms * 2, 5000);  // 最长延迟5秒
+        }
+    }
+    
+    if (protocol_started) {
+        ESP_LOGI(TAG, "Protocol initialization started successfully after %d attempts", 
+                protocol_retry_count + 1);
+                
+        // 初始化标记为未完全初始化，等待连接成功回调
+        protocol_fully_initialized = false;
+        
+        // 等待一段时间，若没有收到连接成功回调，主动检查状态
+        vTaskDelay(pdMS_TO_TICKS(2000));
+        
+        // 修复：使用有效的方法检查协议状态，避免使用不存在的IsConnected()方法
+        if (!protocol_fully_initialized) {
+            // 检查协议是否可以打开音频通道作为可用性测试
+            bool seems_working = protocol_->IsAudioChannelBusy() || protocol_->IsAudioChannelOpened();
+            if (seems_working) {
+                ESP_LOGI(TAG, "Protocol seems to be working but callback not received, marking as fully initialized");
+                protocol_fully_initialized = true;
+            } else {
+                ESP_LOGW(TAG, "Protocol state uncertain after initialization, will require explicit connection");
+            }
+        }
+    } else {
+        ESP_LOGE(TAG, "Protocol initialization failed after %d attempts", max_protocol_retries);
+        Alert(Lang::Strings::ERROR, "通信协议初始化失败，语音对话功能不可用", "sad", Lang::Sounds::P3_EXCLAMATION);
+        protocol_fully_initialized = false;
+    }
 
     audio_processor_->Initialize(codec);
     audio_processor_->OnOutput([this](std::vector<int16_t>&& data) {
@@ -1018,6 +1107,42 @@ bool Application::CanEnterSleepMode() {
 void Application::InitializeComponents() {
     ESP_LOGI(TAG, "Initializing all components");
     try {
+#ifdef CONFIG_ENABLE_US_SENSOR
+        // Initialize ultrasonic sensors
+        ESP_LOGI(TAG, "Initializing ultrasonic sensors");
+        iot::RegisterUS();
+#endif
+
+#ifdef CONFIG_ENABLE_CAM
+        // Initialize camera sensor
+        ESP_LOGI(TAG, "Initializing camera");
+        iot::RegisterCAM();
+#endif
+
+#ifdef CONFIG_ENABLE_IMU
+        // Initialize IMU sensor
+        ESP_LOGI(TAG, "Initializing IMU sensor");
+        iot::RegisterIMU();
+#endif
+
+#ifdef CONFIG_ENABLE_LIGHT
+        // Initialize light sensor/controller
+        ESP_LOGI(TAG, "Initializing light controller");
+        iot::RegisterLight();
+#endif
+
+#ifdef CONFIG_ENABLE_MOTOR_CONTROLLER
+        // Initialize motor controller
+        ESP_LOGI(TAG, "Initializing motor controller");
+        iot::RegisterMotor();
+#endif
+
+#ifdef CONFIG_ENABLE_SERVO
+        // Initialize servo controller
+        ESP_LOGI(TAG, "Initializing servo controller");
+        iot::RegisterServo();
+#endif
+
         // Initialize vision components
         ESP_LOGI(TAG, "Initializing vision components");
         // Vision组件的具体初始化实现

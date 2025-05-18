@@ -2,6 +2,8 @@
 #define _BOARD_CONFIG_H_
 
 #include <driver/gpio.h>
+#include <driver/i2c.h>
+#include "sdkconfig.h"
 
 #define AUDIO_INPUT_SAMPLE_RATE  16000
 #define AUDIO_OUTPUT_SAMPLE_RATE 24000
@@ -34,11 +36,6 @@
 #define VOLUME_UP_BUTTON_GPIO   GPIO_NUM_NC
 #define VOLUME_DOWN_BUTTON_GPIO GPIO_NUM_NC
 
-// 舵机引脚定义
-#define SERVO_PAN_PIN  10  // 水平舵机引脚
-#define SERVO_TILT_PIN 13  // 垂直舵机引脚
-#define SERVO_COUNT    2   // 舵机数量
-
 #define DISPLAY_BACKLIGHT_PIN GPIO_NUM_42
 #define DISPLAY_MOSI_PIN      GPIO_NUM_47
 #define DISPLAY_CLK_PIN       GPIO_NUM_21
@@ -46,6 +43,55 @@
 #define DISPLAY_RST_PIN       GPIO_NUM_45
 #define DISPLAY_CS_PIN        GPIO_NUM_41
 
+// 电机控制引脚定义 - 使用Kconfig中的配置
+#ifdef CONFIG_ENABLE_MOTOR_CONTROLLER
+#define MOTOR_ENA_PIN CONFIG_MOTOR_ENA_PIN  // 电机A使能
+#define MOTOR_ENB_PIN CONFIG_MOTOR_ENB_PIN  // 电机B使能
+#define MOTOR_IN1_PIN CONFIG_MOTOR_IN1_PIN  // 电机A输入1
+#define MOTOR_IN2_PIN CONFIG_MOTOR_IN2_PIN  // 电机A输入2
+#define MOTOR_IN3_PIN CONFIG_MOTOR_IN3_PIN  // 电机B输入1
+#define MOTOR_IN4_PIN CONFIG_MOTOR_IN4_PIN  // 电机B输入2
+#endif
+
+// 舵机引脚定义 - 使用Kconfig中的配置
+#ifdef CONFIG_ENABLE_SERVO_CONTROLLER
+#define SERVO_COUNT CONFIG_SERVO_COUNT  // 舵机数量
+
+// 设置舵机引脚数组
+#define SERVO_PINS_ARRAY { \
+    CONFIG_SERVO_PIN_1, \
+    CONFIG_SERVO_COUNT >= 2 ? CONFIG_SERVO_PIN_2 : -1, \
+    CONFIG_SERVO_COUNT >= 3 ? CONFIG_SERVO_PIN_3 : -1, \
+    CONFIG_SERVO_COUNT >= 4 ? CONFIG_SERVO_PIN_4 : -1, \
+    CONFIG_SERVO_COUNT >= 5 ? CONFIG_SERVO_PIN_5 : -1, \
+    CONFIG_SERVO_COUNT >= 6 ? CONFIG_SERVO_PIN_6 : -1, \
+    CONFIG_SERVO_COUNT >= 7 ? CONFIG_SERVO_PIN_7 : -1, \
+    CONFIG_SERVO_COUNT >= 8 ? CONFIG_SERVO_PIN_8 : -1  \
+}
+
+// 向后兼容定义
+#define SERVO_PAN_PIN  CONFIG_SERVO_PIN_1  // 水平舵机引脚
+#define SERVO_TILT_PIN CONFIG_SERVO_PIN_2  // 垂直舵机引脚
+#endif
+
+// 摄像头引脚定义
+#define CAM_PWDN_PIN  -1  // 掉电引脚
+#define CAM_RESET_PIN -1  // 复位引脚
+#define CAM_XCLK_PIN  15  // XCLK时钟引脚
+#define CAM_SIOD_PIN  4   // SCCB/I2C数据引脚
+#define CAM_SIOC_PIN  5   // SCCB/I2C时钟引脚
+#define CAM_Y2_PIN    11  // Y2数据引脚
+#define CAM_Y3_PIN    9   // Y3数据引脚
+#define CAM_Y4_PIN    8   // Y4数据引脚
+#define CAM_Y5_PIN    10  // Y5数据引脚
+#define CAM_Y6_PIN    12  // Y6数据引脚
+#define CAM_Y7_PIN    18  // Y7数据引脚
+#define CAM_Y8_PIN    17  // Y8数据引脚
+#define CAM_Y9_PIN    16  // Y9数据引脚
+#define CAM_VSYNC_PIN 6   // 垂直同步引脚
+#define CAM_HREF_PIN  7   // 水平参考引脚
+#define CAM_PCLK_PIN  13  // 像素时钟引脚
+#define CAM_LED_PIN   45  // 摄像头LED闪光灯引脚
 
 #ifdef CONFIG_LCD_ST7789_240X320
 #define LCD_TYPE_ST7789_SERIAL
@@ -285,5 +331,8 @@
 #define DISPLAY_BACKLIGHT_OUTPUT_INVERT false
 #define DISPLAY_SPI_MODE 0
 #endif
+
+// 引入通用板级配置头文件
+#include "../common/board_config.h"
 
 #endif // _BOARD_CONFIG_H_

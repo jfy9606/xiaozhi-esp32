@@ -54,18 +54,36 @@
 #define DISPLAY_MIRROR_X true
 #define DISPLAY_MIRROR_Y true
 
-// 电机控制引脚定义
-#define MOTOR_ENA_PIN 2   // 电机A使能
-#define MOTOR_ENB_PIN 1   // 电机B使能
-#define MOTOR_IN1_PIN 47  // 电机A输入1
-#define MOTOR_IN2_PIN 21  // 电机A输入2
-#define MOTOR_IN3_PIN 20  // 电机B输入1
-#define MOTOR_IN4_PIN 19  // 电机B输入2
+// 电机控制引脚定义 - 使用Kconfig中的配置
+#ifdef CONFIG_ENABLE_MOTOR_CONTROLLER
+#define MOTOR_ENA_PIN CONFIG_MOTOR_ENA_PIN  // 电机A使能
+#define MOTOR_ENB_PIN CONFIG_MOTOR_ENB_PIN  // 电机B使能
+#define MOTOR_IN1_PIN CONFIG_MOTOR_IN1_PIN  // 电机A输入1
+#define MOTOR_IN2_PIN CONFIG_MOTOR_IN2_PIN  // 电机A输入2
+#define MOTOR_IN3_PIN CONFIG_MOTOR_IN3_PIN  // 电机B输入1
+#define MOTOR_IN4_PIN CONFIG_MOTOR_IN4_PIN  // 电机B输入2
+#endif
 
-// 舵机引脚定义
-#define SERVO_PAN_PIN  46  // 水平舵机引脚
-#define SERVO_TILT_PIN 14  // 垂直舵机引脚
-#define SERVO_COUNT    2   // 舵机数量
+// 舵机引脚定义 - 使用Kconfig中的配置
+#ifdef CONFIG_ENABLE_SERVO_CONTROLLER
+#define SERVO_COUNT CONFIG_SERVO_COUNT  // 舵机数量
+
+// 设置舵机引脚数组
+#define SERVO_PINS_ARRAY { \
+    CONFIG_SERVO_PIN_1, \
+    CONFIG_SERVO_COUNT >= 2 ? CONFIG_SERVO_PIN_2 : -1, \
+    CONFIG_SERVO_COUNT >= 3 ? CONFIG_SERVO_PIN_3 : -1, \
+    CONFIG_SERVO_COUNT >= 4 ? CONFIG_SERVO_PIN_4 : -1, \
+    CONFIG_SERVO_COUNT >= 5 ? CONFIG_SERVO_PIN_5 : -1, \
+    CONFIG_SERVO_COUNT >= 6 ? CONFIG_SERVO_PIN_6 : -1, \
+    CONFIG_SERVO_COUNT >= 7 ? CONFIG_SERVO_PIN_7 : -1, \
+    CONFIG_SERVO_COUNT >= 8 ? CONFIG_SERVO_PIN_8 : -1  \
+}
+
+// 向后兼容定义
+#define SERVO_PAN_PIN  CONFIG_SERVO_PIN_1  // 水平舵机引脚
+#define SERVO_TILT_PIN CONFIG_SERVO_PIN_2  // 垂直舵机引脚
+#endif
 
 // 摄像头引脚定义
 #define CAM_PWDN_PIN  -1  // 掉电引脚

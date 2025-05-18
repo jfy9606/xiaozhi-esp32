@@ -8,7 +8,7 @@ board_config_t* board_get_config(void) {
     // 使用静态变量以确保只初始化一次
     static board_config_t config = {0};
     static bool initialized = false;
-    static int servo_pins_array[4] = {-1, -1, -1, -1}; // 最多支持4个舵机
+    static int servo_pins_array[8] = {-1, -1, -1, -1, -1, -1, -1, -1}; // 最多支持8个舵机
     
     if (!initialized) {
         ESP_LOGI(TAG, "Initializing board configuration");
@@ -17,68 +17,89 @@ board_config_t* board_get_config(void) {
         config.servo_pins = servo_pins_array;
         config.servo_count = 0;  // 默认没有舵机
         
-        // 舵机引脚配置
-        #if defined(SERVO_COUNT) && (SERVO_COUNT > 0)
-        config.servo_count = SERVO_COUNT > 4 ? 4 : SERVO_COUNT; // 限制最多4个舵机
+        // 尝试根据板子的配置头文件和Kconfig初始化引脚
+        // 电机引脚配置 - 从Kconfig中读取
+#ifdef CONFIG_ENABLE_MOTOR_CONTROLLER
+        // 直接使用Kconfig中定义的电机引脚
+        config.ena_pin = CONFIG_MOTOR_ENA_PIN;
+        config.enb_pin = CONFIG_MOTOR_ENB_PIN;
+        config.in1_pin = CONFIG_MOTOR_IN1_PIN;
+        config.in2_pin = CONFIG_MOTOR_IN2_PIN;
+        config.in3_pin = CONFIG_MOTOR_IN3_PIN;
+        config.in4_pin = CONFIG_MOTOR_IN4_PIN;
         
-        #if defined(SERVO_PAN_PIN)
-        servo_pins_array[0] = SERVO_PAN_PIN;
-        #endif
-        
-        #if defined(SERVO_TILT_PIN)
-        servo_pins_array[1] = SERVO_TILT_PIN;
-        #endif
-        
-        // 支持额外舵机引脚定义
-        #if defined(SERVO_3_PIN) && config.servo_count > 2
-        servo_pins_array[2] = SERVO_3_PIN;
-        #endif
-        
-        #if defined(SERVO_4_PIN) && config.servo_count > 3
-        servo_pins_array[3] = SERVO_4_PIN;
-        #endif
-        
-        ESP_LOGI(TAG, "Servo configuration: count=%d, pins=[%d, %d, %d, %d]",
-                config.servo_count, servo_pins_array[0], servo_pins_array[1],
-                servo_pins_array[2], servo_pins_array[3]);
-        #endif
-        
-        // 尝试根据板子的配置头文件初始化引脚
-        #if defined(MOTOR_ENA_PIN)
-        config.ena_pin = MOTOR_ENA_PIN;
-        #else
+        ESP_LOGI(TAG, "Motor pins from Kconfig: ENA=%d, ENB=%d, IN1=%d, IN2=%d, IN3=%d, IN4=%d", 
+                 config.ena_pin, config.enb_pin, config.in1_pin, config.in2_pin, 
+                 config.in3_pin, config.in4_pin);
+#else
+        // 如果未启用电机控制器，则设置为无效值
         config.ena_pin = -1;
-        #endif
-        
-        #if defined(MOTOR_ENB_PIN)
-        config.enb_pin = MOTOR_ENB_PIN;
-        #else
         config.enb_pin = -1;
-        #endif
-        
-        #if defined(MOTOR_IN1_PIN)
-        config.in1_pin = MOTOR_IN1_PIN;
-        #else
         config.in1_pin = -1;
-        #endif
-        
-        #if defined(MOTOR_IN2_PIN)
-        config.in2_pin = MOTOR_IN2_PIN;
-        #else
         config.in2_pin = -1;
-        #endif
-        
-        #if defined(MOTOR_IN3_PIN)
-        config.in3_pin = MOTOR_IN3_PIN;
-        #else
         config.in3_pin = -1;
-        #endif
-        
-        #if defined(MOTOR_IN4_PIN)
-        config.in4_pin = MOTOR_IN4_PIN;
-        #else
         config.in4_pin = -1;
-        #endif
+        ESP_LOGI(TAG, "Motor controller disabled");
+#endif
+        
+        // 舵机引脚配置 - 从Kconfig中读取
+#ifdef CONFIG_ENABLE_SERVO_CONTROLLER
+        config.servo_count = CONFIG_SERVO_COUNT > 8 ? 8 : CONFIG_SERVO_COUNT; // 限制最多8个舵机
+        
+#ifdef CONFIG_SERVO_PIN_1
+        servo_pins_array[0] = CONFIG_SERVO_PIN_1;
+#endif
+        
+#ifdef CONFIG_SERVO_PIN_2
+        if (config.servo_count >= 2) {
+            servo_pins_array[1] = CONFIG_SERVO_PIN_2;
+        }
+#endif
+        
+#ifdef CONFIG_SERVO_PIN_3
+        if (config.servo_count >= 3) {
+            servo_pins_array[2] = CONFIG_SERVO_PIN_3;
+        }
+#endif
+        
+#ifdef CONFIG_SERVO_PIN_4
+        if (config.servo_count >= 4) {
+            servo_pins_array[3] = CONFIG_SERVO_PIN_4;
+        }
+#endif
+        
+#ifdef CONFIG_SERVO_PIN_5
+        if (config.servo_count >= 5) {
+            servo_pins_array[4] = CONFIG_SERVO_PIN_5;
+        }
+#endif
+        
+#ifdef CONFIG_SERVO_PIN_6
+        if (config.servo_count >= 6) {
+            servo_pins_array[5] = CONFIG_SERVO_PIN_6;
+        }
+#endif
+        
+#ifdef CONFIG_SERVO_PIN_7
+        if (config.servo_count >= 7) {
+            servo_pins_array[6] = CONFIG_SERVO_PIN_7;
+        }
+#endif
+        
+#ifdef CONFIG_SERVO_PIN_8
+        if (config.servo_count >= 8) {
+            servo_pins_array[7] = CONFIG_SERVO_PIN_8;
+        }
+#endif
+        
+        ESP_LOGI(TAG, "Servo count: %d", config.servo_count);
+        for (int i = 0; i < config.servo_count; i++) {
+            ESP_LOGI(TAG, "Servo %d pin: %d", i+1, servo_pins_array[i]);
+        }
+#else
+        config.servo_count = 0;
+        ESP_LOGI(TAG, "Servo controller disabled");
+#endif
         
         // 摄像头引脚配置
         #if defined(CAM_PWDN_PIN)

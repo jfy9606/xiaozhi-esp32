@@ -16,6 +16,11 @@
 #include <esp_lcd_panel_ops.h>
 #include <driver/spi_common.h>
 
+// 添加多路复用器头文件
+#ifdef CONFIG_ENABLE_PCA9548A
+#include "ext/include/multiplexer.h"
+#endif
+
 #if defined(LCD_TYPE_ILI9341_SERIAL)
 #include "esp_lcd_ili9341.h"
 #endif
@@ -64,9 +69,38 @@ LV_FONT_DECLARE(font_awesome_16_4);
 
 class CompactWifiBoardLCD : public WifiBoard {
 private:
- 
+    i2c_master_bus_handle_t display_i2c_bus_;
     Button boot_button_;
+    Button touch_button_;
+    Button volume_up_button_;
+    Button volume_down_button_;
     LcdDisplay* display_;
+
+    void InitializeI2c() {
+        i2c_master_bus_config_t bus_config = {
+            // 使用Kconfig中配置的I2C通道
+            .i2c_port = (i2c_port_t)CONFIG_DISPLAY_I2C_PORT,
+            .sda_io_num = DISPLAY_SDA_PIN,
+            .scl_io_num = DISPLAY_SCL_PIN,
+            .clk_source = I2C_CLK_SRC_DEFAULT,
+            .glitch_ignore_cnt = 7,
+            .intr_priority = 0,
+            .trans_queue_depth = 0,
+            .flags = {
+                .enable_internal_pullup = 1,
+            },
+        };
+        ESP_ERROR_CHECK(i2c_new_master_bus(&bus_config, &display_i2c_bus_));
+        
+        // 初始化共享同一个I2C总线的多路复用器
+        #ifdef CONFIG_ENABLE_PCA9548A
+        ESP_LOGI(TAG, "Initializing multiplexer with shared I2C bus on port %d", CONFIG_DISPLAY_I2C_PORT);
+        esp_err_t ret = multiplexer_init_with_bus(display_i2c_bus_);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to initialize multiplexer: %s", esp_err_to_name(ret));
+        }
+        #endif
+    }
 
     void InitializeSpi() {
         spi_bus_config_t buscfg = {};
@@ -135,8 +169,6 @@ private:
                                     });
     }
 
-
- 
     void InitializeButtons() {
         boot_button_.OnClick([this]() {
             auto& app = Application::GetInstance();
@@ -144,6 +176,44 @@ private:
                 ResetWifiConfiguration();
             }
             app.ToggleChatState();
+        });
+        
+        touch_button_.OnPressDown([this]() {
+            Application::GetInstance().StartListening();
+        });
+        
+        touch_button_.OnPressUp([this]() {
+            Application::GetInstance().StopListening();
+        });
+        
+        volume_up_button_.OnClick([this]() {
+            auto codec = GetAudioCodec();
+            auto volume = codec->output_volume() + 10;
+            if (volume > 100) {
+                volume = 100;
+            }
+            codec->SetOutputVolume(volume);
+            GetDisplay()->ShowNotification(Lang::Strings::VOLUME + std::to_string(volume));
+        });
+
+        volume_up_button_.OnLongPress([this]() {
+            GetAudioCodec()->SetOutputVolume(100);
+            GetDisplay()->ShowNotification(Lang::Strings::MAX_VOLUME);
+        });
+
+        volume_down_button_.OnClick([this]() {
+            auto codec = GetAudioCodec();
+            auto volume = codec->output_volume() - 10;
+            if (volume < 0) {
+                volume = 0;
+            }
+            codec->SetOutputVolume(volume);
+            GetDisplay()->ShowNotification(Lang::Strings::VOLUME + std::to_string(volume));
+        });
+
+        volume_down_button_.OnLongPress([this]() {
+            GetAudioCodec()->SetOutputVolume(0);
+            GetDisplay()->ShowNotification(Lang::Strings::MUTED);
         });
     }
 
@@ -159,11 +229,27 @@ private:
         thing_manager.AddThing(iot::CreateThing("ServoThing"));
         ESP_LOGI(TAG, "Servo controller enabled");
         #endif
+        
+        // 根据配置选项添加电机控制器
+        #ifdef CONFIG_ENABLE_MOTOR_CONTROLLER
+        thing_manager.AddThing(iot::CreateThing("Motor"));
+        ESP_LOGI(TAG, "Motor controller enabled");
+        #endif
+        
+        // 根据配置选项添加超声波传感器
+        #ifdef CONFIG_ENABLE_US_SENSOR
+        thing_manager.AddThing(iot::CreateThing("US"));
+        ESP_LOGI(TAG, "Ultrasonic sensor enabled");
+        #endif
     }
 
 public:
     CompactWifiBoardLCD() :
-        boot_button_(BOOT_BUTTON_GPIO) {
+        boot_button_(BOOT_BUTTON_GPIO),
+        touch_button_(TOUCH_BUTTON_GPIO),
+        volume_up_button_(VOLUME_UP_BUTTON_GPIO),
+        volume_down_button_(VOLUME_DOWN_BUTTON_GPIO) {
+        InitializeI2c();
         InitializeSpi();
         InitializeLcdDisplay();
         InitializeButtons();
@@ -173,7 +259,7 @@ public:
         }
         
         // board_config.cc 现在会自动从宏定义读取舵机配置信息
-        ESP_LOGI(TAG, "Bread Compact WiFi LCD Board Initialized with Servo support");
+        ESP_LOGI(TAG, "Bread Compact WiFi LCD Board Initialized with Servo and Motor support");
     }
 
     virtual Led* GetLed() override {

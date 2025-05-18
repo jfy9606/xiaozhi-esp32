@@ -103,6 +103,13 @@ esp_err_t pca9548a_get_selected_channels(pca9548a_handle_t handle, uint8_t *chan
  */
 esp_err_t pca9548a_reset(pca9548a_handle_t handle);
 
+/**
+ * @brief Check if the PCA9548A I2C multiplexer is initialized
+ * 
+ * @return true if initialized, false otherwise
+ */
+bool pca9548a_is_initialized(void);
+
 #ifdef __cplusplus
 }
 #endif 

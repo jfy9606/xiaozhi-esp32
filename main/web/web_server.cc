@@ -51,7 +51,7 @@ extern "C" {
 #endif
 
 // Forward declarations
-#if CONFIG_ENABLE_MOTOR_CONTROLLER && CONFIG_ENABLE_WEB_CONTENT
+#if defined(CONFIG_ENABLE_MOTOR_CONTROLLER)
 extern void InitMotorComponents(WebServer* server);
 #endif
 #if CONFIG_ENABLE_AI_CONTROLLER && CONFIG_ENABLE_WEB_CONTENT
@@ -160,7 +160,11 @@ bool WebServer::Start() {
     StartPeriodicStatusUpdates();
     
     // 注册所有URI处理器
+    bool has_registered_all = true;
     for (const auto& pair : http_handlers_) {
+        // 跳过WebSocket处理器，它需要特殊处理
+        if (pair.first == "/ws") continue;
+        
         httpd_uri_t uri_config = {
             .uri = pair.first.c_str(),
             .method = pair.second.first,
@@ -196,7 +200,36 @@ bool WebServer::Start() {
         ret = httpd_register_uri_handler(server_, &uri_config);
         if (ret != ESP_OK) {
             ESP_LOGW(TAG, "注册URI处理器失败 %s: %s", pair.first.c_str(), esp_err_to_name(ret));
+            has_registered_all = false;
         }
+    }
+    
+    // 检查是否注册了WebSocket处理器
+    auto ws_handler = http_handlers_.find("/ws");
+    if (ws_handler != http_handlers_.end()) {
+        // 直接注册WebSocket处理器
+        httpd_uri_t ws_uri = {
+            .uri        = "/ws",
+            .method     = HTTP_GET,
+            .handler    = WebSocketHandler,
+            .user_ctx   = this,
+            .is_websocket = true   // 关键: 设置WebSocket标志
+        };
+        
+        ESP_LOGI(TAG, "直接注册WebSocket处理器: /ws");
+        ret = httpd_register_uri_handler(server_, &ws_uri);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "注册WebSocket处理器失败: %s", esp_err_to_name(ret));
+            ESP_LOGW(TAG, "WebSocket功能可能不可用，继续运行但功能可能受限");
+        } else {
+            ESP_LOGI(TAG, "WebSocket处理器注册成功");
+            // 从http_handlers_中移除，因为已经直接注册了
+            http_handlers_.erase(ws_handler);
+        }
+    }
+    
+    if (!has_registered_all) {
+        ESP_LOGW(TAG, "某些URI处理器注册失败，但服务器仍然启动");
     }
     
     return true;
@@ -239,65 +272,83 @@ const char* WebServer::GetName() const {
 void WebServer::RegisterDefaultHandlers() {
     // Register handlers for default endpoints，先检查是否已注册
     if (http_handlers_.find("/") == http_handlers_.end()) {
-        RegisterHttpHandler("/", HTTP_GET, RootHandler);     // 主页
+    RegisterHttpHandler("/", HTTP_GET, RootHandler);     // 主页
         ESP_LOGI(TAG, "注册主页处理器: /");
     }
     
     // Only register WebSocket handler if not already registered
     if (http_handlers_.find("/ws") == http_handlers_.end()) {
-        RegisterHttpHandler("/ws", HTTP_GET, WebSocketHandler);  // WebSocket端点
+        // 使用标准URI处理器注册WebSocket处理器
+        if (server_) {
+            httpd_uri_t ws_uri = {
+                .uri        = "/ws",
+                .method     = HTTP_GET,
+                .handler    = WebSocketHandler,
+                .user_ctx   = this,
+                .is_websocket = true  // 设置WebSocket标志
+            };
+            
         ESP_LOGI(TAG, "注册WebSocket处理器: /ws");
+            esp_err_t ret = httpd_register_uri_handler(server_, &ws_uri);
+            if (ret != ESP_OK) {
+                ESP_LOGW(TAG, "注册WebSocket处理器失败: %s", esp_err_to_name(ret));
+            }
+        } else {
+            // 服务器尚未启动，添加到handlers中以便在启动时注册
+            RegisterHttpHandler("/ws", HTTP_GET, WebSocketHandler);
+            ESP_LOGI(TAG, "WebSocket处理器将在服务器启动时注册");
+        }
     } else {
         ESP_LOGI(TAG, "WebSocket处理器 /ws 已注册，跳过重复注册");
     }
     
     // API处理器需要明确类型转换为httpd_method_t
     if (http_handlers_.find("/api/*") == http_handlers_.end()) {
-        RegisterHttpHandler("/api/*", static_cast<httpd_method_t>(HTTP_ANY), ApiHandler);  // API处理器处理所有/api/前缀的请求
+    RegisterHttpHandler("/api/*", static_cast<httpd_method_t>(HTTP_ANY), ApiHandler);  // API处理器处理所有/api/前缀的请求
         ESP_LOGI(TAG, "注册API通配符处理器: /api/*");
     }
     
     // Register handlers for special endpoints
     if (http_handlers_.find("/vision") == http_handlers_.end()) {
-        RegisterHttpHandler("/vision", HTTP_GET, VisionHandler);
+    RegisterHttpHandler("/vision", HTTP_GET, VisionHandler);
         ESP_LOGI(TAG, "注册视觉页面处理器: /vision");
     }
     
     if (http_handlers_.find("/motor") == http_handlers_.end()) {
-        RegisterHttpHandler("/motor", HTTP_GET, MotorHandler);
+    RegisterHttpHandler("/motor", HTTP_GET, MotorHandler);
         ESP_LOGI(TAG, "注册电机页面处理器: /motor");
     }
     
     if (http_handlers_.find("/ai") == http_handlers_.end()) {
-        RegisterHttpHandler("/ai", HTTP_GET, AIHandler);  // 添加AI页面路由
+    RegisterHttpHandler("/ai", HTTP_GET, AIHandler);  // 添加AI页面路由
         ESP_LOGI(TAG, "注册AI页面处理器: /ai");
     }
     
     // Register car control endpoints
     if (http_handlers_.find("/car/stop") == http_handlers_.end()) {
-        RegisterHttpHandler("/car/stop", HTTP_GET, CarControlHandler);
+    RegisterHttpHandler("/car/stop", HTTP_GET, CarControlHandler);
         ESP_LOGI(TAG, "注册停车控制处理器: /car/stop");
     }
     
     if (http_handlers_.find("/car/*") == http_handlers_.end()) {
-        RegisterHttpHandler("/car/*", HTTP_GET, CarControlHandler);
+    RegisterHttpHandler("/car/*", HTTP_GET, CarControlHandler);
         ESP_LOGI(TAG, "注册小车控制通配符处理器: /car/*");
     }
     
     // Register camera control endpoints
     if (http_handlers_.find("/camera/control") == http_handlers_.end()) {
-        RegisterHttpHandler("/camera/control", HTTP_GET, CameraControlHandler);
+    RegisterHttpHandler("/camera/control", HTTP_GET, CameraControlHandler);
         ESP_LOGI(TAG, "注册相机控制处理器: /camera/control");
     }
     
     if (http_handlers_.find("/camera/stream") == http_handlers_.end()) {
-        RegisterHttpHandler("/camera/stream", HTTP_GET, CameraStreamHandler);
+    RegisterHttpHandler("/camera/stream", HTTP_GET, CameraStreamHandler);
         ESP_LOGI(TAG, "注册相机流处理器: /camera/stream");
     }
     
     // Register API status endpoint directly
     if (http_handlers_.find("/api/status") == http_handlers_.end()) {
-        RegisterHttpHandler("/api/status", HTTP_GET, SystemStatusHandler);
+    RegisterHttpHandler("/api/status", HTTP_GET, SystemStatusHandler);
         ESP_LOGI(TAG, "注册系统状态API处理器: /api/status");
     }
 }
@@ -434,7 +485,7 @@ esp_err_t WebServer::VisionHandler(httpd_req_t *req) {
 
 // 电机控制页面处理器
 esp_err_t WebServer::MotorHandler(httpd_req_t *req) {
-#if CONFIG_ENABLE_WEB_CONTENT && CONFIG_ENABLE_MOTOR_CONTROLLER
+#if defined(CONFIG_ENABLE_MOTOR_CONTROLLER)
     // 获取电机控制相关的HTML内容
     const char* html_content = get_motor_html_content();
     size_t len = get_motor_html_size();
@@ -595,44 +646,75 @@ esp_err_t WebServer::WebSocketHandler(httpd_req_t* req) {
     }
     
     WebServer* server = static_cast<WebServer*>(req->user_ctx);
+    int client_fd = httpd_req_to_sockfd(req);
     
+    // 判断请求类型 - 在ESP-IDF v5.4.1中，使用检查请求方法来确定握手
     if (req->method == HTTP_GET) {
-        // WebSocket握手请求
-        // 获取客户端类型参数，如 /ws?type=motor
+        // 获取客户端类型参数
         char type_buf[32] = {0};
         size_t buf_len = sizeof(type_buf);
-        
-        esp_err_t ret = httpd_req_get_url_query_str(req, type_buf, buf_len);
         PSRAMString client_type = "generic";
         
-        if (ret == ESP_OK) {
+        if (httpd_req_get_url_query_str(req, type_buf, buf_len) == ESP_OK) {
             char param_val[16] = {0};
-            ret = httpd_query_key_value(type_buf, "type", param_val, sizeof(param_val));
-            if (ret == ESP_OK) {
+            if (httpd_query_key_value(type_buf, "type", param_val, sizeof(param_val)) == ESP_OK) {
                 client_type = param_val;
             }
         }
         
-        ESP_LOGI(TAG, "WebSocket握手请求，客户端类型: %s, fd: %d", 
-                 client_type.c_str(), httpd_req_to_sockfd(req));
+        // 记录WebSocket连接
+        int client_index = server->AddWebSocketClient(client_fd, client_type);
+        ESP_LOGI(TAG, "WebSocket客户端已连接: fd=%d, 类型=%s, 索引=%d", 
+                client_fd, client_type.c_str(), client_index);
+                
+        ESP_LOGI(TAG, "WebSocket握手处理");
         return ESP_OK;
     }
     
+    // 处理WebSocket数据帧
     httpd_ws_frame_t ws_pkt;
     memset(&ws_pkt, 0, sizeof(httpd_ws_frame_t));
-    ws_pkt.type = HTTPD_WS_TYPE_TEXT;
+    ws_pkt.type = HTTPD_WS_TYPE_TEXT;  // 默认为文本帧
     
-    // 获取WebSocket帧
+    // 首先接收帧获取长度信息
     esp_err_t ret = httpd_ws_recv_frame(req, &ws_pkt, 0);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "接收WebSocket帧失败: %s", esp_err_to_name(ret));
         return ret;
     }
     
-    // 如果帧有负载，分配内存接收数据
-    if (ws_pkt.len) {
-        // 限制单个消息的最大长度
-        if (ws_pkt.len > 16384) {  // 16KB限制
+    // 处理特殊类型的帧
+    if (ws_pkt.type == HTTPD_WS_TYPE_PING) {
+        httpd_ws_frame_t pong;
+        memset(&pong, 0, sizeof(httpd_ws_frame_t));
+        pong.type = HTTPD_WS_TYPE_PONG;
+        return httpd_ws_send_frame(req, &pong);
+    }
+    
+    if (ws_pkt.type == HTTPD_WS_TYPE_CLOSE) {
+        // 查找客户端索引
+        for (int i = 0; i < MAX_WS_CLIENTS; i++) {
+            if (server->ws_clients_[i].connected && server->ws_clients_[i].fd == client_fd) {
+                server->RemoveWebSocketClient(i);
+                break;
+            }
+        }
+        return ESP_OK;
+    }
+    
+    // 如果不是文本帧，记录并跳过
+    if (ws_pkt.type != HTTPD_WS_TYPE_TEXT) {
+        ESP_LOGI(TAG, "收到非文本WebSocket帧，类型: %d", ws_pkt.type);
+        return ESP_OK;
+    }
+    
+    // 只处理有负载的数据帧
+    if (ws_pkt.len == 0) {
+        return ESP_OK;
+    }
+    
+    // 为数据帧分配内存
+    if (ws_pkt.len > 16384) {  // 限制单个消息最大长度为16KB
             ESP_LOGE(TAG, "WebSocket负载过大: %d字节", ws_pkt.len);
             return ESP_ERR_NO_MEM;
         }
@@ -654,80 +736,58 @@ esp_err_t WebServer::WebSocketHandler(httpd_req_t* req) {
         ESP_LOGD(TAG, "使用标准内存分配WebSocket负载: %d字节", ws_pkt.len);
         #endif
         
+    // 设置负载指针并接收完整帧
         ws_pkt.payload = payload;
         ret = httpd_ws_recv_frame(req, &ws_pkt, ws_pkt.len);
         if (ret != ESP_OK) {
-            WEB_SERVER_FREE(ws_pkt.payload);
+        WEB_SERVER_FREE(payload);
             ESP_LOGE(TAG, "接收WebSocket负载失败: %s", esp_err_to_name(ret));
             return ret;
         }
         
         // 添加字符串结束符
-        ws_pkt.payload[ws_pkt.len] = 0;
-    } else {
-        ESP_LOGW(TAG, "接收到空的WebSocket帧");
-        return ESP_OK;
-    }
+    payload[ws_pkt.len] = 0;
     
     // 查找客户端
     int client_index = -1;
-    int client_fd = httpd_req_to_sockfd(req);
-    
     for (int i = 0; i < MAX_WS_CLIENTS; i++) {
         if (server->ws_clients_[i].connected && server->ws_clients_[i].fd == client_fd) {
             client_index = i;
+            // 更新活动时间
+            server->ws_clients_[i].last_activity = esp_timer_get_time() / 1000;
             break;
-        }
-    }
-    
-    // 获取查询参数中的类型
-    char type_buf[32] = {0};
-    size_t buf_len = sizeof(type_buf);
-    PSRAMString client_type = "generic";
-    
-    if (httpd_req_get_url_query_str(req, type_buf, buf_len) == ESP_OK) {
-        char param_val[16] = {0};
-        if (httpd_query_key_value(type_buf, "type", param_val, sizeof(param_val)) == ESP_OK) {
-            client_type = param_val;
         }
     }
     
     // 如果没有找到客户端，添加新客户端
     if (client_index == -1) {
-        client_index = server->AddWebSocketClient(client_fd, client_type);
+        client_index = server->AddWebSocketClient(client_fd, "generic");
         if (client_index == -1) {
             // 无法添加更多客户端
-            if (ws_pkt.payload) {
-                WEB_SERVER_FREE(ws_pkt.payload);
-            }
+            WEB_SERVER_FREE(payload);
             ESP_LOGW(TAG, "无法添加更多WebSocket客户端，拒绝连接");
             return ESP_OK;
-        }
-    } else {
-        // 更新活动时间
-        server->ws_clients_[client_index].last_activity = esp_timer_get_time() / 1000;
-        // 更新客户端类型
-        if (!client_type.empty() && client_type != "generic") {
-            server->ws_clients_[client_index].client_type = client_type;
         }
     }
     
     // 处理WebSocket数据
-    if (ws_pkt.payload) {
         try {
-            PSRAMString message((char*)ws_pkt.payload);
-            WEB_SERVER_FREE(ws_pkt.payload);  // 及时释放内存
+        PSRAMString message((char*)payload);
+        WEB_SERVER_FREE(payload);  // 及时释放内存
             
             // 处理消息
             server->HandleWebSocketMessage(client_index, message);
+        
+        return ESP_OK;
         } catch (const std::exception& e) {
+        WEB_SERVER_FREE(payload);  // 确保异常情况下也释放内存
             ESP_LOGE(TAG, "处理WebSocket消息异常: %s", e.what());
+        return ESP_FAIL;
         } catch (...) {
+        WEB_SERVER_FREE(payload);  // 确保异常情况下也释放内存
             ESP_LOGE(TAG, "处理WebSocket消息未知异常");
+        return ESP_FAIL;
         }
-    }
-    
-    return ESP_OK;
 }
 
 // 处理WebSocket消息
@@ -894,6 +954,7 @@ bool WebServer::SendWebSocketMessage(int client_index, const PSRAMString& messag
         return false;
     }
 
+    // 使用ESP-IDF v5.4.1 WebSocket API
     httpd_ws_frame_t ws_pkt;
     memset(&ws_pkt, 0, sizeof(httpd_ws_frame_t));
     ws_pkt.payload = (uint8_t*)message.c_str();
@@ -901,7 +962,9 @@ bool WebServer::SendWebSocketMessage(int client_index, const PSRAMString& messag
     ws_pkt.type = HTTPD_WS_TYPE_TEXT;
     ws_pkt.final = true;  // 标记为最终帧
 
+    // 使用异步发送
     esp_err_t ret = httpd_ws_send_frame_async(server_, ws_clients_[client_index].fd, &ws_pkt);
+    
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "发送WebSocket消息到客户端 %d 失败: %s", 
                  client_index, esp_err_to_name(ret));
@@ -1121,17 +1184,8 @@ void WebServer::InitWebComponents() {
     
     // 注册但不启动电机组件
 #if defined(CONFIG_ENABLE_MOTOR_CONTROLLER)
-#if defined(CONFIG_ENABLE_WEB_CONTENT)
     InitMotorComponents(web_server);
-#else
-    // 即使禁用了WebContent，也要初始化电机组件
-    if (!manager.GetComponent("MotorController")) {
-        MotorController* motor_controller = new MotorController();
-        manager.RegisterComponent(motor_controller);
-        ESP_LOGI(TAG, "注册电机控制器 (WebContent已禁用)");
-    }
-#endif
-    ESP_LOGI(TAG, "注册电机组件");
+    ESP_LOGI(TAG, "电机组件已注册");
 #endif
 
     // 注册但不启动AI组件
@@ -1217,25 +1271,20 @@ bool WebServer::StartWebComponents() {
         if (motor_controller && !motor_controller->IsRunning()) {
             if (!motor_controller->Start()) {
                 ESP_LOGE(TAG, "启动MotorController失败");
-                // 继续尝试启动其他组件
             } else {
                 ESP_LOGI(TAG, "MotorController启动成功");
-            }
-        }
         
-#if defined(CONFIG_ENABLE_WEB_CONTENT)
+                // 只有在MotorController启动成功后才启动MotorContent
         Component* motor_content = manager.GetComponent("MotorContent");
         if (motor_content && !motor_content->IsRunning()) {
             if (!motor_content->Start()) {
                 ESP_LOGE(TAG, "启动MotorContent失败");
-                // 继续尝试启动其他组件
             } else {
                 ESP_LOGI(TAG, "MotorContent启动成功");
             }
-        } else if (motor_content) {
-            ESP_LOGI(TAG, "MotorContent已经在运行");
         }
-#endif // CONFIG_ENABLE_WEB_CONTENT
+            }
+        }
 #endif // CONFIG_ENABLE_MOTOR_CONTROLLER
         
         // 启动AI相关组件
@@ -1446,7 +1495,7 @@ esp_err_t WebServer::CarControlHandler(httpd_req_t *req) {
                     success = false;
                 } else {
                     // 为兼容Thing::Invoke方法的预期格式，必须添加method和parameters字段
-                    cJSON_AddStringToObject(cmd, "command", "stop");
+                cJSON_AddStringToObject(cmd, "command", "stop");
                     cJSON_AddStringToObject(cmd, "method", "Stop");  // 修正方法名称大小写
                     
                     // 添加必要的parameters对象及brake参数
@@ -1457,15 +1506,15 @@ esp_err_t WebServer::CarControlHandler(httpd_req_t *req) {
                     } else {
                         ESP_LOGW(TAG, "Failed to create parameters object");
                     }
-                    
-                    // Try to invoke the component through JSON command
-                    auto& thing_manager = iot::ThingManager::GetInstance();
-                    
-                    // 添加安全检查，防止空指针崩溃
+                
+                // Try to invoke the component through JSON command
+                auto& thing_manager = iot::ThingManager::GetInstance();
+                
+                // 添加安全检查，防止空指针崩溃
                     if (thing_manager.IsInitialized()) {
                         try {
-                            thing_manager.Invoke(cmd);
-                            success = true;
+                        thing_manager.Invoke(cmd);
+                        success = true;
                         } catch (const std::exception& e) {
                             ESP_LOGE(TAG, "Exception when invoking 'Stop' command: %s", e.what());
                             success = false;
@@ -1476,9 +1525,9 @@ esp_err_t WebServer::CarControlHandler(httpd_req_t *req) {
                     } else {
                         ESP_LOGW(TAG, "ThingManager not initialized, cannot handle 'Stop' command");
                         success = false;
-                    }
-                    
-                    cJSON_Delete(cmd);
+                }
+                
+                cJSON_Delete(cmd);
                     cJSON_AddStringToObject(response, "message", success ? "Car stopped" : "Failed to stop car");
                 }
             } catch (const std::exception& e) {
@@ -1503,9 +1552,9 @@ esp_err_t WebServer::CarControlHandler(httpd_req_t *req) {
                     cJSON* params = cJSON_CreateObject();
                     if (params) {
                         // 解析速度参数
-                        size_t speed_pos = action.find("speed=");
-                        if (speed_pos != std::string::npos) {
-                            int speed = atoi(action.c_str() + speed_pos + 6);
+                    size_t speed_pos = action.find("speed=");
+                    if (speed_pos != std::string::npos) {
+                        int speed = atoi(action.c_str() + speed_pos + 6);
                             cJSON_AddNumberToObject(params, "speed", speed);
                         }
                         
@@ -1518,8 +1567,8 @@ esp_err_t WebServer::CarControlHandler(httpd_req_t *req) {
                     auto& thing_manager = iot::ThingManager::GetInstance();
                     if (thing_manager.IsInitialized()) {
                         try {
-                            thing_manager.Invoke(cmd);
-                            success = true;
+                        thing_manager.Invoke(cmd);
+                        success = true;
                         } catch (const std::exception& e) {
                             ESP_LOGE(TAG, "Exception when invoking 'Forward' command: %s", e.what());
                             success = false;
@@ -1557,9 +1606,9 @@ esp_err_t WebServer::CarControlHandler(httpd_req_t *req) {
                     cJSON* params = cJSON_CreateObject();
                     if (params) {
                         // 解析速度参数
-                        size_t speed_pos = action.find("speed=");
-                        if (speed_pos != std::string::npos) {
-                            int speed = atoi(action.c_str() + speed_pos + 6);
+                    size_t speed_pos = action.find("speed=");
+                    if (speed_pos != std::string::npos) {
+                        int speed = atoi(action.c_str() + speed_pos + 6);
                             cJSON_AddNumberToObject(params, "speed", speed);
                         }
                         
@@ -1572,8 +1621,8 @@ esp_err_t WebServer::CarControlHandler(httpd_req_t *req) {
                     auto& thing_manager = iot::ThingManager::GetInstance();
                     if (thing_manager.IsInitialized()) {
                         try {
-                            thing_manager.Invoke(cmd);
-                            success = true;
+                        thing_manager.Invoke(cmd);
+                        success = true;
                         } catch (const std::exception& e) {
                             ESP_LOGE(TAG, "Exception when invoking 'Backward' command: %s", e.what());
                             success = false;
@@ -1611,9 +1660,9 @@ esp_err_t WebServer::CarControlHandler(httpd_req_t *req) {
                     cJSON* params = cJSON_CreateObject();
                     if (params) {
                         // 解析角度参数
-                        size_t angle_pos = action.find("angle=");
-                        if (angle_pos != std::string::npos) {
-                            int angle = atoi(action.c_str() + angle_pos + 6);
+                    size_t angle_pos = action.find("angle=");
+                    if (angle_pos != std::string::npos) {
+                        int angle = atoi(action.c_str() + angle_pos + 6);
                             cJSON_AddNumberToObject(params, "speed", angle);  // 注意：TurnLeft使用speed参数，而不是angle
                         }
                         
@@ -1626,8 +1675,8 @@ esp_err_t WebServer::CarControlHandler(httpd_req_t *req) {
                     auto& thing_manager = iot::ThingManager::GetInstance();
                     if (thing_manager.IsInitialized()) {
                         try {
-                            thing_manager.Invoke(cmd);
-                            success = true;
+                        thing_manager.Invoke(cmd);
+                        success = true;
                         } catch (const std::exception& e) {
                             ESP_LOGE(TAG, "Exception when invoking 'TurnLeft' command: %s", e.what());
                             success = false;
@@ -1665,9 +1714,9 @@ esp_err_t WebServer::CarControlHandler(httpd_req_t *req) {
                     cJSON* params = cJSON_CreateObject();
                     if (params) {
                         // 解析角度参数
-                        size_t angle_pos = action.find("angle=");
-                        if (angle_pos != std::string::npos) {
-                            int angle = atoi(action.c_str() + angle_pos + 6);
+                    size_t angle_pos = action.find("angle=");
+                    if (angle_pos != std::string::npos) {
+                        int angle = atoi(action.c_str() + angle_pos + 6);
                             cJSON_AddNumberToObject(params, "speed", angle);  // 注意：TurnRight使用speed参数，而不是angle
                         }
                         
@@ -1680,8 +1729,8 @@ esp_err_t WebServer::CarControlHandler(httpd_req_t *req) {
                     auto& thing_manager = iot::ThingManager::GetInstance();
                     if (thing_manager.IsInitialized()) {
                         try {
-                            thing_manager.Invoke(cmd);
-                            success = true;
+                        thing_manager.Invoke(cmd);
+                        success = true;
                         } catch (const std::exception& e) {
                             ESP_LOGE(TAG, "Exception when invoking 'TurnRight' command: %s", e.what());
                             success = false;
@@ -1939,4 +1988,15 @@ esp_err_t WebServer::CameraStreamHandler(httpd_req_t *req) {
 #endif
 
     return ESP_OK;
+} 
+
+// 获取活动的WebSocket客户端数量
+int WebServer::GetActiveWebSocketClientCount() const {
+    int count = 0;
+    for (int i = 0; i < MAX_WS_CLIENTS; i++) {
+        if (ws_clients_[i].connected && ws_clients_[i].fd >= 0) {
+            count++;
+        }
+    }
+    return count;
 } 

@@ -222,7 +222,7 @@ public:
             ESP_LOGE(TAG, "Failed to create I2C bus: %s", esp_err_to_name(ret));
             return;
         }
-
+        
         // 新I2C驱动：配置设备（默认用MPU6050地址，后续可动态切换）
         i2c_device_config_t dev_cfg = {
             .dev_addr_length = I2C_ADDR_BIT_LEN_7,
@@ -236,7 +236,7 @@ public:
             bus_handle_ = NULL;
             return;
         }
-
+        
         // Initialize sensors
         mpu6050_initialized_ = InitMPU6050();
         if (mpu6050_initialized_) {

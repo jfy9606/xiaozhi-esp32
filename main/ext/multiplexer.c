@@ -45,6 +45,8 @@ static pca9548a_handle_t pca9548a_handle = NULL;
 static i2c_master_bus_handle_t i2c_bus_handle = NULL;
 static i2c_master_dev_handle_t i2c_dev_handle = NULL;
 static bool using_external_bus = false; // 标记是否使用外部总线
+// 默认I2C端口，可通过函数参数修改
+static int default_i2c_port = DEFAULT_MULTIPLEXER_I2C_PORT;
 #endif
 
 #ifdef CONFIG_ENABLE_HW178
@@ -55,18 +57,18 @@ static adc_oneshot_unit_handle_t adc_handle = NULL;
 // Initialize I2C bus
 #ifdef CONFIG_ENABLE_PCA9548A
 // 如果没有宏定义条件，该函数会在不支持PCA9548A时仍然存在但不被使用
-static esp_err_t i2c_master_init(void)
+static esp_err_t i2c_master_init(int i2c_port)
 {
     // 如果已经有I2C总线句柄，不需要再初始化
     if (i2c_bus_handle != NULL) {
         return ESP_OK;
     }
 
-    // 配置I2C总线，与OLED显示屏使用相同的配置结构
+    // 配置I2C总线
     i2c_master_bus_config_t bus_config = {
-        .i2c_port = PCA9548A_I2C_PORT,
-        .sda_io_num = I2C_MUX_SDA_PIN,
-        .scl_io_num = I2C_MUX_SCL_PIN,
+        .i2c_port = (i2c_port_t)i2c_port,  // 使用传入的i2c_port
+        .sda_io_num = CONFIG_PCA9548A_SDA_PIN,
+        .scl_io_num = CONFIG_PCA9548A_SCL_PIN,
         .clk_source = I2C_CLK_SRC_DEFAULT,
         .glitch_ignore_cnt = 7,
         .intr_priority = 0,
@@ -77,7 +79,7 @@ static esp_err_t i2c_master_init(void)
     };
     
     ESP_LOGI(TAG, "Initializing I2C master on port %d with SDA:%d, SCL:%d", 
-             PCA9548A_I2C_PORT, I2C_MUX_SDA_PIN, I2C_MUX_SCL_PIN);
+             i2c_port, CONFIG_PCA9548A_SDA_PIN, CONFIG_PCA9548A_SCL_PIN);
     
     esp_err_t ret = i2c_new_master_bus(&bus_config, &i2c_bus_handle);
     if (ret != ESP_OK) {
@@ -158,15 +160,18 @@ static adc_oneshot_unit_handle_t adc_init(void)
 
 #ifdef CONFIG_ENABLE_PCA9548A
 // Initialize PCA9548A
-esp_err_t pca9548a_init(void)
+esp_err_t pca9548a_init(int i2c_port)
 {
-    ESP_LOGI(TAG, "Initializing PCA9548A multiplexer");
+    ESP_LOGI(TAG, "Initializing PCA9548A multiplexer on port %d", i2c_port);
 
     esp_err_t ret = ESP_OK;
     
+    // 保存当前使用的I2C端口号
+    default_i2c_port = i2c_port;
+    
     // 如果没有设置外部总线，则自行初始化I2C
     if (!using_external_bus) {
-        ret = i2c_master_init();
+        ret = i2c_master_init(i2c_port);
         if (ret != ESP_OK) {
             ESP_LOGE(TAG, "Failed to initialize I2C: %s", esp_err_to_name(ret));
             return ret;
@@ -239,6 +244,12 @@ esp_err_t pca9548a_select_channel(uint8_t channel)
     }
     
     return ESP_OK;
+}
+
+// Function to check if PCA9548A is initialized
+bool pca9548a_is_initialized(void)
+{
+    return pca9548a_handle != NULL;
 }
 #endif
 
@@ -332,8 +343,8 @@ esp_err_t multiplexer_init_with_bus(i2c_master_bus_handle_t external_bus_handle)
     i2c_bus_handle = external_bus_handle;
     using_external_bus = true;
 
-    // 初始化PCA9548A
-    ret = pca9548a_init();
+    // 初始化PCA9548A，此处端口号实际不会被使用，因为使用的是外部总线
+    ret = pca9548a_init(default_i2c_port);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize PCA9548A: %s", esp_err_to_name(ret));
         // 不要删除外部总线句柄，因为不是我们创建的
@@ -356,12 +367,18 @@ esp_err_t multiplexer_init_with_bus(i2c_master_bus_handle_t external_bus_handle)
 // Initialize multiplexer components
 esp_err_t multiplexer_init(void)
 {
+    return multiplexer_init_with_i2c_port(default_i2c_port);
+}
+
+// Initialize multiplexer components with specific I2C port
+esp_err_t multiplexer_init_with_i2c_port(int i2c_port)
+{
     esp_err_t ret = ESP_OK;
 
 #ifdef CONFIG_ENABLE_PCA9548A
     // 标记使用内部初始化的总线
     using_external_bus = false;
-    ret = pca9548a_init();
+    ret = pca9548a_init(i2c_port);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize PCA9548A: %s", esp_err_to_name(ret));
         // Continue with other initializations even if PCA9548A fails
@@ -383,30 +400,30 @@ esp_err_t multiplexer_init(void)
 void multiplexer_deinit(void)
 {
 #ifdef CONFIG_ENABLE_PCA9548A
+    // Clean up PCA9548A resources
     if (pca9548a_handle != NULL) {
         pca9548a_delete(pca9548a_handle);
         pca9548a_handle = NULL;
     }
-    
+
     if (i2c_dev_handle != NULL) {
         i2c_master_bus_rm_device(i2c_dev_handle);
         i2c_dev_handle = NULL;
     }
-    
-    // 只删除我们自己创建的总线，不删除外部提供的
+
     if (!using_external_bus && i2c_bus_handle != NULL) {
         i2c_del_master_bus(i2c_bus_handle);
+        i2c_bus_handle = NULL;
     }
-    i2c_bus_handle = NULL;
 #endif
 
 #ifdef CONFIG_ENABLE_HW178
+    // Clean up HW-178 resources
     if (hw178_handle != NULL) {
-        hw178_disable(hw178_handle);
         hw178_delete(hw178_handle);
         hw178_handle = NULL;
     }
-    
+
     if (adc_handle != NULL) {
         adc_oneshot_del_unit(adc_handle);
         adc_handle = NULL;
@@ -414,4 +431,40 @@ void multiplexer_deinit(void)
 #endif
 
     ESP_LOGI(TAG, "Multiplexer components deinitialized");
+}
+
+/**
+ * @brief Reset the I2C multiplexer (PCA9548A)
+ * 
+ * @return ESP_OK on success, ESP_ERR_INVALID_STATE if not initialized, 
+ *         or other error if reset fails
+ */
+esp_err_t multiplexer_reset(void)
+{
+#ifdef CONFIG_ENABLE_PCA9548A
+    if (pca9548a_handle == NULL) {
+        ESP_LOGE(TAG, "PCA9548A not initialized");
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    esp_err_t ret = pca9548a_reset(pca9548a_handle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to reset PCA9548A: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    
+    // 重置后清除所有通道
+    ret = pca9548a_select_channels(pca9548a_handle, PCA9548A_CHANNEL_NONE);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to clear channels after reset: %s", esp_err_to_name(ret));
+        // 不中断程序，继续执行
+    }
+    
+    ESP_LOGI(TAG, "PCA9548A reset successful");
+    return ESP_OK;
+#else
+    // 如果没有编译PCA9548A支持，返回不支持
+    ESP_LOGW(TAG, "PCA9548A support not enabled");
+    return ESP_ERR_NOT_SUPPORTED;
+#endif
 } 

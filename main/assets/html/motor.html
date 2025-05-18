@@ -279,6 +279,85 @@
       text-align: center;
       margin-top: 10px;
     }
+
+    /* 超声波显示样式 */
+    .ultrasonic-container {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      width: 100%;
+      margin-bottom: 20px;
+    }
+    
+    .ultrasonic-card {
+      background-color: rgba(0, 0, 0, 0.5);
+      border-radius: 10px;
+      padding: 10px;
+      margin: 5px;
+      flex: 1 0 45%;
+      text-align: center;
+    }
+    
+    .ultrasonic-card h3 {
+      margin: 0 0 10px 0;
+      font-size: 16px;
+      color: #ddd;
+    }
+    
+    .ultrasonic-icon {
+      width: 80px;
+      height: 80px;
+      margin: 0 auto;
+      border-radius: 50%;
+      background-color: rgba(0, 0, 0, 0.2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background-color 0.3s;
+    }
+    
+    .ultrasonic-icon.alert {
+      background-color: rgba(255, 0, 0, 0.3);
+      animation: pulse 1s infinite;
+    }
+    
+    @keyframes pulse {
+      0% { transform: scale(1); }
+      50% { transform: scale(1.05); }
+      100% { transform: scale(1); }
+    }
+    
+    .ultrasonic-value {
+      font-size: 18px;
+      font-weight: bold;
+      color: white;
+    }
+    
+    .safe-distance-value {
+      font-size: 24px;
+      font-weight: bold;
+      color: #4CAF50;
+    }
+
+    .warning-alert {
+      position: fixed;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%) translateY(-100px);
+      background-color: rgba(255, 50, 50, 0.9);
+      color: white;
+      padding: 12px 20px;
+      border-radius: 5px;
+      z-index: 1000;
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+      font-weight: bold;
+      transition: transform 0.5s ease;
+      pointer-events: none;
+    }
+    
+    .warning-alert.show {
+      transform: translateX(-50%) translateY(0);
+    }
   </style>
 </head>
 <body>
@@ -291,6 +370,29 @@
       </div>
 
       <div class="controls-container">
+        <div class="ultrasonic-container">
+          <div class="ultrasonic-card">
+            <h3>前方距离:</h3>
+            <div id="front-ultrasonic" class="ultrasonic-icon">
+              <span id="front-distance" class="ultrasonic-value">-- cm</span>
+            </div>
+          </div>
+          <div class="ultrasonic-card">
+            <h3>后方距离:</h3>
+            <div id="rear-ultrasonic" class="ultrasonic-icon">
+              <span id="rear-distance" class="ultrasonic-value">-- cm</span>
+            </div>
+          </div>
+          <div class="ultrasonic-card">
+            <h3>前方安全距离:</h3>
+            <span id="front-safe-distance" class="safe-distance-value">-- cm</span>
+          </div>
+          <div class="ultrasonic-card">
+            <h3>后方安全距离:</h3>
+            <span id="rear-safe-distance" class="safe-distance-value">-- cm</span>
+          </div>
+        </div>
+        
         <div class="joystick-container">
           <div class="joystick" id="joystick">
             <div class="button" id="button"></div>
@@ -442,9 +544,32 @@
               if (jsonData.type === "pong") {
                 // 收到心跳响应，更新时间戳
                 lastPongTime = Date.now();
+              } else if (jsonData.type === "hello_response") {
+                // 收到欢迎消息
+                console.log('收到欢迎消息:', jsonData.message);
+                if (jsonData.status === "ok") {
+                  // 连接成功，更新UI
+                  document.getElementById('connection-status').classList.add('connected');
+                  document.getElementById('connection-text').innerText = '已连接';
+                }
               } else if (jsonData.type === "car_control_ack") {
                 // 收到控制命令确认
                 console.log('控制命令已确认:', jsonData.status);
+                
+                // 处理错误响应
+                if (jsonData.status === "error" && jsonData.message) {
+                  // 显示障碍物警告
+                  showWarningAlert(jsonData.message);
+                }
+              } else if (jsonData.type === "joystick_ack") {
+                // 收到摇杆命令确认
+                console.log('摇杆命令已确认:', jsonData.status);
+                
+                // 处理错误响应
+                if (jsonData.status === "error" && jsonData.message) {
+                  // 显示障碍物警告
+                  showWarningAlert(jsonData.message);
+                }
               } else if (jsonData.type === "camera_status") {
                 // 处理摄像头状态消息
                 console.log('收到摄像头状态:', jsonData);
@@ -456,6 +581,9 @@
                   console.log('摄像头停止流式传输');
                   // 可以添加代码更新UI显示摄像头状态
                 }
+              } else if (jsonData.type === "ultrasonic_data") {
+                // 处理超声波数据
+                updateUltrasonicDisplay(jsonData);
               } else if (jsonData.type === "status") {
                 // 更新连接状态指示
                 if (jsonData.status === 'connected' || jsonData.status === 'ap_only') {
@@ -477,8 +605,8 @@
             }
           };
 
-          wsConnection.onclose = function() {
-            console.log('WebSocket连接已关闭');
+          wsConnection.onclose = function(event) {
+            console.log('WebSocket连接已关闭', event.code, event.reason);
 
             // 清除心跳
             if (heartbeatInterval) {
@@ -493,6 +621,7 @@
             // 尝试重连
             if (!reconnecting && reconnectAttempt < maxReconnectAttempts) {
               reconnecting = true;
+              // 使用指数退避策略，但限制最大延迟为30秒
               const delay = Math.min(30000, reconnectInterval * Math.pow(1.5, reconnectAttempt));
               console.log(`尝试在 ${delay}ms 后重新连接... (尝试 ${reconnectAttempt + 1}/${maxReconnectAttempts})`);
 
@@ -510,6 +639,7 @@
 
           wsConnection.onerror = function(err) {
             console.error('WebSocket发生错误:', err);
+            // 错误发生后不需要额外关闭，因为onerror之后通常会自动触发onclose
           };
 
           // 设置连接超时
@@ -600,6 +730,25 @@
       let lastSendTime = 0;
       let lastCommand = {distance: 0, dirX: 0, dirY: 0};
       let throttleTimer = null;
+      
+      // 添加警告提示功能
+      function showWarningAlert(message) {
+        const alertBox = document.createElement('div');
+        alertBox.className = 'warning-alert';
+        alertBox.innerText = message;
+        
+        // 添加到页面
+        document.body.appendChild(alertBox);
+        
+        // 动画效果
+        setTimeout(() => alertBox.classList.add('show'), 10);
+        
+        // 自动关闭
+        setTimeout(() => {
+          alertBox.classList.remove('show');
+          setTimeout(() => document.body.removeChild(alertBox), 500);
+        }, 2000);
+      }
 
       function throttledSendCommand(distance, dirX, dirY) {
         const now = Date.now();
@@ -945,6 +1094,71 @@
             console.error('WebSocket未连接，无法发送视频停止命令');
           }
         });
+      }
+
+      // 更新超声波显示
+      function updateUltrasonicDisplay(data) {
+        // 检查data对象是否有效
+        if (!data) {
+          console.warn('收到无效的超声波数据');
+          return;
+        }
+      
+        try {
+          // 更新前置超声波数据
+          const frontDistanceEl = document.getElementById('front-distance');
+          const frontUltrasonicEl = document.getElementById('front-ultrasonic');
+          
+          // 更新后置超声波数据
+          const rearDistanceEl = document.getElementById('rear-distance');
+          const rearUltrasonicEl = document.getElementById('rear-ultrasonic');
+          
+          // 更新前方安全距离
+          const frontSafeDistanceEl = document.getElementById('front-safe-distance');
+          
+          // 更新后方安全距离
+          const rearSafeDistanceEl = document.getElementById('rear-safe-distance');
+          
+          if (frontDistanceEl && frontUltrasonicEl) {
+            // 设置距离值，检查是否是有效的数字
+            const frontDistance = typeof data.front_distance === 'number' ? data.front_distance : 0;
+            frontDistanceEl.textContent = frontDistance + ' cm';
+            
+            // 更新前置超声波图标
+            if (typeof data.front_obstacle_detected === 'boolean' && data.front_obstacle_detected) {
+              frontUltrasonicEl.classList.add('alert');
+            } else {
+              frontUltrasonicEl.classList.remove('alert');
+            }
+          }
+          
+          if (rearDistanceEl && rearUltrasonicEl) {
+            // 设置距离值，检查是否是有效的数字
+            const rearDistance = typeof data.rear_distance === 'number' ? data.rear_distance : 0;
+            rearDistanceEl.textContent = rearDistance + ' cm';
+            
+            // 更新后置超声波图标
+            if (typeof data.rear_obstacle_detected === 'boolean' && data.rear_obstacle_detected) {
+              rearUltrasonicEl.classList.add('alert');
+            } else {
+              rearUltrasonicEl.classList.remove('alert');
+            }
+          }
+          
+          // 更新前方安全距离
+          if (frontSafeDistanceEl) {
+            const frontSafeDistance = typeof data.front_safe_distance === 'number' ? data.front_safe_distance : 0;
+            frontSafeDistanceEl.textContent = frontSafeDistance + ' cm';
+          }
+          
+          // 更新后方安全距离
+          if (rearSafeDistanceEl) {
+            const rearSafeDistance = typeof data.rear_safe_distance === 'number' ? data.rear_safe_distance : 0;
+            rearSafeDistanceEl.textContent = rearSafeDistance + ' cm';
+          }
+        } catch (error) {
+          console.error('更新超声波显示出错:', error);
+        }
       }
     });
   </script>
