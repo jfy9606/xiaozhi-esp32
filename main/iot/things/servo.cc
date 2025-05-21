@@ -31,7 +31,7 @@
 #endif
 
 #define SERVO_FREQUENCY_HZ 50           // 舵机控制频率 (Hz)
-#define SERVO_TIMER_RESOLUTION_HZ 1000000  // 修改为1MHz, 更合理的MCPWM计时器分辨率
+#define SERVO_TIMER_RESOLUTION_HZ 10000000  // 10MHz, MCPWM计时器分辨率
 #define SERVO_MIN_ANGLE 0               // 最小角度
 #define SERVO_MAX_ANGLE 180             // 最大角度
 #define SERVO_DEFAULT_ANGLE 90          // 默认角度
@@ -142,26 +142,117 @@ public:
         
         pin_ = pin;
         
-        // 添加重试逻辑
-        const int max_retries = 3;
-        for (int retry = 0; retry < max_retries; retry++) {
-            if (retry > 0) {
-                ESP_LOGW(TAG, "Retrying servo initialization for pin %d (attempt %d/%d)", pin, retry+1, max_retries);
-                vTaskDelay(pdMS_TO_TICKS(100 * retry)); // 递增延迟
-            }
-            
-            bool success = initialize_mcpwm(pin, group);
-            if (success) {
-                ESP_LOGI(TAG, "Servo on pin %d initialized successfully%s", pin, retry > 0 ? " after retry" : "");
-                return true;
-            }
-            
-            // 清理失败的资源
-            cleanup_mcpwm_resources();
+        // 1. 创建定时器
+        mcpwm_timer_config_t timer_config = {
+            .group_id = group,
+            .clk_src = MCPWM_TIMER_CLK_SRC_DEFAULT,
+            .resolution_hz = SERVO_TIMER_RESOLUTION_HZ,
+            .count_mode = MCPWM_TIMER_COUNT_MODE_UP,
+            .period_ticks = SERVO_TIMER_RESOLUTION_HZ / SERVO_FREQUENCY_HZ, // 20ms周期
+        };
+        
+        esp_err_t err = mcpwm_new_timer(&timer_config, &timer_);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "Create MCPWM timer failed: %s", esp_err_to_name(err));
+            return false;
         }
         
-        ESP_LOGE(TAG, "Failed to initialize servo on pin %d after %d attempts", pin, max_retries);
-        return false;
+        // 2. 创建运算器
+        mcpwm_operator_config_t operator_config = {
+            .group_id = group,
+        };
+        
+        err = mcpwm_new_operator(&operator_config, &oper_);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "Create MCPWM operator failed: %s", esp_err_to_name(err));
+            return false;
+        }
+        
+        // 3. 连接定时器和运算器
+        err = mcpwm_operator_connect_timer(oper_, timer_);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "Connect MCPWM timer and operator failed: %s", esp_err_to_name(err));
+            return false;
+        }
+        
+        // 4. 创建比较器
+        mcpwm_comparator_config_t comparator_config = {
+            .flags = {
+                .update_cmp_on_tez = true,
+            },
+        };
+        
+        err = mcpwm_new_comparator(oper_, &comparator_config, &comparator_);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "Create MCPWM comparator failed: %s", esp_err_to_name(err));
+            return false;
+        }
+        
+        // 5. 创建生成器 (管脚输出)
+        mcpwm_generator_config_t generator_config = {
+            .gen_gpio_num = pin_,
+        };
+        
+        err = mcpwm_new_generator(oper_, &generator_config, &generator_);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "Create MCPWM generator failed: %s", esp_err_to_name(err));
+            return false;
+        }
+        
+        // 6. 设置生成器操作 - 使用脉冲模式控制舵机
+        // 在计数器开始时设置高电平，在比较匹配时设置低电平
+        err = mcpwm_generator_set_actions_on_timer_event(
+            generator_,
+            MCPWM_GEN_TIMER_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, MCPWM_TIMER_EVENT_EMPTY, MCPWM_GEN_ACTION_HIGH),
+            MCPWM_GEN_TIMER_EVENT_ACTION_END());
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "Set timer event actions failed: %s", esp_err_to_name(err));
+            return false;
+        }
+        
+        err = mcpwm_generator_set_actions_on_compare_event(
+            generator_,
+            MCPWM_GEN_COMPARE_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, comparator_, MCPWM_GEN_ACTION_LOW),
+            MCPWM_GEN_COMPARE_EVENT_ACTION_END());
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "Set compare event actions failed: %s", esp_err_to_name(err));
+            return false;
+        }
+        
+        // 7. 启动定时器
+        err = mcpwm_timer_enable(timer_);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "Enable MCPWM timer failed: %s", esp_err_to_name(err));
+            return false;
+        }
+        
+        err = mcpwm_timer_start_stop(timer_, MCPWM_TIMER_START_NO_STOP);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "Start MCPWM timer failed: %s", esp_err_to_name(err));
+            return false;
+        }
+        
+        // 创建定时器
+        sweep_timer_ = xTimerCreate(
+            "servo_sweep_timer",
+            pdMS_TO_TICKS(sweep_delay_),
+            pdTRUE,  // 自动重载
+            this,    // 定时器ID
+            sweep_timer_callback
+        );
+        
+        if (sweep_timer_ == nullptr) {
+            ESP_LOGE(TAG, "Failed to create servo sweep timer");
+            return false;
+        }
+        
+        is_initialized_ = true;
+        
+        // 设置舵机到默认位置
+        set_angle(SERVO_DEFAULT_ANGLE);
+        
+        ESP_LOGI(TAG, "Servo initialized on pin %d", pin_);
+        return true;
     }
     
     void deinitialize() {
@@ -354,267 +445,6 @@ public:
         }
         
         ESP_LOGI(TAG, "Servo stopped at angle %d", current_angle_);
-    }
-
-private:
-    // 清理MCPWM资源
-    void cleanup_mcpwm_resources() {
-        if (generator_) {
-            mcpwm_del_generator(generator_);
-            generator_ = nullptr;
-        }
-        if (comparator_) {
-            mcpwm_del_comparator(comparator_);
-            comparator_ = nullptr;
-        }
-        if (oper_) {
-            mcpwm_del_operator(oper_);
-            oper_ = nullptr;
-        }
-        if (timer_) {
-            mcpwm_timer_disable(timer_);
-            mcpwm_del_timer(timer_);
-            timer_ = nullptr;
-        }
-    }
-    
-    // 检查MCPWM计时器是否已准备就绪
-    bool is_mcpwm_timer_ready() {
-        if (!timer_) {
-            return false;
-        }
-        
-        // 使用更安全的方式检查计时器状态，避免使用可能不兼容的API
-        bool is_ready = false;
-        
-        // 由于不同ESP-IDF版本API差异，使用通用方法检查计时器状态
-        // 尝试使用start_stop API检查状态，这在大多数ESP-IDF版本中都可用
-        esp_err_t err = mcpwm_timer_start_stop(timer_, MCPWM_TIMER_STOP_EMPTY);
-        if (err == ESP_ERR_INVALID_STATE) {
-            // 该错误表示计时器已经停止，意味着计时器已初始化
-            is_ready = true;
-        } else {
-            // 尝试启动然后停止来检查计时器状态
-            err = mcpwm_timer_start_stop(timer_, MCPWM_TIMER_START_NO_STOP);
-            if (err == ESP_OK) {
-                is_ready = true;
-                // 启动成功后，再尝试停止
-                mcpwm_timer_start_stop(timer_, MCPWM_TIMER_STOP_EMPTY);
-            }
-        }
-        
-        if (!is_ready) {
-            ESP_LOGD(TAG, "MCPWM timer check failed: %s", esp_err_to_name(err));
-        }
-        
-        return is_ready;
-    }
-    
-    // 初始化MCPWM资源
-    bool initialize_mcpwm(int pin, int group) {
-        // 1. 创建定时器
-        mcpwm_timer_config_t timer_config = {
-            .group_id = group,
-            .clk_src = MCPWM_TIMER_CLK_SRC_DEFAULT,
-            .resolution_hz = SERVO_TIMER_RESOLUTION_HZ,
-            .count_mode = MCPWM_TIMER_COUNT_MODE_UP,
-            .period_ticks = 0, // 初始值设为0，下面手动计算
-        };
-        
-        // 计算周期计数值，避免直接除法可能导致的舍入问题
-        uint32_t desired_period_us = 1000000 / SERVO_FREQUENCY_HZ; // 20ms = 20000us
-        timer_config.period_ticks = (uint32_t)((SERVO_TIMER_RESOLUTION_HZ * (uint64_t)desired_period_us) / 1000000);
-        
-        // 验证周期计数是否有效，避免无效值
-        if (timer_config.period_ticks <= 100) { // 提高下限阈值，确保有足够的计数值
-            ESP_LOGE(TAG, "Invalid timer period ticks calculated: %" PRIu32 ", resolution_hz: %" PRIu32 ", desired_period_us: %" PRIu32,
-                     timer_config.period_ticks, timer_config.resolution_hz, desired_period_us);
-                     
-            // 使用安全的默认值 - 50Hz(20ms)周期，直接设置为分辨率的5%
-            timer_config.period_ticks = SERVO_TIMER_RESOLUTION_HZ / 20; // 这应该给出500,000 ticks (10MHz/20)
-            
-            ESP_LOGI(TAG, "Adjusted to safe period_ticks value: %" PRIu32, timer_config.period_ticks);
-        }
-        
-        ESP_LOGI(TAG, "Configuring MCPWM timer with period_ticks=%" PRIu32 " (%.2fms)", 
-                 timer_config.period_ticks, (float)timer_config.period_ticks * 1000 / timer_config.resolution_hz);
-        
-        esp_err_t err = mcpwm_new_timer(&timer_config, &timer_);
-        if (err != ESP_OK) {
-            ESP_LOGE(TAG, "Create MCPWM timer failed: %s", esp_err_to_name(err));
-            
-            // 提供更多诊断信息
-            if (err == ESP_ERR_INVALID_ARG) {
-                ESP_LOGE(TAG, "Invalid argument - possible causes: group_id invalid or period_ticks value out of range");
-                ESP_LOGE(TAG, "Using group_id=%d, resolution_hz=%d, period_ticks=%lu", 
-                         group, SERVO_TIMER_RESOLUTION_HZ, (unsigned long)timer_config.period_ticks);
-            }
-            return false;
-        }
-        
-        // 2. 创建运算器
-        mcpwm_operator_config_t operator_config = {
-            .group_id = group,
-        };
-        
-        err = mcpwm_new_operator(&operator_config, &oper_);
-        if (err != ESP_OK) {
-            ESP_LOGE(TAG, "Create MCPWM operator failed: %s", esp_err_to_name(err));
-            return false;
-        }
-        
-        // 3. 连接定时器和运算器
-        err = mcpwm_operator_connect_timer(oper_, timer_);
-        if (err != ESP_OK) {
-            ESP_LOGE(TAG, "Connect MCPWM timer and operator failed: %s", esp_err_to_name(err));
-            return false;
-        }
-        
-        // 4. 创建比较器
-        mcpwm_comparator_config_t comparator_config = {
-            .flags = {
-                .update_cmp_on_tez = true,
-            },
-        };
-        
-        err = mcpwm_new_comparator(oper_, &comparator_config, &comparator_);
-        if (err != ESP_OK) {
-            ESP_LOGE(TAG, "Create MCPWM comparator failed: %s", esp_err_to_name(err));
-            return false;
-        }
-        
-        // 5. 创建生成器 (管脚输出)
-        mcpwm_generator_config_t generator_config = {
-            .gen_gpio_num = pin,
-        };
-        
-        err = mcpwm_new_generator(oper_, &generator_config, &generator_);
-        if (err != ESP_OK) {
-            ESP_LOGE(TAG, "Create MCPWM generator failed: %s", esp_err_to_name(err));
-            return false;
-        }
-        
-        // 6. 设置生成器操作 - 使用脉冲模式控制舵机
-        // 在计数器开始时设置高电平，在比较匹配时设置低电平
-        err = mcpwm_generator_set_actions_on_timer_event(
-            generator_,
-            MCPWM_GEN_TIMER_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, MCPWM_TIMER_EVENT_EMPTY, MCPWM_GEN_ACTION_HIGH),
-            MCPWM_GEN_TIMER_EVENT_ACTION_END());
-        if (err != ESP_OK) {
-            ESP_LOGE(TAG, "Set timer event actions failed: %s", esp_err_to_name(err));
-            return false;
-        }
-        
-        err = mcpwm_generator_set_actions_on_compare_event(
-            generator_,
-            MCPWM_GEN_COMPARE_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, comparator_, MCPWM_GEN_ACTION_LOW),
-            MCPWM_GEN_COMPARE_EVENT_ACTION_END());
-        if (err != ESP_OK) {
-            ESP_LOGE(TAG, "Set compare event actions failed: %s", esp_err_to_name(err));
-            return false;
-        }
-        
-        // 7. 启动定时器
-        err = mcpwm_timer_enable(timer_);
-        if (err != ESP_OK) {
-            ESP_LOGE(TAG, "Enable MCPWM timer failed: %s", esp_err_to_name(err));
-            return false;
-        }
-        
-        // 确保定时器完全启用后再启动，使用指数退避重试机制
-        const int max_retry_count = 10; // 增加最大重试次数
-        const int base_delay_ms = 15; // 基础延迟时间
-        bool start_success = false;
-        
-        for (int retry = 0; retry < max_retry_count; retry++) {
-            // 指数增加等待时间
-            int delay_ms = base_delay_ms * (1 << retry); // 15, 30, 60, 120, 240, 480ms...
-            ESP_LOGI(TAG, "Waiting %dms for timer to be fully enabled (attempt %d/%d)", 
-                     delay_ms, retry + 1, max_retry_count);
-            vTaskDelay(pdMS_TO_TICKS(delay_ms));
-            
-            // 首先检查计时器是否准备就绪
-            if (!is_mcpwm_timer_ready()) {
-                ESP_LOGW(TAG, "MCPWM timer is not yet ready for use (attempt %d/%d)", 
-                         retry + 1, max_retry_count);
-                continue; // 跳过此次尝试，继续等待
-            }
-            
-            // 尝试启动计时器
-            err = mcpwm_timer_start_stop(timer_, MCPWM_TIMER_START_NO_STOP);
-            if (err == ESP_OK) {
-                ESP_LOGI(TAG, "MCPWM timer started successfully on attempt %d", retry + 1);
-                start_success = true;
-                break;
-            } else if (err == ESP_ERR_INVALID_STATE) {
-                ESP_LOGW(TAG, "Timer not in enable state yet, retrying... (%d/%d)",
-                        retry + 1, max_retry_count);
-                
-                // 尝试强制刷新状态
-                if (retry > 2) {
-                    // 在多次重试失败后尝试禁用并重新启用计时器
-                    ESP_LOGW(TAG, "Attempting to disable and re-enable timer");
-                    mcpwm_timer_disable(timer_);
-                    vTaskDelay(pdMS_TO_TICKS(20));
-                    mcpwm_timer_enable(timer_);
-                    vTaskDelay(pdMS_TO_TICKS(delay_ms)); // 再次等待
-                }
-            } else {
-                ESP_LOGE(TAG, "Start MCPWM timer failed with unexpected error: %s", 
-                         esp_err_to_name(err));
-                
-                // 对于其他错误，也尝试继续而不是直接放弃
-                if (retry >= max_retry_count/2) {
-                    ESP_LOGW(TAG, "Unexpected error persists, trying forced timer start...");
-                    // 尝试直接启动
-                    err = mcpwm_timer_start_stop(timer_, MCPWM_TIMER_START_STOP_EMPTY);
-                    if (err == ESP_OK) {
-                        ESP_LOGI(TAG, "Forced timer start successful");
-                        start_success = true;
-                        break;
-                    }
-                }
-            }
-        }
-        
-        if (!start_success) {
-            ESP_LOGE(TAG, "Failed to start MCPWM timer after %d attempts", max_retry_count);
-            ESP_LOGW(TAG, "Will continue anyway, attempting to create servo timer...");
-            
-            // 添加详细诊断信息
-            ESP_LOGW(TAG, "MCPWM initialization diagnostics:");
-            ESP_LOGW(TAG, "  - MCPWM group: %d", group);
-            ESP_LOGW(TAG, "  - Timer resolution: %d Hz", SERVO_TIMER_RESOLUTION_HZ);
-            ESP_LOGW(TAG, "  - Period ticks: %lu", (unsigned long)timer_config.period_ticks);
-            ESP_LOGW(TAG, "  - Timer handle: %p", timer_);
-            ESP_LOGW(TAG, "  - Operator handle: %p", oper_);
-            ESP_LOGW(TAG, "  - Comparator handle: %p", comparator_);
-            ESP_LOGW(TAG, "  - Generator handle: %p", generator_);
-            
-            // 我们暂时不返回false，尝试看看能否继续，因为ESP-IDF 5.x的MCPWM可能有状态报告问题
-        }
-        
-        // 创建定时器
-        sweep_timer_ = xTimerCreate(
-            "servo_sweep_timer",
-            pdMS_TO_TICKS(sweep_delay_),
-            pdTRUE,  // 自动重载
-            this,    // 定时器ID
-            sweep_timer_callback
-        );
-        
-        if (sweep_timer_ == nullptr) {
-            ESP_LOGE(TAG, "Failed to create servo sweep timer");
-            return false;
-        }
-        
-        is_initialized_ = true;
-        
-        // 设置舵机到默认位置
-        set_angle(SERVO_DEFAULT_ANGLE);
-        
-        ESP_LOGI(TAG, "Servo initialized on pin %d", pin);
-        return true;
     }
 };
 

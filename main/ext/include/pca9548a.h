@@ -15,8 +15,9 @@
 #pragma once
 
 #include <stdint.h>
-#include "esp_err.h"
+#include <stdbool.h>
 #include "driver/i2c_master.h"
+#include "esp_err.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -25,14 +26,28 @@ extern "C" {
 /**
  * @brief PCA9548A I2C multiplexer default I2C address
  */
-#define PCA9548A_I2C_ADDRESS_DEFAULT   0x70
+#define PCA9548A_I2C_ADDRESS_DEFAULT     0x70
+
+// 避免与 board_config.h 中的定义冲突
+#ifndef PCA9548A_I2C_ADDR
+#define PCA9548A_I2C_ADDR                PCA9548A_I2C_ADDRESS_DEFAULT
+#endif
+
+/**
+ * @brief PCA9548A I2C multiplexer default I2C timeout in milliseconds
+ */
+// 避免与 board_config.h 中的定义冲突
+#ifndef PCA9548A_I2C_TIMEOUT_MS
+#define PCA9548A_I2C_TIMEOUT_MS   1000
+#endif
 
 /**
  * @brief PCA9548A I2C multiplexer channel definitions
  * 
  * The PCA9548A has the following pin mapping:
- * - Input: SDA, SCL (main I2C bus)
- * - Output: SC0-7 (I2C clock), SD0-7 (I2C data) for each channel
+ * - Bit 0: SC0, SD0
+ * - Bit 1: SC1, SD1
+ * ...etc
  */
 typedef enum {
     PCA9548A_CHANNEL_0 = (1 << 0),    /*!< Channel 0 (SC0, SD0) */
@@ -56,15 +71,16 @@ typedef struct pca9548a_dev_t *pca9548a_handle_t;
  * @brief PCA9548A I2C multiplexer configuration
  */
 typedef struct {
-    i2c_master_dev_handle_t i2c_dev_handle;  /*!< I2C master device handle for communication */
-    uint32_t i2c_timeout_ms;                 /*!< I2C timeout in milliseconds */
-    gpio_num_t reset_pin;                    /*!< Reset pin number, or GPIO_NUM_NC if not used */
+    int i2c_port;                      /*!< I2C port number (0 or 1) - 仅用于兼容，新API不再使用 */
+    uint8_t i2c_addr;                  /*!< I2C device address */
+    uint32_t i2c_timeout_ms;           /*!< I2C timeout in milliseconds */
+    gpio_num_t reset_pin;              /*!< Reset pin, or GPIO_NUM_NC if not used */
 } pca9548a_config_t;
 
 /**
  * @brief Initialize the PCA9548A I2C multiplexer
  * 
- * @param config Configuration parameters
+ * @param config Multiplexer configuration
  * @return Handle to the multiplexer device, or NULL on failure
  */
 pca9548a_handle_t pca9548a_create(const pca9548a_config_t *config);
@@ -73,7 +89,7 @@ pca9548a_handle_t pca9548a_create(const pca9548a_config_t *config);
  * @brief Free resources used by the PCA9548A I2C multiplexer
  * 
  * @param handle Multiplexer handle returned by pca9548a_create
- * @return ESP_OK on success
+ * @return ESP_OK on success, or an error code
  */
 esp_err_t pca9548a_delete(pca9548a_handle_t handle);
 
@@ -82,7 +98,7 @@ esp_err_t pca9548a_delete(pca9548a_handle_t handle);
  * 
  * @param handle Multiplexer handle
  * @param channels Channels to select (can be OR'ed together)
- * @return ESP_OK on success
+ * @return ESP_OK on success, or an error code
  */
 esp_err_t pca9548a_select_channels(pca9548a_handle_t handle, uint8_t channels);
 
@@ -90,8 +106,8 @@ esp_err_t pca9548a_select_channels(pca9548a_handle_t handle, uint8_t channels);
  * @brief Read currently selected channels on the PCA9548A I2C multiplexer
  * 
  * @param handle Multiplexer handle
- * @param channels Pointer to variable to store current channel selection
- * @return ESP_OK on success
+ * @param channels Pointer to store the currently selected channels
+ * @return ESP_OK on success, or an error code
  */
 esp_err_t pca9548a_get_selected_channels(pca9548a_handle_t handle, uint8_t *channels);
 
@@ -99,16 +115,26 @@ esp_err_t pca9548a_get_selected_channels(pca9548a_handle_t handle, uint8_t *chan
  * @brief Reset the PCA9548A I2C multiplexer via reset pin
  * 
  * @param handle Multiplexer handle
- * @return ESP_OK on success, ESP_ERR_NOT_SUPPORTED if reset pin not configured
+ * @return ESP_OK on success, or an error code
  */
 esp_err_t pca9548a_reset(pca9548a_handle_t handle);
 
 /**
- * @brief Check if the PCA9548A I2C multiplexer is initialized
+ * @brief Check if PCA9548A is initialized
  * 
- * @return true if initialized, false otherwise
+ * @return true if PCA9548A is initialized, false otherwise
  */
 bool pca9548a_is_initialized(void);
+
+/**
+ * @brief Get the handle for direct operations
+ * 
+ * @note This is exposed for use in low-level operations, 
+ *       normally the higher-level functions should be used instead
+ * 
+ * @return Handle to the PCA9548A device, or NULL if not initialized
+ */
+pca9548a_handle_t pca9548a_get_handle(void);
 
 #ifdef __cplusplus
 }

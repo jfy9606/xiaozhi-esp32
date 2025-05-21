@@ -8,6 +8,7 @@
 #include <cinttypes>
 #include "sdkconfig.h"
 #include "../components.h"
+#include <cJSON.h>
 
 // 添加服务器相关宏定义
 // 无论是否启用WEB_CONTENT，WebServer都应该可以工作
@@ -171,6 +172,9 @@ private:
     void HandleWebSocketMessage(int client_id, const PSRAMString& message);
     PSRAMString GetSystemStatusJson();
     void StartPeriodicStatusUpdates();
+    
+    // 辅助方法：检查是否可以安全地调用命令（修改为静态方法）
+    static bool SafeToInvokeCommand(const cJSON* cmd);
 
     httpd_handle_t server_;
     bool running_;

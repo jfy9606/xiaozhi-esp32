@@ -45,9 +45,6 @@
 #define MOTOR_LEDC_DUTY_RES  LEDC_TIMER_8_BIT   // 8位分辨率，0-255
 #define MOTOR_LEDC_FREQ      5000               // PWM频率5kHz
 
-// 全局静态标志，跟踪LEDC驱动是否已经初始化
-static bool g_ledc_driver_initialized = false;
-
 namespace iot {
 
 class MotorThing : public Thing {
@@ -151,31 +148,13 @@ private:
             return;
         }
         
-        // 让GPIO配置稳定下来
-        vTaskDelay(pdMS_TO_TICKS(10));
-        
-        // 确保IN1-IN4引脚初始状态为低电平
-        gpio_set_level((gpio_num_t)in1_pin_, 0);
-        gpio_set_level((gpio_num_t)in2_pin_, 0);
-        gpio_set_level((gpio_num_t)in3_pin_, 0);
-        gpio_set_level((gpio_num_t)in4_pin_, 0);
-        
         // 初始化LEDC用于PWM控制电机速度
         ESP_LOGI(TAG, "Initializing LEDC for motor control - Timer:%d, Channels:%d,%d",
                  MOTOR_LEDC_TIMER, MOTOR_LEDC_CHANNEL_A, MOTOR_LEDC_CHANNEL_B);
         
-        // 检查是否是第一次初始化
-        if (g_ledc_driver_initialized) {
-            ESP_LOGI(TAG, "LEDC驱动已初始化，正常停止通道");
-            // 安全地停止已初始化的LEDC通道
-            ledc_stop(MOTOR_LEDC_MODE, MOTOR_LEDC_CHANNEL_A, 0);
-            ledc_stop(MOTOR_LEDC_MODE, MOTOR_LEDC_CHANNEL_B, 0);
-            
-            // 短暂延迟以确保先前的LEDC操作已完成
-            vTaskDelay(pdMS_TO_TICKS(20));
-        } else {
-            ESP_LOGI(TAG, "首次初始化LEDC驱动，跳过停止通道");
-        }
+        // 先尝试停止可能已经在运行的LEDC服务
+        ledc_stop(MOTOR_LEDC_MODE, MOTOR_LEDC_CHANNEL_A, 0);
+        ledc_stop(MOTOR_LEDC_MODE, MOTOR_LEDC_CHANNEL_B, 0);
         
         // 配置LEDC定时器
         ledc_timer_config_t ledc_timer = {
@@ -201,9 +180,6 @@ private:
             ledc_initialized_ = false;
             return;
         }
-        
-        // 短暂延迟，确保LEDC定时器初始化完成
-        vTaskDelay(pdMS_TO_TICKS(10));
         
         // 配置ENA通道
         ledc_channel_config_t ledc_channel_ena = {
@@ -259,33 +235,30 @@ private:
             return;
         }
         
-        // 明确设置初始占空比为0
+        // 初始时设置为0
         err = ledc_set_duty(MOTOR_LEDC_MODE, MOTOR_LEDC_CHANNEL_A, 0);
         if (err != ESP_OK) {
             ESP_LOGW(TAG, "Failed to set initial ENA duty: %s", esp_err_to_name(err));
-        } else {
-            err = ledc_update_duty(MOTOR_LEDC_MODE, MOTOR_LEDC_CHANNEL_A);
-            if (err != ESP_OK) {
-                ESP_LOGW(TAG, "Failed to update initial ENA duty: %s", esp_err_to_name(err));
-            }
+        }
+        
+        err = ledc_update_duty(MOTOR_LEDC_MODE, MOTOR_LEDC_CHANNEL_A);
+        if (err != ESP_OK) {
+            ESP_LOGW(TAG, "Failed to update initial ENA duty: %s", esp_err_to_name(err));
         }
         
         err = ledc_set_duty(MOTOR_LEDC_MODE, MOTOR_LEDC_CHANNEL_B, 0);
         if (err != ESP_OK) {
             ESP_LOGW(TAG, "Failed to set initial ENB duty: %s", esp_err_to_name(err));
-        } else {
-            err = ledc_update_duty(MOTOR_LEDC_MODE, MOTOR_LEDC_CHANNEL_B);
-            if (err != ESP_OK) {
-                ESP_LOGW(TAG, "Failed to update initial ENB duty: %s", esp_err_to_name(err));
-            }
+        }
+        
+        err = ledc_update_duty(MOTOR_LEDC_MODE, MOTOR_LEDC_CHANNEL_B);
+        if (err != ESP_OK) {
+            ESP_LOGW(TAG, "Failed to update initial ENB duty: %s", esp_err_to_name(err));
         }
         
         // 标记初始化完成
         ledc_initialized_ = true;
         init_retry_count_ = 0; // 重置重试计数器
-        
-        // 设置全局静态标志，表示LEDC驱动已初始化
-        g_ledc_driver_initialized = true;
         
         ESP_LOGI(TAG, "Motor GPIO pins and LEDC initialized successfully");
     }
@@ -298,26 +271,9 @@ private:
             return;
         }
         
-        // 安全措施：无论LEDC初始化状态如何，先确保停止时GPIO方向引脚设置正确
-        // 这确保在停止命令时电机始终可以停止，不依赖LEDC初始化状态
-        bool is_stop_command = (in1 == LOW && in2 == LOW && in3 == LOW && in4 == LOW);
-        if (is_stop_command) {
-            // 先安全地设置方向引脚，确保电机停止
-            gpio_set_level((gpio_num_t)in1_pin_, LOW);
-            gpio_set_level((gpio_num_t)in2_pin_, LOW);
-            gpio_set_level((gpio_num_t)in3_pin_, LOW);
-            gpio_set_level((gpio_num_t)in4_pin_, LOW);
-            
-            // 如果LEDC未初始化，这里就不再继续执行，避免调用LEDC函数
-            if (!ledc_initialized_) {
-                ESP_LOGI(TAG, "停止电机成功(仅GPIO控制，LEDC未初始化)");
-                return;
-            }
-        }
-        
         // 检查LEDC是否已初始化
         if (!ledc_initialized_) {
-            ESP_LOGW(TAG, "LEDC is not initialized, attempting reinitialization (retry #%d)", init_retry_count_ + 1);
+            ESP_LOGW(TAG, "LEDC not initialized, attempting reinitialization (retry #%d)", init_retry_count_ + 1);
             
             // 限制重试次数，避免无限循环
             if (init_retry_count_ < 3) {
@@ -340,6 +296,53 @@ private:
                 ESP_LOGE(TAG, "Exceeded maximum LEDC initialization retries. Motor control disabled.");
                 return;
             }
+        }
+        
+        // 设置电机方向控制引脚，添加错误处理
+        esp_err_t err;
+        
+        // 先设置好所有方向引脚，再一次性使能两个电机，避免左右轮不同步问题
+        
+        // 1. 准备所有方向引脚
+        err = gpio_set_level((gpio_num_t)in1_pin_, in1);
+        if (err != ESP_OK) {
+            ESP_LOGW(TAG, "Failed to set IN1 pin %d: %s", in1_pin_, esp_err_to_name(err));
+        }
+        
+        err = gpio_set_level((gpio_num_t)in2_pin_, in2);
+        if (err != ESP_OK) {
+            ESP_LOGW(TAG, "Failed to set IN2 pin %d: %s", in2_pin_, esp_err_to_name(err));
+        }
+        
+        err = gpio_set_level((gpio_num_t)in3_pin_, in3);
+        if (err != ESP_OK) {
+            ESP_LOGW(TAG, "Failed to set IN3 pin %d: %s", in3_pin_, esp_err_to_name(err));
+        }
+        
+        err = gpio_set_level((gpio_num_t)in4_pin_, in4);
+        if (err != ESP_OK) {
+            ESP_LOGW(TAG, "Failed to set IN4 pin %d: %s", in4_pin_, esp_err_to_name(err));
+        }
+        
+        // 如果是停止状态，两个电机都停止
+        if (in1 == LOW && in2 == LOW && in3 == LOW && in4 == LOW) {
+            // 2a. 对于停止状态，同时关闭两个电机使能
+            err = ledc_set_duty(MOTOR_LEDC_MODE, MOTOR_LEDC_CHANNEL_A, 0);
+            err |= ledc_set_duty(MOTOR_LEDC_MODE, MOTOR_LEDC_CHANNEL_B, 0);
+            
+            if (err != ESP_OK) {
+                ESP_LOGW(TAG, "Failed to set motor duty to 0: %s", esp_err_to_name(err));
+            }
+            
+            // 同时更新两个通道
+            err = ledc_update_duty(MOTOR_LEDC_MODE, MOTOR_LEDC_CHANNEL_A);
+            err |= ledc_update_duty(MOTOR_LEDC_MODE, MOTOR_LEDC_CHANNEL_B);
+            
+            if (err != ESP_OK) {
+                ESP_LOGW(TAG, "Failed to update motor duty: %s", esp_err_to_name(err));
+            }
+            
+            return;
         }
         
         // 计算角度（弧度）
@@ -400,142 +403,21 @@ private:
         leftSpeed = leftSpeed < MIN_SPEED ? MIN_SPEED : (leftSpeed > MAX_SPEED ? MAX_SPEED : leftSpeed);
         rightSpeed = rightSpeed < MIN_SPEED ? MIN_SPEED : (rightSpeed > MAX_SPEED ? MAX_SPEED : rightSpeed);
         
-        esp_err_t err;
-
-        // 使用数组和循环批量设置GPIO引脚，首先设置方向
-        gpio_num_t pins[4] = {
-            (gpio_num_t)in1_pin_, 
-            (gpio_num_t)in2_pin_,
-            (gpio_num_t)in3_pin_, 
-            (gpio_num_t)in4_pin_
-        };
-        int values[4] = {in1, in2, in3, in4};
-        
-        // 批量设置方向引脚 - 确保尽可能接近同时设置
-        for (int i = 0; i < 4; i++) {
-            gpio_set_level(pins[i], values[i]);
-        }
-
-        // 如果是停止命令，设置低占空比但保持通道激活
-        if (is_stop_command) {
-            // 保持一个最小占空比以确保通道始终活跃，但电机不会转动
-            const int MIN_STANDBY_DUTY = 5;
-            
-            // 同步设置两个通道
-            err = ledc_set_duty(MOTOR_LEDC_MODE, MOTOR_LEDC_CHANNEL_A, MIN_STANDBY_DUTY);
-            err |= ledc_set_duty(MOTOR_LEDC_MODE, MOTOR_LEDC_CHANNEL_B, MIN_STANDBY_DUTY);
-            
-            if (err != ESP_OK) {
-                ESP_LOGW(TAG, "Failed to set standby duties: %s", esp_err_to_name(err));
-            }
-            
-            // 同步更新两个通道
-            err = ledc_update_duty(MOTOR_LEDC_MODE, MOTOR_LEDC_CHANNEL_A);
-            err |= ledc_update_duty(MOTOR_LEDC_MODE, MOTOR_LEDC_CHANNEL_B);
-            
-            if (err != ESP_OK) {
-                ESP_LOGW(TAG, "Failed to update standby duties: %s", esp_err_to_name(err));
-            }
-            
-            return;
-        }
-        
-        // 计算两个电机的平均速度
-        int avgSpeed = (leftSpeed + rightSpeed) / 2;
-        
-        // 先将两个电机设为相同的中间速度，让它们同步准备好
-        err = ledc_set_duty(MOTOR_LEDC_MODE, MOTOR_LEDC_CHANNEL_A, avgSpeed);
-        err |= ledc_set_duty(MOTOR_LEDC_MODE, MOTOR_LEDC_CHANNEL_B, avgSpeed);
+        // 2b. 对于运动状态，同时设置好两个电机的占空比
+        err = ledc_set_duty(MOTOR_LEDC_MODE, MOTOR_LEDC_CHANNEL_A, leftSpeed);
+        err |= ledc_set_duty(MOTOR_LEDC_MODE, MOTOR_LEDC_CHANNEL_B, rightSpeed);
         
         if (err != ESP_OK) {
-            ESP_LOGW(TAG, "Failed to set sync speed: %s", esp_err_to_name(err));
+            ESP_LOGW(TAG, "Failed to set motor duty: %s", esp_err_to_name(err));
         }
         
-        // 同步更新两个通道
+        // 最后一步，同时更新两个通道，确保左右轮同步启动
         err = ledc_update_duty(MOTOR_LEDC_MODE, MOTOR_LEDC_CHANNEL_A);
         err |= ledc_update_duty(MOTOR_LEDC_MODE, MOTOR_LEDC_CHANNEL_B);
         
         if (err != ESP_OK) {
-            ESP_LOGW(TAG, "Failed to update sync speed: %s", esp_err_to_name(err));
+            ESP_LOGW(TAG, "Failed to update motor duty: %s", esp_err_to_name(err));
         }
-        
-        // 小延迟，确保两个电机同步启动
-        esp_rom_delay_us(300);
-        
-        // 然后再分别设置最终速度
-        if (leftSpeed != avgSpeed) {
-            err = ledc_set_duty(MOTOR_LEDC_MODE, MOTOR_LEDC_CHANNEL_A, leftSpeed);
-            if (err == ESP_OK) {
-                ledc_update_duty(MOTOR_LEDC_MODE, MOTOR_LEDC_CHANNEL_A);
-            }
-        }
-        
-        if (rightSpeed != avgSpeed) {
-            err = ledc_set_duty(MOTOR_LEDC_MODE, MOTOR_LEDC_CHANNEL_B, rightSpeed);
-            if (err == ESP_OK) {
-                ledc_update_duty(MOTOR_LEDC_MODE, MOTOR_LEDC_CHANNEL_B);
-            }
-        }
-    }
-
-    // 预热电机PWM通道
-    void WarmupMotors() {
-        if (!ledc_initialized_) {
-            ESP_LOGW(TAG, "LEDC not initialized, cannot warmup motors");
-            return;
-        }
-        
-        ESP_LOGI(TAG, "Warming up motor PWM channels");
-        
-        // 设置所有方向引脚为低电平
-        gpio_set_level((gpio_num_t)in1_pin_, LOW);
-        gpio_set_level((gpio_num_t)in2_pin_, LOW);
-        gpio_set_level((gpio_num_t)in3_pin_, LOW);
-        gpio_set_level((gpio_num_t)in4_pin_, LOW);
-        
-        const int WARMUP_CYCLES = 5;  // 增加预热循环次数
-        
-        // 进行几个循环的PWM预热，从低到高再回到低
-        for (int cycle = 0; cycle < WARMUP_CYCLES; cycle++) {
-            // 从低到高
-            int step = cycle == 0 ? 10 : 40;  // 第一轮更精细
-            
-            for (int duty = 10; duty <= 200; duty += step) {
-                esp_err_t err = ledc_set_duty(MOTOR_LEDC_MODE, MOTOR_LEDC_CHANNEL_A, duty);
-                err |= ledc_set_duty(MOTOR_LEDC_MODE, MOTOR_LEDC_CHANNEL_B, duty);
-                
-                if (err == ESP_OK) {
-                    ledc_update_duty(MOTOR_LEDC_MODE, MOTOR_LEDC_CHANNEL_A);
-                    ledc_update_duty(MOTOR_LEDC_MODE, MOTOR_LEDC_CHANNEL_B);
-                }
-                
-                esp_rom_delay_us(500);
-            }
-            
-            // 从高到低
-            for (int duty = 200; duty >= 10; duty -= step) {
-                esp_err_t err = ledc_set_duty(MOTOR_LEDC_MODE, MOTOR_LEDC_CHANNEL_A, duty);
-                err |= ledc_set_duty(MOTOR_LEDC_MODE, MOTOR_LEDC_CHANNEL_B, duty);
-                
-                if (err == ESP_OK) {
-                    ledc_update_duty(MOTOR_LEDC_MODE, MOTOR_LEDC_CHANNEL_A);
-                    ledc_update_duty(MOTOR_LEDC_MODE, MOTOR_LEDC_CHANNEL_B);
-                }
-                
-                esp_rom_delay_us(500);
-            }
-        }
-        
-        // 最后设置为低占空比待机状态
-        esp_err_t err = ledc_set_duty(MOTOR_LEDC_MODE, MOTOR_LEDC_CHANNEL_A, 5);
-        err |= ledc_set_duty(MOTOR_LEDC_MODE, MOTOR_LEDC_CHANNEL_B, 5);
-        
-        if (err == ESP_OK) {
-            ledc_update_duty(MOTOR_LEDC_MODE, MOTOR_LEDC_CHANNEL_A);
-            ledc_update_duty(MOTOR_LEDC_MODE, MOTOR_LEDC_CHANNEL_B);
-        }
-        
-        ESP_LOGI(TAG, "Motor PWM channels warmup complete");
     }
 
 public:
@@ -559,14 +441,6 @@ public:
         
         // 初始化GPIO
         InitGPIO();
-
-        // 如果LEDC初始化成功，进行电机PWM通道预热
-        if (ledc_initialized_) {
-            // 预热电机PWM通道，让左右轮保持一致的响应特性
-            WarmupMotors();
-        } else {
-            ESP_LOGW(TAG, "LEDC not initialized, skipping motor warmup");
-        }
         
         // 确保电机停止
         ControlMotor(LOW, LOW, LOW, LOW);
@@ -619,20 +493,8 @@ public:
             
             // 根据方向值确定电机控制方式
             if (direction_x_ == 0 && direction_y_ == 0) {
-                // 停止 - 但保持PWM通道活跃
+                // 停止
                 ControlMotor(LOW, LOW, LOW, LOW);
-                
-                // 如果当前没有正在进行的操作，确保PWM通道保持低功率活跃状态
-                // 这样在下一次操作时电机响应会更及时同步
-                if (ledc_initialized_) {
-                    esp_err_t err = ledc_set_duty(MOTOR_LEDC_MODE, MOTOR_LEDC_CHANNEL_A, 5);
-                    err |= ledc_set_duty(MOTOR_LEDC_MODE, MOTOR_LEDC_CHANNEL_B, 5);
-                    
-                    if (err == ESP_OK) {
-                        ledc_update_duty(MOTOR_LEDC_MODE, MOTOR_LEDC_CHANNEL_A);
-                        ledc_update_duty(MOTOR_LEDC_MODE, MOTOR_LEDC_CHANNEL_B);
-                    }
-                }
             } else {
                 // 计算角度，确定前进、后退、左转、右转
                 float angle = atan2(direction_y_, direction_x_);
@@ -772,8 +634,8 @@ void RegisterMotor() {
     if (motor == nullptr) {
         motor = new MotorThing();
         ThingManager::GetInstance().AddThing(motor);
+        }
     }
-}
 
 } // namespace iot
 

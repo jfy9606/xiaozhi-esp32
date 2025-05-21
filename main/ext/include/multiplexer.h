@@ -70,16 +70,6 @@ esp_err_t multiplexer_init_with_bus(i2c_master_bus_handle_t i2c_bus_handle);
  */
 void multiplexer_deinit(void);
 
-/**
- * @brief Reset the multiplexer components
- * 
- * This function resets all multiplexers using their reset pins
- * (if configured).
- * 
- * @return ESP_OK on success, or an error code if reset failed
- */
-esp_err_t multiplexer_reset(void);
-
 #ifdef CONFIG_ENABLE_PCA9548A
 /**
  * @brief Select a specific channel on the PCA9548A multiplexer

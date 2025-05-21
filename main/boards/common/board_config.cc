@@ -40,7 +40,7 @@ board_config_t* board_get_config(void) {
         config.in3_pin = -1;
         config.in4_pin = -1;
         ESP_LOGI(TAG, "Motor controller disabled");
-#endif
+        #endif
         
         // 舵机引脚配置 - 从Kconfig中读取
 #ifdef CONFIG_ENABLE_SERVO_CONTROLLER
@@ -48,58 +48,58 @@ board_config_t* board_get_config(void) {
         
 #ifdef CONFIG_SERVO_PIN_1
         servo_pins_array[0] = CONFIG_SERVO_PIN_1;
-#endif
+        #endif
         
 #ifdef CONFIG_SERVO_PIN_2
         if (config.servo_count >= 2) {
             servo_pins_array[1] = CONFIG_SERVO_PIN_2;
         }
-#endif
+        #endif
         
 #ifdef CONFIG_SERVO_PIN_3
         if (config.servo_count >= 3) {
             servo_pins_array[2] = CONFIG_SERVO_PIN_3;
         }
-#endif
+        #endif
         
 #ifdef CONFIG_SERVO_PIN_4
         if (config.servo_count >= 4) {
             servo_pins_array[3] = CONFIG_SERVO_PIN_4;
         }
-#endif
+        #endif
         
 #ifdef CONFIG_SERVO_PIN_5
         if (config.servo_count >= 5) {
             servo_pins_array[4] = CONFIG_SERVO_PIN_5;
         }
-#endif
+        #endif
         
 #ifdef CONFIG_SERVO_PIN_6
         if (config.servo_count >= 6) {
             servo_pins_array[5] = CONFIG_SERVO_PIN_6;
         }
-#endif
+        #endif
         
 #ifdef CONFIG_SERVO_PIN_7
         if (config.servo_count >= 7) {
             servo_pins_array[6] = CONFIG_SERVO_PIN_7;
         }
-#endif
+        #endif
         
 #ifdef CONFIG_SERVO_PIN_8
         if (config.servo_count >= 8) {
             servo_pins_array[7] = CONFIG_SERVO_PIN_8;
         }
-#endif
+        #endif
         
         ESP_LOGI(TAG, "Servo count: %d", config.servo_count);
         for (int i = 0; i < config.servo_count; i++) {
             ESP_LOGI(TAG, "Servo %d pin: %d", i+1, servo_pins_array[i]);
         }
-#else
+        #else
         config.servo_count = 0;
         ESP_LOGI(TAG, "Servo controller disabled");
-#endif
+        #endif
         
         // 摄像头引脚配置
         #if defined(CAM_PWDN_PIN)

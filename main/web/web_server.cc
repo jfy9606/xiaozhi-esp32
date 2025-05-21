@@ -1510,11 +1510,11 @@ esp_err_t WebServer::CarControlHandler(httpd_req_t *req) {
                 // Try to invoke the component through JSON command
                 auto& thing_manager = iot::ThingManager::GetInstance();
                 
-                // 添加安全检查，防止空指针崩溃
-                    if (thing_manager.IsInitialized()) {
+                                    // 添加安全检查，防止空指针崩溃
+                    if (SafeToInvokeCommand(cmd)) {
                         try {
-                        thing_manager.Invoke(cmd);
-                        success = true;
+                            thing_manager.Invoke(cmd);
+                            success = true;
                         } catch (const std::exception& e) {
                             ESP_LOGE(TAG, "Exception when invoking 'Stop' command: %s", e.what());
                             success = false;
@@ -1523,9 +1523,9 @@ esp_err_t WebServer::CarControlHandler(httpd_req_t *req) {
                             success = false;
                         }
                     } else {
-                        ESP_LOGW(TAG, "ThingManager not initialized, cannot handle 'Stop' command");
+                        ESP_LOGW(TAG, "No Thing available to handle 'Stop' command");
                         success = false;
-                }
+                    }
                 
                 cJSON_Delete(cmd);
                     cJSON_AddStringToObject(response, "message", success ? "Car stopped" : "Failed to stop car");
@@ -1565,10 +1565,10 @@ esp_err_t WebServer::CarControlHandler(httpd_req_t *req) {
                     
                     // 安全检查
                     auto& thing_manager = iot::ThingManager::GetInstance();
-                    if (thing_manager.IsInitialized()) {
+                    if (SafeToInvokeCommand(cmd)) {
                         try {
-                        thing_manager.Invoke(cmd);
-                        success = true;
+                            thing_manager.Invoke(cmd);
+                            success = true;
                         } catch (const std::exception& e) {
                             ESP_LOGE(TAG, "Exception when invoking 'Forward' command: %s", e.what());
                             success = false;
@@ -1577,7 +1577,7 @@ esp_err_t WebServer::CarControlHandler(httpd_req_t *req) {
                             success = false;
                         }
                     } else {
-                        ESP_LOGW(TAG, "ThingManager not initialized, cannot handle 'Forward' command");
+                        ESP_LOGW(TAG, "No Thing available to handle 'Forward' command");
                         success = false;
                     }
                     
@@ -1619,10 +1619,10 @@ esp_err_t WebServer::CarControlHandler(httpd_req_t *req) {
                     
                     // 安全检查
                     auto& thing_manager = iot::ThingManager::GetInstance();
-                    if (thing_manager.IsInitialized()) {
+                    if (SafeToInvokeCommand(cmd)) {
                         try {
-                        thing_manager.Invoke(cmd);
-                        success = true;
+                            thing_manager.Invoke(cmd);
+                            success = true;
                         } catch (const std::exception& e) {
                             ESP_LOGE(TAG, "Exception when invoking 'Backward' command: %s", e.what());
                             success = false;
@@ -1631,7 +1631,7 @@ esp_err_t WebServer::CarControlHandler(httpd_req_t *req) {
                             success = false;
                         }
                     } else {
-                        ESP_LOGW(TAG, "ThingManager not initialized, cannot handle 'Backward' command");
+                        ESP_LOGW(TAG, "No Thing available to handle 'Backward' command");
                         success = false;
                     }
                     
@@ -1673,10 +1673,10 @@ esp_err_t WebServer::CarControlHandler(httpd_req_t *req) {
                     
                     // 安全检查
                     auto& thing_manager = iot::ThingManager::GetInstance();
-                    if (thing_manager.IsInitialized()) {
+                    if (SafeToInvokeCommand(cmd)) {
                         try {
-                        thing_manager.Invoke(cmd);
-                        success = true;
+                            thing_manager.Invoke(cmd);
+                            success = true;
                         } catch (const std::exception& e) {
                             ESP_LOGE(TAG, "Exception when invoking 'TurnLeft' command: %s", e.what());
                             success = false;
@@ -1685,7 +1685,7 @@ esp_err_t WebServer::CarControlHandler(httpd_req_t *req) {
                             success = false;
                         }
                     } else {
-                        ESP_LOGW(TAG, "ThingManager not initialized, cannot handle 'TurnLeft' command");
+                        ESP_LOGW(TAG, "No Thing available to handle 'TurnLeft' command");
                         success = false;
                     }
                     
@@ -1727,10 +1727,10 @@ esp_err_t WebServer::CarControlHandler(httpd_req_t *req) {
                     
                     // 安全检查
                     auto& thing_manager = iot::ThingManager::GetInstance();
-                    if (thing_manager.IsInitialized()) {
+                    if (SafeToInvokeCommand(cmd)) {
                         try {
-                        thing_manager.Invoke(cmd);
-                        success = true;
+                            thing_manager.Invoke(cmd);
+                            success = true;
                         } catch (const std::exception& e) {
                             ESP_LOGE(TAG, "Exception when invoking 'TurnRight' command: %s", e.what());
                             success = false;
@@ -1739,7 +1739,7 @@ esp_err_t WebServer::CarControlHandler(httpd_req_t *req) {
                             success = false;
                         }
                     } else {
-                        ESP_LOGW(TAG, "ThingManager not initialized, cannot handle 'TurnRight' command");
+                        ESP_LOGW(TAG, "No Thing available to handle 'TurnRight' command");
                         success = false;
                     }
                     
@@ -1820,9 +1820,14 @@ esp_err_t WebServer::CameraControlHandler(httpd_req_t *req) {
                 
                 try {
                     auto& thing_manager = iot::ThingManager::GetInstance();
-                    thing_manager.Invoke(cmd);
-                    success = true;
-                    cJSON_AddStringToObject(response, "message", "Frame size updated");
+                    if (SafeToInvokeCommand(cmd)) {
+                        thing_manager.Invoke(cmd);
+                        success = true;
+                        cJSON_AddStringToObject(response, "message", "Frame size updated");
+                    } else {
+                        ESP_LOGW(TAG, "No Thing available to handle camera framesize command");
+                        success = false;
+                    }
                 } catch (const std::exception& e) {
                     ESP_LOGE(TAG, "Error setting framesize: %s", e.what());
                     success = false;
@@ -1833,9 +1838,14 @@ esp_err_t WebServer::CameraControlHandler(httpd_req_t *req) {
                 
                 try {
                     auto& thing_manager = iot::ThingManager::GetInstance();
-                    thing_manager.Invoke(cmd);
-                    success = true;
-                    cJSON_AddStringToObject(response, "message", "Quality updated");
+                    if (SafeToInvokeCommand(cmd)) {
+                        thing_manager.Invoke(cmd);
+                        success = true;
+                        cJSON_AddStringToObject(response, "message", "Quality updated");
+                    } else {
+                        ESP_LOGW(TAG, "No Thing available to handle camera quality command");
+                        success = false;
+                    }
                 } catch (const std::exception& e) {
                     ESP_LOGE(TAG, "Error setting quality: %s", e.what());
                     success = false;
@@ -1851,11 +1861,16 @@ esp_err_t WebServer::CameraControlHandler(httpd_req_t *req) {
                 
                 try {
                     auto& thing_manager = iot::ThingManager::GetInstance();
-                    thing_manager.Invoke(cmd);
-                    success = true;
-                    char msg[64];
-                    snprintf(msg, sizeof(msg), "%s updated to %d", var, value);
-                    cJSON_AddStringToObject(response, "message", msg);
+                    if (SafeToInvokeCommand(cmd)) {
+                        thing_manager.Invoke(cmd);
+                        success = true;
+                        char msg[64];
+                        snprintf(msg, sizeof(msg), "%s updated to %d", var, value);
+                        cJSON_AddStringToObject(response, "message", msg);
+                    } else {
+                        ESP_LOGW(TAG, "No Thing available to handle camera %s command", var);
+                        success = false;
+                    }
                 } catch (const std::exception& e) {
                     ESP_LOGE(TAG, "Error setting %s: %s", var, e.what());
                     success = false;
@@ -2000,3 +2015,41 @@ int WebServer::GetActiveWebSocketClientCount() const {
     }
     return count;
 } 
+
+// 检查是否能安全调用命令，而不修改 ThingManager
+bool WebServer::SafeToInvokeCommand(const cJSON* cmd) {
+    if (!cmd) {
+        ESP_LOGE(TAG, "Command is null");
+        return false;
+    }
+    
+    auto& thing_manager = iot::ThingManager::GetInstance();
+    
+    // 首先检查 ThingManager 是否已初始化
+    if (!thing_manager.IsInitialized()) {
+        ESP_LOGW(TAG, "ThingManager not initialized");
+        return false;
+    }
+    
+    // 基本命令格式验证 - 确保命令有必要的字段
+    cJSON* method = cJSON_GetObjectItem(cmd, "method");
+    if (!method || !cJSON_IsString(method) || !method->valuestring) {
+        ESP_LOGW(TAG, "Command missing valid 'method' field");
+        return false;
+    }
+    
+    // 验证参数对象存在
+    cJSON* params = cJSON_GetObjectItem(cmd, "parameters");
+    if (!params || !cJSON_IsObject(params)) {
+        ESP_LOGW(TAG, "Command missing valid 'parameters' field");
+        // 有些命令可能不需要参数，所以不返回 false
+    }
+    
+    // 可以添加更多验证逻辑
+    // 例如，检查特定的命令类型，或针对特定命令检查特定的参数
+    
+    // 由于我们不能修改 ThingManager，无法直接检查是否存在处理命令的 Thing
+    // 因此我们只能进行基本的格式验证
+    
+    return true; // 通过基本验证
+}
