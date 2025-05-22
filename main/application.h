@@ -74,12 +74,16 @@ public:
     void WakeWordInvoke(const std::string& wake_word);
     void PlaySound(const std::string_view& sound);
     bool CanEnterSleepMode();
+<<<<<<< HEAD
     
     // Component management methods
     void InitializeComponents();
     void StartComponents();
     void StopComponents();
     Component* GetComponent(const char* name);
+=======
+    void SendMcpMessage(const std::string& payload);
+>>>>>>> upstream/main
 
 private:
     Application();
