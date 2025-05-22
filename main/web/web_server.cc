@@ -84,7 +84,7 @@ static const MimeType MIME_TYPES[] = {
 };
 
 WebServer::WebServer() 
-    : server_(nullptr), running_(false), is_initialized_(false) {
+    : server_(nullptr), running_(false) {
     ESP_LOGI(TAG, "创建WebServer实例");
     // 初始化WebSocket客户端数组
     for (int i = 0; i < MAX_WS_CLIENTS; i++) {
@@ -1120,6 +1120,12 @@ void WebServer::InitWebComponents() {
 #if defined(CONFIG_ENABLE_WEB_SERVER)
     ESP_LOGI(TAG, "初始化Web组件");
     
+    // 检查Web服务器组件类型是否启用
+    if (!ComponentManager::IsComponentTypeEnabled(COMPONENT_TYPE_WEB)) {
+        ESP_LOGW(TAG, "Web组件在配置中已禁用");
+        return;
+    }
+    
     // 获取或创建WebServer实例
     auto& manager = ComponentManager::GetInstance();
     WebServer* web_server = nullptr;
@@ -1154,8 +1160,12 @@ void WebServer::InitWebComponents() {
     
     // 注册但不启动电机组件
 #if defined(CONFIG_ENABLE_MOTOR_CONTROLLER)
-    InitMotorComponents(web_server);
-    ESP_LOGI(TAG, "电机组件已注册");
+    if (ComponentManager::IsComponentTypeEnabled(COMPONENT_TYPE_MOTOR)) {
+        InitMotorComponents(web_server);
+        ESP_LOGI(TAG, "电机组件已注册");
+    } else {
+        ESP_LOGI(TAG, "电机组件在配置中已禁用");
+    }
 #endif
 
     // 注册但不启动AI组件
@@ -1175,17 +1185,21 @@ void WebServer::InitWebComponents() {
 
     // 注册但不启动视觉组件
 #if defined(CONFIG_ENABLE_VISION_CONTROLLER)
+    if (ComponentManager::IsComponentTypeEnabled(COMPONENT_TYPE_VISION)) {
 #if defined(CONFIG_ENABLE_WEB_CONTENT)
-    InitVisionComponents(web_server);
+        InitVisionComponents(web_server);
 #else
-    // 即使禁用了WebContent，也要初始化视觉组件
-    if (!manager.GetComponent("VisionController")) {
-        VisionController* vision_controller = new VisionController();
-        manager.RegisterComponent(vision_controller);
-        ESP_LOGI(TAG, "注册视觉控制器 (WebContent已禁用)");
-    }
+        // 即使禁用了WebContent，也要初始化视觉组件
+        if (!manager.GetComponent("VisionController")) {
+            VisionController* vision_controller = new VisionController();
+            manager.RegisterComponent(vision_controller);
+            ESP_LOGI(TAG, "注册视觉控制器 (WebContent已禁用)");
+        }
 #endif
-    ESP_LOGI(TAG, "注册视觉组件");
+        ESP_LOGI(TAG, "注册视觉组件");
+    } else {
+        ESP_LOGI(TAG, "视觉组件在配置中已禁用");
+    }
 #endif
 
     ESP_LOGI(TAG, "Web组件初始化完成 (组件将在网络初始化后启动)");
@@ -1197,6 +1211,12 @@ void WebServer::InitWebComponents() {
 // 启动Web组件
 bool WebServer::StartWebComponents() {
 #if defined(CONFIG_ENABLE_WEB_SERVER)
+    // 检查Web组件类型是否启用
+    if (!ComponentManager::IsComponentTypeEnabled(COMPONENT_TYPE_WEB)) {
+        ESP_LOGW(TAG, "Web组件在配置中已禁用");
+        return false;
+    }
+    
     auto& manager = ComponentManager::GetInstance();
     
     // 获取Web服务器组件
@@ -1236,81 +1256,95 @@ bool WebServer::StartWebComponents() {
 
         // 启动电机相关组件
 #if defined(CONFIG_ENABLE_MOTOR_CONTROLLER)
-        Component* motor_controller = manager.GetComponent("MotorController");
-        
-        if (motor_controller && !motor_controller->IsRunning()) {
-            if (!motor_controller->Start()) {
-                ESP_LOGE(TAG, "启动MotorController失败");
-            } else {
-                ESP_LOGI(TAG, "MotorController启动成功");
-        
-                // 只有在MotorController启动成功后才启动MotorContent
-        Component* motor_content = manager.GetComponent("MotorContent");
-        if (motor_content && !motor_content->IsRunning()) {
-            if (!motor_content->Start()) {
-                ESP_LOGE(TAG, "启动MotorContent失败");
-            } else {
-                ESP_LOGI(TAG, "MotorContent启动成功");
+        if (ComponentManager::IsComponentTypeEnabled(COMPONENT_TYPE_MOTOR)) {
+            Component* motor_controller = manager.GetComponent("MotorController");
+            
+            if (motor_controller && !motor_controller->IsRunning()) {
+                if (!motor_controller->Start()) {
+                    ESP_LOGE(TAG, "启动MotorController失败");
+                } else {
+                    ESP_LOGI(TAG, "MotorController启动成功");
+            
+                    // 只有在MotorController启动成功后才启动MotorContent
+                    Component* motor_content = manager.GetComponent("MotorContent");
+                    if (motor_content && !motor_content->IsRunning()) {
+                        if (!motor_content->Start()) {
+                            ESP_LOGE(TAG, "启动MotorContent失败");
+                        } else {
+                            ESP_LOGI(TAG, "MotorContent启动成功");
+                        }
+                    }
+                }
             }
-        }
-            }
+        } else {
+            ESP_LOGI(TAG, "电机组件在配置中已禁用");
         }
 #endif // CONFIG_ENABLE_MOTOR_CONTROLLER
         
         // 启动AI相关组件
 #if defined(CONFIG_ENABLE_AI_CONTROLLER)
-        Component* ai_controller = manager.GetComponent("AIController");
-        
-        if (ai_controller && !ai_controller->IsRunning()) {
-            if (!ai_controller->Start()) {
-                ESP_LOGE(TAG, "启动AIController失败");
-                // 继续尝试启动其他组件
-            } else {
-                ESP_LOGI(TAG, "AIController启动成功");
+        if (ComponentManager::IsComponentTypeEnabled(COMPONENT_TYPE_AUDIO)) {
+            Component* ai_controller = manager.GetComponent("AIController");
+            
+            if (ai_controller && !ai_controller->IsRunning()) {
+                if (!ai_controller->Start()) {
+                    ESP_LOGE(TAG, "启动AIController失败");
+                    // 继续尝试启动其他组件
+                } else {
+                    ESP_LOGI(TAG, "AIController启动成功");
+                }
             }
+        } else {
+            ESP_LOGI(TAG, "AI组件在配置中已禁用");
         }
         
 #if defined(CONFIG_ENABLE_WEB_CONTENT)
-        Component* ai_content = manager.GetComponent("AIContent");
-        if (ai_content && !ai_content->IsRunning()) {
-            if (!ai_content->Start()) {
-                ESP_LOGE(TAG, "启动AIContent失败");
-                // 继续尝试启动其他组件
-            } else {
-                ESP_LOGI(TAG, "AIContent启动成功");
+        if (ComponentManager::IsComponentTypeEnabled(COMPONENT_TYPE_AUDIO)) {
+            Component* ai_content = manager.GetComponent("AIContent");
+            if (ai_content && !ai_content->IsRunning()) {
+                if (!ai_content->Start()) {
+                    ESP_LOGE(TAG, "启动AIContent失败");
+                    // 继续尝试启动其他组件
+                } else {
+                    ESP_LOGI(TAG, "AIContent启动成功");
+                }
+            } else if (ai_content) {
+                ESP_LOGI(TAG, "AIContent已经在运行");
             }
-        } else if (ai_content) {
-            ESP_LOGI(TAG, "AIContent已经在运行");
         }
 #endif // CONFIG_ENABLE_WEB_CONTENT
 #endif // CONFIG_ENABLE_AI_CONTROLLER
         
         // 启动视觉相关组件
 #if defined(CONFIG_ENABLE_VISION_CONTROLLER)
-        Component* vision_controller = manager.GetComponent("VisionController");
-        
-        if (vision_controller && !vision_controller->IsRunning()) {
-            if (!vision_controller->Start()) {
-                ESP_LOGE(TAG, "启动VisionController失败");
-                // 继续尝试启动其他组件
-            } else {
-                ESP_LOGI(TAG, "VisionController启动成功");
+        if (ComponentManager::IsComponentTypeEnabled(COMPONENT_TYPE_VISION)) {
+            Component* vision_controller = manager.GetComponent("VisionController");
+            
+            if (vision_controller && !vision_controller->IsRunning()) {
+                if (!vision_controller->Start()) {
+                    ESP_LOGE(TAG, "启动VisionController失败");
+                    // 继续尝试启动其他组件
+                } else {
+                    ESP_LOGI(TAG, "VisionController启动成功");
+                }
             }
-        }
         
 #if defined(CONFIG_ENABLE_WEB_CONTENT)
-        Component* vision_content = manager.GetComponent("VisionContent");
-        if (vision_content && !vision_content->IsRunning()) {
-            if (!vision_content->Start()) {
-                ESP_LOGE(TAG, "启动VisionContent失败");
-                // 继续尝试启动其他组件
-            } else {
-                ESP_LOGI(TAG, "VisionContent启动成功");
+            Component* vision_content = manager.GetComponent("VisionContent");
+            if (vision_content && !vision_content->IsRunning()) {
+                if (!vision_content->Start()) {
+                    ESP_LOGE(TAG, "启动VisionContent失败");
+                    // 继续尝试启动其他组件
+                } else {
+                    ESP_LOGI(TAG, "VisionContent启动成功");
+                }
+            } else if (vision_content) {
+                ESP_LOGI(TAG, "VisionContent已经在运行");
             }
-        } else if (vision_content) {
-            ESP_LOGI(TAG, "VisionContent已经在运行");
-        }
 #endif // CONFIG_ENABLE_WEB_CONTENT
+        } else {
+            ESP_LOGI(TAG, "视觉组件在配置中已禁用");
+        }
 #endif // CONFIG_ENABLE_VISION_CONTROLLER
         
         ESP_LOGI(TAG, "所有Web组件启动成功");

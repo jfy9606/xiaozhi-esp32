@@ -50,6 +50,8 @@ public:
     virtual void Stop() override;
     virtual bool IsRunning() const override;
     virtual const char* GetName() const override;
+    // 实现组件类型
+    virtual ComponentType GetType() const override { return COMPONENT_TYPE_VISION; }
 
     // 获取摄像头帧
     camera_fb_t* GetFrame();

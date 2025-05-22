@@ -28,6 +28,11 @@
 #include "wake_word_detect.h"
 #endif
 
+// 只有在Web服务器启用时才包含相关头文件
+#if defined(CONFIG_ENABLE_WEB_SERVER)
+#include "web/web_server.h"
+#endif
+
 #define SCHEDULE_EVENT (1 << 0)
 #define AUDIO_INPUT_READY_EVENT (1 << 1)
 #define AUDIO_OUTPUT_READY_EVENT (1 << 2)
@@ -74,16 +79,13 @@ public:
     void WakeWordInvoke(const std::string& wake_word);
     void PlaySound(const std::string_view& sound);
     bool CanEnterSleepMode();
-<<<<<<< HEAD
     
     // Component management methods
     void InitializeComponents();
     void StartComponents();
     void StopComponents();
     Component* GetComponent(const char* name);
-=======
     void SendMcpMessage(const std::string& payload);
->>>>>>> upstream/main
 
 private:
     Application();

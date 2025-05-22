@@ -19,6 +19,33 @@ void ComponentManager::StartAll() {
     }
 }
 
+// 新增：按类型启动组件
+void ComponentManager::StartComponentsByType(ComponentType type) {
+    // 先检查该类型是否已被配置启用
+    if (!IsComponentTypeEnabled(type)) {
+        ESP_LOGI(TAG, "Component type %d disabled in configuration, skipping start", type);
+        return;
+    }
+    
+    ESP_LOGI(TAG, "Starting components of type %d", type);
+    int count = 0;
+    
+    for (auto component : components_) {
+        if (component->GetType() == type && !component->IsRunning()) {
+            ESP_LOGI(TAG, "Starting component: %s", component->GetName());
+            bool success = component->Start();
+            if (success) {
+                count++;
+                ESP_LOGI(TAG, "Component %s started successfully", component->GetName());
+            } else {
+                ESP_LOGE(TAG, "Failed to start component: %s", component->GetName());
+            }
+        }
+    }
+    
+    ESP_LOGI(TAG, "Started %d components of type %d", count, type);
+}
+
 void ComponentManager::StopAll() {
     for (auto component : components_) {
         if (component->IsRunning()) {
@@ -28,8 +55,33 @@ void ComponentManager::StopAll() {
     }
 }
 
+// 新增：按类型停止组件
+void ComponentManager::StopComponentsByType(ComponentType type) {
+    ESP_LOGI(TAG, "Stopping components of type %d", type);
+    int count = 0;
+    
+    for (auto component : components_) {
+        if (component->GetType() == type && component->IsRunning()) {
+            ESP_LOGI(TAG, "Stopping component: %s", component->GetName());
+            component->Stop();
+            count++;
+        }
+    }
+    
+    ESP_LOGI(TAG, "Stopped %d components of type %d", count, type);
+}
+
 void ComponentManager::RegisterComponent(Component* component) {
     if (!component) {
+        return;
+    }
+    
+    // 检查组件类型是否启用，如果没有启用则不注册
+    ComponentType type = component->GetType();
+    if (!IsComponentTypeEnabled(type)) {
+        ESP_LOGI(TAG, "Component type %d not enabled in config, skipping registration for %s", 
+                 type, component->GetName() ? component->GetName() : "unnamed");
+        delete component; // 释放内存，防止泄漏
         return;
     }
     
@@ -41,11 +93,12 @@ void ComponentManager::RegisterComponent(Component* component) {
     
     if (it != components_.end()) {
         ESP_LOGW(TAG, "Component %s already registered", component->GetName());
+        delete component; // 释放内存，防止泄漏
         return;
     }
     
     components_.push_back(component);
-    ESP_LOGI(TAG, "Component registered: %s", component->GetName());
+    ESP_LOGI(TAG, "Component registered: %s (type: %d)", component->GetName(), component->GetType());
 }
 
 void ComponentManager::UnregisterComponent(Component* component) {
@@ -75,6 +128,36 @@ Component* ComponentManager::GetComponent(const char* name) {
         });
     
     return (it != components_.end()) ? *it : nullptr;
+}
+
+// 新增：获取指定类型的组件列表
+std::vector<Component*> ComponentManager::GetComponentsByType(ComponentType type) {
+    std::vector<Component*> result;
+    
+    for (auto component : components_) {
+        if (component->GetType() == type) {
+            result.push_back(component);
+        }
+    }
+    
+    return result;
+}
+
+// 新增：检查是否有指定类型的组件
+bool ComponentManager::HasComponentType(ComponentType type) const {
+    // 首先检查该类型在配置中是否启用
+    if (!IsComponentTypeEnabled(type)) {
+        return false;
+    }
+    
+    // 然后检查是否有已注册的该类型组件
+    for (auto component : components_) {
+        if (component->GetType() == type) {
+            return true;
+        }
+    }
+    
+    return false;
 }
 
 ComponentManager::~ComponentManager() {

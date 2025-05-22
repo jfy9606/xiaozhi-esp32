@@ -89,10 +89,10 @@ hw178_handle_t hw178_create(const hw178_config_t *config)
     
     if (pin_bit_mask != 0) {
         io_conf.pin_bit_mask = pin_bit_mask;
-        if (gpio_config(&io_conf) != ESP_OK) {
-            ESP_LOGE(TAG, "Failed to configure select pins");
-            free(handle);
-            return NULL;
+    if (gpio_config(&io_conf) != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to configure select pins");
+        free(handle);
+        return NULL;
         }
     }
 
@@ -157,19 +157,19 @@ esp_err_t hw178_select_channel(hw178_handle_t handle, hw178_channel_t channel)
 
     // 仅为实际配置的选择引脚设置电平
     if (handle->s0_pin != GPIO_NUM_NC) {
-        gpio_set_level(handle->s0_pin, (channel & 0x01) ? 1 : 0);
+    gpio_set_level(handle->s0_pin, (channel & 0x01) ? 1 : 0);
     }
     
     if (handle->s1_pin != GPIO_NUM_NC) {
-        gpio_set_level(handle->s1_pin, (channel & 0x02) ? 1 : 0);
+    gpio_set_level(handle->s1_pin, (channel & 0x02) ? 1 : 0);
     }
     
     if (handle->s2_pin != GPIO_NUM_NC) {
-        gpio_set_level(handle->s2_pin, (channel & 0x04) ? 1 : 0);
+    gpio_set_level(handle->s2_pin, (channel & 0x04) ? 1 : 0);
     }
     
     if (handle->s3_pin != GPIO_NUM_NC) {
-        gpio_set_level(handle->s3_pin, (channel & 0x08) ? 1 : 0);
+    gpio_set_level(handle->s3_pin, (channel & 0x08) ? 1 : 0);
     }
 
     // 更新当前通道

@@ -7,20 +7,46 @@
 #include "mqtt_protocol.h"
 #include "websocket_protocol.h"
 #include "font_awesome_symbols.h"
+
+// IoT组件相关头文件，仅在IoT功能启用时包含
+#if defined(CONFIG_IOT_PROTOCOL_XIAOZHI) || defined(CONFIG_IOT_PROTOCOL_MCP)
 #include "iot/thing_manager.h"
+
+// 各种传感器/执行器组件，仅在对应功能启用时包含
+#ifdef CONFIG_ENABLE_US_SENSOR
 #include "iot/things/us.h"
+#endif
+
+#ifdef CONFIG_ENABLE_CAM
 #include "iot/things/cam.h"
+#endif
+
+#ifdef CONFIG_ENABLE_IMU
 #include "iot/things/imu.h"
+#endif
+
+#ifdef CONFIG_ENABLE_LIGHT
 #include "iot/things/light.h"
+#endif
+
+#ifdef CONFIG_ENABLE_MOTOR_CONTROLLER
 #include "iot/things/motor.h"
+#endif
+
+#ifdef CONFIG_ENABLE_SERVO
 #include "iot/things/servo.h"
+#endif
+#endif // IOT协议启用
+
 #include "assets/lang_config.h"
-<<<<<<< HEAD
+
+// Web服务器组件，仅在Web服务器功能启用时包含
+#if defined(CONFIG_ENABLE_WEB_SERVER)
 #include "web/web_server.h"
+#endif
+
 #include "wifi_station.h"
-=======
 #include "mcp_server.h"
->>>>>>> upstream/main
 
 #if CONFIG_USE_AUDIO_PROCESSOR
 #include "afe_audio_processor.h"
@@ -617,8 +643,7 @@ void Application::Start() {
             }
             opus_encoder_->Encode(std::move(data), [this](std::vector<uint8_t>&& opus) {
                 AudioStreamPacket packet;
-                packet.payload = std::move(opus);
-                uint32_t last_output_timestamp_value = last_output_timestamp_.load();
+                packet.payload = std::move(opus);               
                 {
                     std::lock_guard<std::mutex> lock(timestamp_mutex_);
                     if (!timestamp_queue_.empty()) {
@@ -1226,7 +1251,6 @@ void Application::SetDecodeSampleRate(int sample_rate, int frame_duration) {
 }
 
 void Application::UpdateIotStates() {
-<<<<<<< HEAD
 #if !CONFIG_ENABLE_XIAOZHI_AI_CORE
     ESP_LOGW(TAG, "UpdateIotStates: AI core is disabled");
     return;
@@ -1237,9 +1261,7 @@ void Application::UpdateIotStates() {
         return;
     }
 
-=======
 #if CONFIG_IOT_PROTOCOL_XIAOZHI
->>>>>>> upstream/main
     auto& thing_manager = iot::ThingManager::GetInstance();
     std::string states;
     if (thing_manager.GetStatesJson(states, true)) {
@@ -1296,11 +1318,19 @@ bool Application::CanEnterSleepMode() {
     return true;
 }
 
-<<<<<<< HEAD
+void Application::SendMcpMessage(const std::string& payload) {
+    Schedule([this, payload]() {
+        if (protocol_) {
+            protocol_->SendMcpMessage(payload);
+        }
+    });
+}
+
 // Component management methods
 void Application::InitializeComponents() {
     ESP_LOGI(TAG, "Initializing all components");
     try {
+#if defined(CONFIG_IOT_PROTOCOL_XIAOZHI) || defined(CONFIG_IOT_PROTOCOL_MCP)
 #ifdef CONFIG_ENABLE_US_SENSOR
         // Initialize ultrasonic sensors
         ESP_LOGI(TAG, "Initializing ultrasonic sensors");
@@ -1336,11 +1366,13 @@ void Application::InitializeComponents() {
         ESP_LOGI(TAG, "Initializing servo controller");
         iot::RegisterServo();
 #endif
+#endif // IOT协议启用
 
         // Initialize vision components
         ESP_LOGI(TAG, "Initializing vision components");
         // Vision组件的具体初始化实现
         try {
+#ifdef CONFIG_ENABLE_VISION_CONTROLLER
             // 视觉相关组件现在统一由VisionController管理
             // 摄像头功能已集成到VisionController中
             auto& manager = ComponentManager::GetInstance();
@@ -1352,7 +1384,9 @@ void Application::InitializeComponents() {
             } else {
                 ESP_LOGI(TAG, "VisionController already registered (includes camera functionality)");
             }
-            
+#else
+            ESP_LOGI(TAG, "Vision controller disabled in configuration");
+#endif // CONFIG_ENABLE_VISION_CONTROLLER
         } catch (const std::exception& e) {
             ESP_LOGE(TAG, "Exception during vision components initialization: %s", e.what());
         }
@@ -1430,6 +1464,7 @@ void Application::StartComponents() {
     }
     
     // Special handling for vision components to ensure proper startup sequence
+#ifdef CONFIG_ENABLE_VISION_CONTROLLER
     try {
         ESP_LOGI(TAG, "Starting vision components with proper dependencies");
         
@@ -1445,6 +1480,7 @@ void Application::StartComponents() {
                         } else {
                             ESP_LOGI(TAG, "VisionController (with camera) started successfully");
                             
+#if defined(CONFIG_ENABLE_VISION_CONTENT)
                             // Start VisionContent only after VisionController is running
                             Component* vision_content = GetComponent("VisionContent");
                             if (vision_content && !vision_content->IsRunning()) {
@@ -1458,6 +1494,7 @@ void Application::StartComponents() {
                                     ESP_LOGE(TAG, "Exception starting VisionContent: %s", e.what());
                                 }
                             }
+#endif // CONFIG_ENABLE_VISION_CONTENT
                         }
                     } catch (const std::exception& e) {
                         ESP_LOGE(TAG, "Exception starting vision sequence: %s", e.what());
@@ -1470,6 +1507,7 @@ void Application::StartComponents() {
     } catch (...) {
         ESP_LOGE(TAG, "Unknown exception in vision component startup");
     }
+#endif // CONFIG_ENABLE_VISION_CONTROLLER
     
     ESP_LOGI(TAG, "All components processing scheduled");
 }
@@ -1480,9 +1518,11 @@ void Application::StopComponents() {
     try {
         auto& manager = ComponentManager::GetInstance();
         
+#ifdef CONFIG_ENABLE_VISION_CONTROLLER
         // 首先停止视觉相关组件
         ESP_LOGI(TAG, "Stopping vision components");
         
+#ifdef CONFIG_ENABLE_VISION_CONTENT
         // 先停止VisionContent，它依赖于VisionController
         Component* vision_content = GetComponent("VisionContent");
         if (vision_content && vision_content->IsRunning()) {
@@ -1493,6 +1533,7 @@ void Application::StopComponents() {
                 ESP_LOGE(TAG, "Exception stopping vision content: %s", e.what());
             }
         }
+#endif // CONFIG_ENABLE_VISION_CONTENT
         
         // 然后停止VisionController (已包含相机功能)
         Component* vision = GetComponent("VisionController");
@@ -1504,6 +1545,7 @@ void Application::StopComponents() {
                 ESP_LOGE(TAG, "Exception stopping vision controller: %s", e.what());
             }
         }
+#endif // CONFIG_ENABLE_VISION_CONTROLLER
         
         // 停止所有其他组件
         ESP_LOGI(TAG, "Stopping all remaining components");
@@ -1531,12 +1573,4 @@ Component* Application::GetComponent(const char* name) {
         ESP_LOGE(TAG, "Unknown exception in GetComponent");
         return nullptr;
     }
-=======
-void Application::SendMcpMessage(const std::string& payload) {
-    Schedule([this, payload]() {
-        if (protocol_) {
-            protocol_->SendMcpMessage(payload);
-        }
-    });
->>>>>>> upstream/main
 }
