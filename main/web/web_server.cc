@@ -14,6 +14,7 @@
 #include <sstream>
 #include <string>
 #include <algorithm>
+#include <unordered_set>
 #include <esp_timer.h>
 #include <esp_heap_caps.h>
 #if defined(CONFIG_ENABLE_VISION_CONTENT)
@@ -83,7 +84,7 @@ static const MimeType MIME_TYPES[] = {
 };
 
 WebServer::WebServer() 
-    : server_(nullptr), running_(false) {
+    : server_(nullptr), running_(false), is_initialized_(false) {
     ESP_LOGI(TAG, "创建WebServer实例");
     // 初始化WebSocket客户端数组
     for (int i = 0; i < MAX_WS_CLIENTS; i++) {
@@ -204,26 +205,25 @@ bool WebServer::Start() {
         }
     }
     
-    // 检查是否注册了WebSocket处理器
-    auto ws_handler = http_handlers_.find("/ws");
-    if (ws_handler != http_handlers_.end()) {
-        // 直接注册WebSocket处理器
-        httpd_uri_t ws_uri = {
-            .uri        = "/ws",
-            .method     = HTTP_GET,
-            .handler    = WebSocketHandler,
-            .user_ctx   = this,
-            .is_websocket = true   // 关键: 设置WebSocket标志
-        };
-        
-        ESP_LOGI(TAG, "直接注册WebSocket处理器: /ws");
-        ret = httpd_register_uri_handler(server_, &ws_uri);
-        if (ret != ESP_OK) {
-            ESP_LOGE(TAG, "注册WebSocket处理器失败: %s", esp_err_to_name(ret));
-            ESP_LOGW(TAG, "WebSocket功能可能不可用，继续运行但功能可能受限");
-        } else {
-            ESP_LOGI(TAG, "WebSocket处理器注册成功");
-            // 从http_handlers_中移除，因为已经直接注册了
+    // 注册WebSocket处理器
+    httpd_uri_t ws_uri = {
+        .uri        = "/ws",
+        .method     = HTTP_GET,
+        .handler    = WebSocketHandler,
+        .user_ctx   = this,
+        .is_websocket = true   // 关键: 设置WebSocket标志
+    };
+    
+    ESP_LOGI(TAG, "注册WebSocket处理器: /ws");
+    ret = httpd_register_uri_handler(server_, &ws_uri);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "注册WebSocket处理器失败: %s", esp_err_to_name(ret));
+        ESP_LOGW(TAG, "WebSocket功能可能不可用，继续运行但功能可能受限");
+    } else {
+        ESP_LOGI(TAG, "WebSocket处理器注册成功");
+        // 从http_handlers_中移除，因为已经直接注册了
+        auto ws_handler = http_handlers_.find("/ws");
+        if (ws_handler != http_handlers_.end()) {
             http_handlers_.erase(ws_handler);
         }
     }
@@ -270,95 +270,65 @@ const char* WebServer::GetName() const {
 }
 
 void WebServer::RegisterDefaultHandlers() {
-    // Register handlers for default endpoints，先检查是否已注册
-    if (http_handlers_.find("/") == http_handlers_.end()) {
+    // Register handlers for default endpoints
     RegisterHttpHandler("/", HTTP_GET, RootHandler);     // 主页
-        ESP_LOGI(TAG, "注册主页处理器: /");
-    }
+    ESP_LOGI(TAG, "注册主页处理器: /");
     
-    // Only register WebSocket handler if not already registered
-    if (http_handlers_.find("/ws") == http_handlers_.end()) {
-        // 使用标准URI处理器注册WebSocket处理器
-        if (server_) {
-            httpd_uri_t ws_uri = {
-                .uri        = "/ws",
-                .method     = HTTP_GET,
-                .handler    = WebSocketHandler,
-                .user_ctx   = this,
-                .is_websocket = true  // 设置WebSocket标志
-            };
-            
+    // WebSocket handler registration
+    if (server_) {
+        httpd_uri_t ws_uri = {
+            .uri        = "/ws",
+            .method     = HTTP_GET,
+            .handler    = WebSocketHandler,
+            .user_ctx   = this,
+            .is_websocket = true  // 设置WebSocket标志
+        };
+        
         ESP_LOGI(TAG, "注册WebSocket处理器: /ws");
-            esp_err_t ret = httpd_register_uri_handler(server_, &ws_uri);
-            if (ret != ESP_OK) {
-                ESP_LOGW(TAG, "注册WebSocket处理器失败: %s", esp_err_to_name(ret));
-            }
-        } else {
-            // 服务器尚未启动，添加到handlers中以便在启动时注册
-            RegisterHttpHandler("/ws", HTTP_GET, WebSocketHandler);
-            ESP_LOGI(TAG, "WebSocket处理器将在服务器启动时注册");
+        esp_err_t ret = httpd_register_uri_handler(server_, &ws_uri);
+        if (ret != ESP_OK) {
+            ESP_LOGW(TAG, "注册WebSocket处理器失败: %s", esp_err_to_name(ret));
         }
     } else {
-        ESP_LOGI(TAG, "WebSocket处理器 /ws 已注册，跳过重复注册");
+        // 服务器尚未启动，添加到handlers中以便在启动时注册
+        RegisterHttpHandler("/ws", HTTP_GET, WebSocketHandler);
+        ESP_LOGI(TAG, "WebSocket处理器将在服务器启动时注册");
     }
     
     // API处理器需要明确类型转换为httpd_method_t
-    if (http_handlers_.find("/api/*") == http_handlers_.end()) {
     RegisterHttpHandler("/api/*", static_cast<httpd_method_t>(HTTP_ANY), ApiHandler);  // API处理器处理所有/api/前缀的请求
-        ESP_LOGI(TAG, "注册API通配符处理器: /api/*");
-    }
+    ESP_LOGI(TAG, "注册API通配符处理器: /api/*");
     
     // Register handlers for special endpoints
-    if (http_handlers_.find("/vision") == http_handlers_.end()) {
     RegisterHttpHandler("/vision", HTTP_GET, VisionHandler);
-        ESP_LOGI(TAG, "注册视觉页面处理器: /vision");
-    }
+    ESP_LOGI(TAG, "注册视觉页面处理器: /vision");
     
-    if (http_handlers_.find("/motor") == http_handlers_.end()) {
     RegisterHttpHandler("/motor", HTTP_GET, MotorHandler);
-        ESP_LOGI(TAG, "注册电机页面处理器: /motor");
-    }
+    ESP_LOGI(TAG, "注册电机页面处理器: /motor");
     
-    if (http_handlers_.find("/ai") == http_handlers_.end()) {
     RegisterHttpHandler("/ai", HTTP_GET, AIHandler);  // 添加AI页面路由
-        ESP_LOGI(TAG, "注册AI页面处理器: /ai");
-    }
+    ESP_LOGI(TAG, "注册AI页面处理器: /ai");
     
     // Register car control endpoints
-    if (http_handlers_.find("/car/stop") == http_handlers_.end()) {
     RegisterHttpHandler("/car/stop", HTTP_GET, CarControlHandler);
-        ESP_LOGI(TAG, "注册停车控制处理器: /car/stop");
-    }
+    ESP_LOGI(TAG, "注册停车控制处理器: /car/stop");
     
-    if (http_handlers_.find("/car/*") == http_handlers_.end()) {
     RegisterHttpHandler("/car/*", HTTP_GET, CarControlHandler);
-        ESP_LOGI(TAG, "注册小车控制通配符处理器: /car/*");
-    }
+    ESP_LOGI(TAG, "注册小车控制通配符处理器: /car/*");
     
     // Register camera control endpoints
-    if (http_handlers_.find("/camera/control") == http_handlers_.end()) {
     RegisterHttpHandler("/camera/control", HTTP_GET, CameraControlHandler);
-        ESP_LOGI(TAG, "注册相机控制处理器: /camera/control");
-    }
+    ESP_LOGI(TAG, "注册相机控制处理器: /camera/control");
     
-    if (http_handlers_.find("/camera/stream") == http_handlers_.end()) {
     RegisterHttpHandler("/camera/stream", HTTP_GET, CameraStreamHandler);
-        ESP_LOGI(TAG, "注册相机流处理器: /camera/stream");
-    }
+    ESP_LOGI(TAG, "注册相机流处理器: /camera/stream");
     
     // Register API status endpoint directly
-    if (http_handlers_.find("/api/status") == http_handlers_.end()) {
     RegisterHttpHandler("/api/status", HTTP_GET, SystemStatusHandler);
-        ESP_LOGI(TAG, "注册系统状态API处理器: /api/status");
-    }
+    ESP_LOGI(TAG, "注册系统状态API处理器: /api/status");
 }
 
 void WebServer::RegisterHttpHandler(const PSRAMString& path, httpd_method_t method, HttpRequestHandler handler) {
-    // 检查处理器是否已经注册
-    if (http_handlers_.find(path) != http_handlers_.end()) {
-        ESP_LOGW(TAG, "HTTP处理器 %s 已注册，正在覆盖", path.c_str());
-    }
-    
     http_handlers_[path] = std::make_pair(method, handler);
     ESP_LOGI(TAG, "注册HTTP处理器: %s", path.c_str());
     
@@ -1150,33 +1120,33 @@ void WebServer::InitWebComponents() {
 #if defined(CONFIG_ENABLE_WEB_SERVER)
     ESP_LOGI(TAG, "初始化Web组件");
     
-    // 检查WebServer是否已经存在
+    // 获取或创建WebServer实例
     auto& manager = ComponentManager::GetInstance();
-    Component* existing_web_server = manager.GetComponent("WebServer");
-    
     WebServer* web_server = nullptr;
+    
+    Component* existing_web_server = manager.GetComponent("WebServer");
     if (existing_web_server) {
-        ESP_LOGI(TAG, "WebServer已存在，使用现有实例");
+        ESP_LOGI(TAG, "使用现有WebServer实例");
         web_server = static_cast<WebServer*>(existing_web_server);
     } else {
         // 创建Web服务器组件
         web_server = new WebServer();
         manager.RegisterComponent(web_server);
-        ESP_LOGI(TAG, "已创建新的WebServer实例");
+        ESP_LOGI(TAG, "创建新的WebServer实例");
     }
+    
+    // 标记WebServer已初始化
+    web_server->SetInitialized(true);
     
     // 延迟初始化其他组件，确保应用程序主流程已经完成初始化
     vTaskDelay(pdMS_TO_TICKS(2000));
     
     // 注册WebContent组件
 #if defined(CONFIG_ENABLE_WEB_CONTENT)
-    Component* existing_web_content = manager.GetComponent("WebContent");
-    if (existing_web_content) {
-        ESP_LOGI(TAG, "WebContent已存在，跳过创建");
-    } else {
+    if (!manager.GetComponent("WebContent")) {
         WebContent* web_content = new WebContent(web_server);
         manager.RegisterComponent(web_content);
-        ESP_LOGI(TAG, "已创建新的WebContent实例");
+        ESP_LOGI(TAG, "创建WebContent实例");
     }
 #else
     ESP_LOGI(TAG, "WebContent在配置中已禁用");

@@ -115,6 +115,10 @@ public:
     bool IsRunning() const override;
     const char* GetName() const override;
 
+    // 初始化状态追踪
+    bool IsInitialized() const { return is_initialized_; }
+    void SetInitialized(bool initialized) { is_initialized_ = initialized; }
+
     // 注册HTTP处理器
     void RegisterHttpHandler(const PSRAMString& path, httpd_method_t method, HttpRequestHandler handler);
 
@@ -182,6 +186,7 @@ private:
     std::map<PSRAMString, std::pair<httpd_method_t, HttpRequestHandler>> http_handlers_;
     std::map<PSRAMString, WebSocketMessageHandler> ws_handlers_;
     WebSocketMessageCallback legacy_ws_callback_;
+    bool is_initialized_;
 };
 
 #endif // WEB_SERVER_H 

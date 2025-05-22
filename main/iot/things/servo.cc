@@ -7,10 +7,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <freertos/timers.h>
-#include <driver/mcpwm_timer.h>
-#include <driver/mcpwm_oper.h>
-#include <driver/mcpwm_cmpr.h>
-#include <driver/mcpwm_gen.h>
+#include <driver/ledc.h>
 #include <algorithm>
 #include <vector>
 #include "sdkconfig.h"
@@ -31,7 +28,7 @@
 #endif
 
 #define SERVO_FREQUENCY_HZ 50           // 舵机控制频率 (Hz)
-#define SERVO_TIMER_RESOLUTION_HZ 10000000  // 10MHz, MCPWM计时器分辨率
+#define SERVO_TIMER_RESOLUTION_BITS 13  // LEDC计时器分辨率，13位(0-8191)
 #define SERVO_MIN_ANGLE 0               // 最小角度
 #define SERVO_MAX_ANGLE 180             // 最大角度
 #define SERVO_DEFAULT_ANGLE 90          // 默认角度
@@ -51,10 +48,8 @@ namespace iot {
 class Servo {
 private:
     int pin_;                       // 舵机信号引脚
-    mcpwm_timer_handle_t timer_;    // MCPWM计时器句柄
-    mcpwm_oper_handle_t oper_;      // MCPWM操作器句柄
-    mcpwm_cmpr_handle_t comparator_;// MCPWM比较器句柄
-    mcpwm_gen_handle_t generator_;  // MCPWM生成器句柄
+    ledc_channel_t channel_;        // LEDC通道
+    ledc_timer_t timer_;            // LEDC计时器
     int current_angle_;             // 当前角度
     int min_angle_;                 // 最小角度
     int max_angle_;                 // 最大角度
@@ -65,13 +60,24 @@ private:
     bool continuous_clockwise_;     // 连续模式下是否顺时针
     TimerHandle_t sweep_timer_;     // 扫描定时器
 
-    // 将角度转换为脉冲宽度(微秒)
-    uint32_t angle_to_pulse_width(int angle) {
+    // 将角度转换为占空比
+    uint32_t angle_to_duty(int angle) {
         // 限制角度范围
         angle = std::min(std::max(angle, min_angle_), max_angle_);
         
-        // 将角度映射到脉冲宽度 0-180° => 500-2500μs
-        return SERVO_MIN_PULSE_WIDTH_US + ((SERVO_MAX_PULSE_WIDTH_US - SERVO_MIN_PULSE_WIDTH_US) * angle) / SERVO_MAX_ANGLE;
+        // 计算脉冲宽度 (微秒)
+        uint32_t pulse_width_us = SERVO_MIN_PULSE_WIDTH_US + 
+            ((SERVO_MAX_PULSE_WIDTH_US - SERVO_MIN_PULSE_WIDTH_US) * angle) / SERVO_MAX_ANGLE;
+        
+        // 将脉冲宽度转换为LEDC占空比
+        // LEDC最大值 = (2^SERVO_TIMER_RESOLUTION_BITS) - 1
+        uint32_t max_duty = (1 << SERVO_TIMER_RESOLUTION_BITS) - 1;
+        
+        // 计算占空比: pulse_width / period
+        // period = 1000000 / SERVO_FREQUENCY_HZ (微秒)
+        uint32_t duty = (pulse_width_us * max_duty) / (1000000 / SERVO_FREQUENCY_HZ);
+        
+        return duty;
     }
     
     // 定时器回调函数
@@ -114,10 +120,8 @@ private:
 public:
     Servo() :
         pin_(-1),
-        timer_(nullptr),
-        oper_(nullptr),
-        comparator_(nullptr),
-        generator_(nullptr),
+        channel_(LEDC_CHANNEL_0),   // 默认通道
+        timer_(LEDC_TIMER_0),       // 默认定时器
         current_angle_(SERVO_DEFAULT_ANGLE),
         min_angle_(SERVO_MIN_ANGLE),
         max_angle_(SERVO_MAX_ANGLE),
@@ -142,97 +146,50 @@ public:
         
         pin_ = pin;
         
-        // 1. 创建定时器
-        mcpwm_timer_config_t timer_config = {
-            .group_id = group,
-            .clk_src = MCPWM_TIMER_CLK_SRC_DEFAULT,
-            .resolution_hz = SERVO_TIMER_RESOLUTION_HZ,
-            .count_mode = MCPWM_TIMER_COUNT_MODE_UP,
-            .period_ticks = SERVO_TIMER_RESOLUTION_HZ / SERVO_FREQUENCY_HZ, // 20ms周期
+        // 根据组号设置通道和定时器
+        // 每个定时器可以控制多个通道，我们使用相同的定时器设置不同的通道
+        channel_ = (ledc_channel_t)(LEDC_CHANNEL_0 + (group % LEDC_CHANNEL_MAX));
+        timer_ = (ledc_timer_t)(LEDC_TIMER_0 + (group / LEDC_CHANNEL_MAX) % LEDC_TIMER_MAX);
+        
+        ESP_LOGI(TAG, "Initializing servo on pin %d, channel %d, timer %d", 
+                pin, channel_, timer_);
+        
+        // 1. 配置定时器
+        ledc_timer_config_t timer_conf = {
+            .speed_mode = LEDC_LOW_SPEED_MODE,
+            .duty_resolution = (ledc_timer_bit_t)SERVO_TIMER_RESOLUTION_BITS,
+            .timer_num = timer_,
+            .freq_hz = SERVO_FREQUENCY_HZ,
+            .clk_cfg = LEDC_AUTO_CLK
         };
         
-        esp_err_t err = mcpwm_new_timer(&timer_config, &timer_);
+        esp_err_t err = ledc_timer_config(&timer_conf);
         if (err != ESP_OK) {
-            ESP_LOGE(TAG, "Create MCPWM timer failed: %s", esp_err_to_name(err));
+            ESP_LOGE(TAG, "LEDC timer config failed: %s", esp_err_to_name(err));
             return false;
         }
         
-        // 2. 创建运算器
-        mcpwm_operator_config_t operator_config = {
-            .group_id = group,
-        };
-        
-        err = mcpwm_new_operator(&operator_config, &oper_);
-        if (err != ESP_OK) {
-            ESP_LOGE(TAG, "Create MCPWM operator failed: %s", esp_err_to_name(err));
-            return false;
-        }
-        
-        // 3. 连接定时器和运算器
-        err = mcpwm_operator_connect_timer(oper_, timer_);
-        if (err != ESP_OK) {
-            ESP_LOGE(TAG, "Connect MCPWM timer and operator failed: %s", esp_err_to_name(err));
-            return false;
-        }
-        
-        // 4. 创建比较器
-        mcpwm_comparator_config_t comparator_config = {
+        // 2. 配置通道
+        ledc_channel_config_t ledc_conf = {
+            .gpio_num = pin,
+            .speed_mode = LEDC_LOW_SPEED_MODE,
+            .channel = channel_,
+            .intr_type = LEDC_INTR_DISABLE,
+            .timer_sel = timer_,
+            .duty = 0,
+            .hpoint = 0,
             .flags = {
-                .update_cmp_on_tez = true,
-            },
+                .output_invert = 0
+            }
         };
         
-        err = mcpwm_new_comparator(oper_, &comparator_config, &comparator_);
+        err = ledc_channel_config(&ledc_conf);
         if (err != ESP_OK) {
-            ESP_LOGE(TAG, "Create MCPWM comparator failed: %s", esp_err_to_name(err));
+            ESP_LOGE(TAG, "LEDC channel config failed: %s", esp_err_to_name(err));
             return false;
         }
         
-        // 5. 创建生成器 (管脚输出)
-        mcpwm_generator_config_t generator_config = {
-            .gen_gpio_num = pin_,
-        };
-        
-        err = mcpwm_new_generator(oper_, &generator_config, &generator_);
-        if (err != ESP_OK) {
-            ESP_LOGE(TAG, "Create MCPWM generator failed: %s", esp_err_to_name(err));
-            return false;
-        }
-        
-        // 6. 设置生成器操作 - 使用脉冲模式控制舵机
-        // 在计数器开始时设置高电平，在比较匹配时设置低电平
-        err = mcpwm_generator_set_actions_on_timer_event(
-            generator_,
-            MCPWM_GEN_TIMER_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, MCPWM_TIMER_EVENT_EMPTY, MCPWM_GEN_ACTION_HIGH),
-            MCPWM_GEN_TIMER_EVENT_ACTION_END());
-        if (err != ESP_OK) {
-            ESP_LOGE(TAG, "Set timer event actions failed: %s", esp_err_to_name(err));
-            return false;
-        }
-        
-        err = mcpwm_generator_set_actions_on_compare_event(
-            generator_,
-            MCPWM_GEN_COMPARE_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, comparator_, MCPWM_GEN_ACTION_LOW),
-            MCPWM_GEN_COMPARE_EVENT_ACTION_END());
-        if (err != ESP_OK) {
-            ESP_LOGE(TAG, "Set compare event actions failed: %s", esp_err_to_name(err));
-            return false;
-        }
-        
-        // 7. 启动定时器
-        err = mcpwm_timer_enable(timer_);
-        if (err != ESP_OK) {
-            ESP_LOGE(TAG, "Enable MCPWM timer failed: %s", esp_err_to_name(err));
-            return false;
-        }
-        
-        err = mcpwm_timer_start_stop(timer_, MCPWM_TIMER_START_NO_STOP);
-        if (err != ESP_OK) {
-            ESP_LOGE(TAG, "Start MCPWM timer failed: %s", esp_err_to_name(err));
-            return false;
-        }
-        
-        // 创建定时器
+        // 创建定时器用于舵机扫描模式
         sweep_timer_ = xTimerCreate(
             "servo_sweep_timer",
             pdMS_TO_TICKS(sweep_delay_),
@@ -267,20 +224,8 @@ public:
             sweep_timer_ = nullptr;
         }
         
-        // 停止MCPWM
-        if (timer_) {
-            mcpwm_timer_disable(timer_);
-            mcpwm_timer_start_stop(timer_, MCPWM_TIMER_STOP_EMPTY);
-            mcpwm_del_generator(generator_);
-            mcpwm_del_comparator(comparator_);
-            mcpwm_del_operator(oper_);
-            mcpwm_del_timer(timer_);
-            
-            generator_ = nullptr;
-            comparator_ = nullptr;
-            oper_ = nullptr;
-            timer_ = nullptr;
-        }
+        // 停止LEDC输出
+        ledc_stop(LEDC_LOW_SPEED_MODE, channel_, 0);
         
         is_initialized_ = false;
         ESP_LOGI(TAG, "Servo deinitialized");
@@ -297,18 +242,24 @@ public:
         
         current_angle_ = angle;
         
-        // 计算脉冲宽度
-        uint32_t pulse_width_us = angle_to_pulse_width(angle);
-        uint32_t compare_ticks = (pulse_width_us * SERVO_TIMER_RESOLUTION_HZ) / 1000000;
+        // 计算占空比
+        uint32_t duty = angle_to_duty(angle);
         
         // 设置PWM占空比
-        esp_err_t err = mcpwm_comparator_set_compare_value(comparator_, compare_ticks);
+        esp_err_t err = ledc_set_duty(LEDC_LOW_SPEED_MODE, channel_, duty);
         if (err != ESP_OK) {
-            ESP_LOGE(TAG, "Set compare value failed: %s", esp_err_to_name(err));
+            ESP_LOGE(TAG, "Set duty failed: %s", esp_err_to_name(err));
             return false;
         }
         
-        ESP_LOGD(TAG, "Servo set to %d degrees (pulse width: %" PRIu32 " us)", angle, pulse_width_us);
+        // 更新占空比
+        err = ledc_update_duty(LEDC_LOW_SPEED_MODE, channel_);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "Update duty failed: %s", esp_err_to_name(err));
+            return false;
+        }
+        
+        ESP_LOGD(TAG, "Servo set to %d degrees (duty: %" PRIu32 ")", angle, duty);
         return true;
     }
     

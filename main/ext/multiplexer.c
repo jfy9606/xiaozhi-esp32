@@ -18,8 +18,7 @@
 #include <inttypes.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "driver/i2c.h"
-#include "driver/i2c_master.h"  // Add this include for new I2C master API
+#include "driver/i2c_master.h"
 #include "driver/gpio.h"
 #include "esp_log.h"
 #include "esp_adc/adc_oneshot.h"
@@ -47,9 +46,9 @@ static const char *TAG = "multiplexer";
 #ifdef CONFIG_ENABLE_PCA9548A
 static pca9548a_handle_t pca9548a_handle = NULL;
 static bool using_external_bus = false; // 标记是否使用外部总线
-// 添加I2C总线和设备句柄
-static i2c_master_bus_handle_t i2c_bus_handle = NULL;
-static i2c_master_dev_handle_t i2c_dev_handle = NULL;
+// 修改为全局变量，移除 static 关键字，使之对其他文件可见
+i2c_master_bus_handle_t i2c_bus_handle = NULL;
+i2c_master_dev_handle_t i2c_dev_handle = NULL;
 // 默认I2C端口，可通过函数参数修改
 static int default_i2c_port = DEFAULT_MULTIPLEXER_I2C_PORT;
 #endif
@@ -198,7 +197,7 @@ esp_err_t pca9548a_init(int i2c_port)
             i2c_dev_handle = NULL;
         }
             if (i2c_bus_handle != NULL) {
-                i2c_del_master_bus(i2c_bus_handle);
+            i2c_del_master_bus(i2c_bus_handle);
             i2c_bus_handle = NULL;
             }
         }
@@ -500,7 +499,7 @@ void multiplexer_deinit(void)
         i2c_dev_handle = NULL;
     }
         if (i2c_bus_handle != NULL) {
-            i2c_del_master_bus(i2c_bus_handle);
+        i2c_del_master_bus(i2c_bus_handle);
     i2c_bus_handle = NULL;
         }
     }

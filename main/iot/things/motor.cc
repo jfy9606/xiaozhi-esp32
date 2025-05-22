@@ -152,10 +152,7 @@ private:
         ESP_LOGI(TAG, "Initializing LEDC for motor control - Timer:%d, Channels:%d,%d",
                  MOTOR_LEDC_TIMER, MOTOR_LEDC_CHANNEL_A, MOTOR_LEDC_CHANNEL_B);
         
-        // 先尝试停止可能已经在运行的LEDC服务
-        ledc_stop(MOTOR_LEDC_MODE, MOTOR_LEDC_CHANNEL_A, 0);
-        ledc_stop(MOTOR_LEDC_MODE, MOTOR_LEDC_CHANNEL_B, 0);
-        
+        // 直接进行LEDC配置，不预先调用ledc_stop
         // 配置LEDC定时器
         ledc_timer_config_t ledc_timer = {
             .speed_mode = MOTOR_LEDC_MODE,

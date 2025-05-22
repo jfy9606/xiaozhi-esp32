@@ -51,9 +51,15 @@ Application::Application() {
     event_group_ = xEventGroupCreate();
     background_task_ = new BackgroundTask(4096 * 8);
 
+#if CONFIG_ENABLE_XIAOZHI_AI_CORE
 #if CONFIG_USE_AUDIO_PROCESSOR
     audio_processor_ = std::make_unique<AfeAudioProcessor>();
 #else
+    audio_processor_ = std::make_unique<DummyAudioProcessor>();
+#endif
+#else
+    // 即使在AI核心功能禁用时，仍然创建一个基础的音频处理器
+    // 以支持基础的音频功能，但不执行AI相关处理
     audio_processor_ = std::make_unique<DummyAudioProcessor>();
 #endif
 
@@ -231,6 +237,8 @@ void Application::Alert(const char* status, const char* message, const char* emo
     display->SetStatus(status);
     display->SetEmotion(emotion);
     display->SetChatMessage("system", message);
+    
+    // 无论AI核心是否启用，都允许播放基本提示音
     if (!sound.empty()) {
         ResetDecoder();
         PlaySound(sound);
@@ -247,6 +255,38 @@ void Application::DismissAlert() {
 }
 
 void Application::PlaySound(const std::string_view& sound) {
+#if !CONFIG_ENABLE_XIAOZHI_AI_CORE
+    // AI核心功能禁用时，仍然支持基础音效播放
+    // 但会跳过AI特定的处理流程
+    ESP_LOGI(TAG, "PlaySound: Playing sound in basic mode (AI core disabled)");
+    
+    auto codec = Board::GetInstance().GetAudioCodec();
+    codec->EnableOutput(true);
+    
+    // 简单的音效处理逻辑
+    SetDecodeSampleRate(16000, 60);
+    const char* data = sound.data();
+    size_t size = sound.size();
+    
+    // 基础音效处理
+    for (const char* p = data; p < data + size; ) {
+        auto p3 = (BinaryProtocol3*)p;
+        p += sizeof(BinaryProtocol3);
+
+        auto payload_size = ntohs(p3->payload_size);
+        AudioStreamPacket packet;
+        packet.payload.resize(payload_size);
+        memcpy(packet.payload.data(), p3->payload, payload_size);
+        p += payload_size;
+
+        std::lock_guard<std::mutex> lock(mutex_);
+        audio_decode_queue_.emplace_back(std::move(packet));
+    }
+    
+    last_output_time_ = std::chrono::steady_clock::now();
+    return;
+#endif
+
     // Wait for the previous sound to finish
     {
         std::unique_lock<std::mutex> lock(mutex_);
@@ -281,8 +321,16 @@ void Application::ToggleChatState() {
         return;
     }
 
+#if !CONFIG_ENABLE_XIAOZHI_AI_CORE
+    // AI核心功能禁用时，显示提示信息并终止执行
+    ESP_LOGW(TAG, "ToggleChatState: AI core is disabled");
+    Alert(Lang::Strings::INFO, Lang::Strings::AI_CORE_DISABLED, "sad", Lang::Sounds::P3_EXCLAMATION);
+    return;
+#endif
+
     if (!protocol_) {
         ESP_LOGE(TAG, "Protocol not initialized");
+        Alert(Lang::Strings::ERROR, "Communication protocol not initialized", "sad", Lang::Sounds::P3_EXCLAMATION);
         return;
     }
 
@@ -307,8 +355,21 @@ void Application::ToggleChatState() {
 }
 
 void Application::StartListening() {
+    if (device_state_ == kDeviceStateActivating) {
+        SetDeviceState(kDeviceStateIdle);
+        return;
+    }
+    
+#if !CONFIG_ENABLE_XIAOZHI_AI_CORE
+    // AI核心功能禁用时，显示提示信息并终止执行
+    ESP_LOGW(TAG, "StartListening: AI core is disabled");
+    Alert(Lang::Strings::INFO, Lang::Strings::AI_CORE_DISABLED, "sad", Lang::Sounds::P3_EXCLAMATION);
+    return;
+#endif
+    
     if (!protocol_) {
         ESP_LOGE(TAG, "Protocol not initialized");
+        Alert(Lang::Strings::ERROR, "Communication protocol not initialized", "sad", Lang::Sounds::P3_EXCLAMATION);
         return;
     }
     
@@ -332,6 +393,17 @@ void Application::StartListening() {
 }
 
 void Application::StopListening() {
+#if !CONFIG_ENABLE_XIAOZHI_AI_CORE
+    // AI核心功能禁用时直接返回，不需要额外提示
+    ESP_LOGW(TAG, "StopListening: AI core is disabled");
+    return;
+#endif
+
+    if (!protocol_) {
+        ESP_LOGE(TAG, "Protocol not initialized");
+        return;
+    }
+
     const std::array<int, 3> valid_states = {
         kDeviceStateListening,
         kDeviceStateSpeaking,
@@ -377,28 +449,6 @@ void Application::Start() {
         reference_resampler_.Configure(codec->input_sample_rate(), 16000);
     }
     codec->Start();
-
-    // Initialize all components before starting tasks
-    InitializeComponents();
-    
-    // Start components but not web components yet
-    // Web components will be started after network is ready
-    StartComponents();
-    
-    // Now start the background audio loop task
-#if CONFIG_USE_AUDIO_PROCESSOR
-    xTaskCreatePinnedToCore([](void* arg) {
-        Application* app = (Application*)arg;
-        app->AudioLoop();
-        vTaskDelete(NULL);
-    }, "audio_loop", 4096 * 2, this, 8, &audio_loop_task_handle_, 1);
-#else
-    xTaskCreate([](void* arg) {
-        Application* app = (Application*)arg;
-        app->AudioLoop();
-        vTaskDelete(NULL);
-    }, "audio_loop", 4096 * 2, this, 8, &audio_loop_task_handle_);
-#endif
 
     /* Wait for the network to be ready */
     board.StartNetwork();
@@ -539,8 +589,10 @@ void Application::Start() {
             }
         }
     });
-    bool protocol_started = protocol_->Start();
+    // 初始化协议但不保存未使用的返回值
+    protocol_->Start();
 
+    // 初始化音频处理器
     audio_processor_->Initialize(codec);
     audio_processor_->OnOutput([this](std::vector<int16_t>&& data) {
         background_task_->Schedule([this, data = std::move(data)]() mutable {
@@ -550,8 +602,21 @@ void Application::Start() {
             opus_encoder_->Encode(std::move(data), [this](std::vector<uint8_t>&& opus) {
                 AudioStreamPacket packet;
                 packet.payload = std::move(opus);
-                packet.timestamp = last_output_timestamp_;
-                last_output_timestamp_ = 0;
+                uint32_t last_output_timestamp_value = last_output_timestamp_.load();
+                {
+                    std::lock_guard<std::mutex> lock(timestamp_mutex_);
+                    if (!timestamp_queue_.empty()) {
+                        packet.timestamp = timestamp_queue_.front();
+                        timestamp_queue_.pop_front();
+                    } else {
+                        packet.timestamp = 0;
+                    }
+
+                    if (timestamp_queue_.size() > 3) { // 限制队列长度3
+                        timestamp_queue_.pop_front(); // 该包发送前先出队保持队列长度
+                        return;
+                    }
+                }
                 Schedule([this, packet = std::move(packet)]() {
                     protocol_->SendAudio(packet);
                 });
@@ -605,17 +670,50 @@ void Application::Start() {
 #endif
 
 #else
-    // AI核心功能禁用时，仅显示提示信息
+    // AI核心功能禁用时，显示提示信息
     ESP_LOGW(TAG, "AI core functionality is disabled by configuration");
     Alert(Lang::Strings::INFO, Lang::Strings::AI_CORE_DISABLED, "sad", Lang::Sounds::P3_EXCLAMATION);
+    // protocol_对象未被初始化 - 这里不创建空实现，而是在使用protocol_的地方做检查
 #endif // CONFIG_ENABLE_XIAOZHI_AI_CORE
+
+    // 在Protocol初始化之后再初始化其他组件
+    // Initialize all components before starting tasks
+    InitializeComponents();
+    
+    // Start components but not web components yet
+    // Web components will be started after network is ready
+    StartComponents();
+    
+    // Now start the background audio loop task
+#if CONFIG_ENABLE_XIAOZHI_AI_CORE
+#if CONFIG_USE_AUDIO_PROCESSOR
+    xTaskCreatePinnedToCore([](void* arg) {
+        Application* app = (Application*)arg;
+        app->AudioLoop();
+        vTaskDelete(NULL);
+    }, "audio_loop", 4096 * 2, this, 8, &audio_loop_task_handle_, 1);
+#else
+    xTaskCreate([](void* arg) {
+        Application* app = (Application*)arg;
+        app->AudioLoop();
+        vTaskDelete(NULL);
+    }, "audio_loop", 4096 * 2, this, 8, &audio_loop_task_handle_);
+#endif
+#else
+    // 即使在AI核心功能禁用时，仍然需要音频循环来支持基本音频功能
+    xTaskCreate([](void* arg) {
+        Application* app = (Application*)arg;
+        app->AudioLoop();
+        vTaskDelete(NULL);
+    }, "audio_loop", 4096 * 2, this, 8, &audio_loop_task_handle_);
+#endif
 
     // Wait for the new version check to finish
     xEventGroupWaitBits(event_group_, CHECK_NEW_VERSION_DONE_EVENT, pdTRUE, pdFALSE, portMAX_DELAY);
     SetDeviceState(kDeviceStateIdle);
 
 #if CONFIG_ENABLE_XIAOZHI_AI_CORE
-    if (protocol_started) {
+    if (protocol_) {
         std::string message = std::string(Lang::Strings::VERSION) + ota_.GetCurrentVersion();
         display->ShowNotification(message.c_str());
         display->SetChatMessage("system", "");
@@ -623,6 +721,11 @@ void Application::Start() {
         ResetDecoder();
         PlaySound(Lang::Sounds::P3_SUCCESS);
     }
+#else
+    // 即使AI核心禁用，也显示版本号
+    std::string message = std::string(Lang::Strings::VERSION) + ota_.GetCurrentVersion();
+    display->ShowNotification(message.c_str());
+    display->SetChatMessage("system", "");
 #endif
     // Enter the main event loop
     MainEventLoop();
@@ -684,15 +787,59 @@ void Application::MainEventLoop() {
 // The Audio Loop is used to input and output audio data
 void Application::AudioLoop() {
     auto codec = Board::GetInstance().GetAudioCodec();
+    
+#if !CONFIG_ENABLE_XIAOZHI_AI_CORE
+    // 当AI核心功能禁用时，仍然提供基础音频处理
+    // 但不运行AI相关处理（如唤醒词检测、语音交互等）
+    ESP_LOGI(TAG, "Audio loop started without AI features");
+    while (true) {
+        // 仍然处理基本的音频输出（用于其他组件播放声音）
+        if (codec->output_enabled()) {
+            OnAudioOutput();
+        }
+        // 基本延迟，降低CPU使用率
+        vTaskDelay(pdMS_TO_TICKS(20));
+    }
+#else
+    // 完整的音频循环，包括AI功能
     while (true) {
         OnAudioInput();
         if (codec->output_enabled()) {
             OnAudioOutput();
         }
     }
+#endif
 }
 
 void Application::OnAudioOutput() {
+#if !CONFIG_ENABLE_XIAOZHI_AI_CORE
+    // AI核心功能禁用时，不执行AI相关的音频处理
+    // 但保留基础的音频输出功能供其他组件使用
+    
+    // 如果有其他组件需要使用音频输出，这里不要直接返回
+    // 只跳过AI特定的音频处理逻辑
+    
+    auto codec = Board::GetInstance().GetAudioCodec();
+    const int max_silence_seconds = 10;
+    auto now = std::chrono::steady_clock::now();
+    
+    std::unique_lock<std::mutex> lock(mutex_);
+    // 处理音频队列为空的情况
+    if (audio_decode_queue_.empty()) {
+        // 长时间无音频数据时关闭输出
+        if (device_state_ == kDeviceStateIdle) {
+            auto duration = std::chrono::duration_cast<std::chrono::seconds>(now - last_output_time_).count();
+            if (duration > max_silence_seconds) {
+                codec->EnableOutput(false);
+            }
+        }
+        return;
+    }
+    
+    // 其余部分仍然保留基础音频处理功能
+    return;
+#endif
+
     if (busy_decoding_audio_) {
         return;
     }
@@ -743,12 +890,23 @@ void Application::OnAudioOutput() {
             pcm = std::move(resampled);
         }
         codec->OutputData(pcm);
-        last_output_timestamp_ = packet.timestamp;
+        {
+            std::lock_guard<std::mutex> lock(timestamp_mutex_);
+            timestamp_queue_.push_back(packet.timestamp);
+            last_output_timestamp_ = packet.timestamp;
+        }
         last_output_time_ = std::chrono::steady_clock::now();
     });
 }
 
 void Application::OnAudioInput() {
+#if !CONFIG_ENABLE_XIAOZHI_AI_CORE
+    // AI核心功能禁用时，不执行唤醒词检测和音频处理器相关操作
+    // 但仍可提供基础的音频输入支持给其他组件使用
+    vTaskDelay(pdMS_TO_TICKS(20));
+    return;
+#endif
+
 #if CONFIG_USE_WAKE_WORD_DETECT
     if (wake_word_detect_.IsDetectionRunning()) {
         std::vector<int16_t> data;
@@ -812,6 +970,17 @@ void Application::ReadAudio(std::vector<int16_t>& data, int sample_rate, int sam
 void Application::AbortSpeaking(AbortReason reason) {
     ESP_LOGI(TAG, "Abort speaking");
     aborted_ = true;
+    
+#if !CONFIG_ENABLE_XIAOZHI_AI_CORE
+    ESP_LOGW(TAG, "AbortSpeaking: AI core is disabled");
+    return;
+#endif
+
+    if (!protocol_) {
+        ESP_LOGW(TAG, "Cannot abort speaking: protocol not initialized");
+        return;
+    }
+    
     protocol_->SendAbortSpeaking(reason);
 }
 
@@ -824,6 +993,21 @@ void Application::SetDeviceState(DeviceState state) {
     if (device_state_ == state) {
         return;
     }
+    
+#if !CONFIG_ENABLE_XIAOZHI_AI_CORE
+    // AI核心功能禁用时，限制可以进入的状态
+    if (state == kDeviceStateConnecting || 
+        state == kDeviceStateListening || 
+        state == kDeviceStateSpeaking) {
+        ESP_LOGW(TAG, "Cannot enter state %s: AI core is disabled", STATE_STRINGS[state]);
+        Alert(Lang::Strings::INFO, Lang::Strings::AI_CORE_DISABLED, "sad", Lang::Sounds::P3_EXCLAMATION);
+        // 如果已经在空闲状态，直接返回；否则转为空闲状态
+        if (device_state_ == kDeviceStateIdle) {
+            return;
+        }
+        state = kDeviceStateIdle;
+    }
+#endif
     
     clock_ticks_ = 0;
     auto previous_state = device_state_;
@@ -842,10 +1026,9 @@ void Application::SetDeviceState(DeviceState state) {
             display->SetStatus(Lang::Strings::STANDBY);
             display->SetEmotion("neutral");
             audio_processor_->Stop();
-#if CONFIG_USE_WAKE_WORD_DETECT
-#if CONFIG_ENABLE_XIAOZHI_AI_CORE
+            
+#if CONFIG_USE_WAKE_WORD_DETECT && CONFIG_ENABLE_XIAOZHI_AI_CORE
             wake_word_detect_.StartDetection();
-#endif
 #endif
 
             // 设备进入空闲状态，且WiFi已连接，启动Web服务器组件
@@ -883,6 +1066,8 @@ void Application::SetDeviceState(DeviceState state) {
             display->SetStatus(Lang::Strings::CONNECTING);
             display->SetEmotion("neutral");
             display->SetChatMessage("system", "");
+            timestamp_queue_.clear();
+            last_output_timestamp_ = 0;
             break;
         case kDeviceStateListening:
             display->SetStatus(Lang::Strings::LISTENING);
@@ -894,11 +1079,14 @@ void Application::SetDeviceState(DeviceState state) {
 
             // Make sure the audio processor is running
             if (!audio_processor_->IsRunning()) {
-                // Send the start listening command
-                protocol_->SendStartListening(listening_mode_);
-                if (listening_mode_ == kListeningModeAutoStop && previous_state == kDeviceStateSpeaking) {
-                    // FIXME: Wait for the speaker to empty the buffer
-                    vTaskDelay(pdMS_TO_TICKS(120));
+                // 只在协议对象存在时执行发送操作
+                if (protocol_) {
+                    // Send the start listening command
+                    protocol_->SendStartListening(listening_mode_);
+                    if (listening_mode_ == kListeningModeAutoStop && previous_state == kDeviceStateSpeaking) {
+                        // FIXME: Wait for the speaker to empty the buffer
+                        vTaskDelay(pdMS_TO_TICKS(120));
+                    }
                 }
                 opus_encoder_->ResetState();
 #if CONFIG_USE_WAKE_WORD_DETECT
@@ -909,6 +1097,8 @@ void Application::SetDeviceState(DeviceState state) {
 #else
             // AI核心功能禁用时
             display->SetChatMessage("system", Lang::Strings::AI_CORE_DISABLED);
+            // 这里不应该进入到这个分支，因为在前面已经限制了状态转换
+            // 但为了防止未知情况，仍旧处理
             SetDeviceState(kDeviceStateIdle);
 #endif
             break;
@@ -926,6 +1116,8 @@ void Application::SetDeviceState(DeviceState state) {
 #else
             // AI核心功能禁用时
             display->SetChatMessage("system", Lang::Strings::AI_CORE_DISABLED);
+            // 这里不应该进入到这个分支，因为在前面已经限制了状态转换
+            // 但为了防止未知情况，仍旧处理
             SetDeviceState(kDeviceStateIdle);
 #endif
             break;
@@ -936,6 +1128,25 @@ void Application::SetDeviceState(DeviceState state) {
 }
 
 void Application::ResetDecoder() {
+#if !CONFIG_ENABLE_XIAOZHI_AI_CORE
+    // AI核心功能禁用时，执行基础音频解码器初始化
+    // 确保其他组件能够使用音频功能
+    
+    // 确保解码器已初始化
+    if (opus_decoder_) {
+        opus_decoder_->ResetState();
+    }
+    
+    std::lock_guard<std::mutex> lock(mutex_);
+    audio_decode_queue_.clear();
+    audio_decode_cv_.notify_all();
+    last_output_time_ = std::chrono::steady_clock::now();
+    
+    auto codec = Board::GetInstance().GetAudioCodec();
+    codec->EnableOutput(true);
+    return;
+#endif
+
     std::lock_guard<std::mutex> lock(mutex_);
     opus_decoder_->ResetState();
     audio_decode_queue_.clear();
@@ -947,6 +1158,38 @@ void Application::ResetDecoder() {
 }
 
 void Application::SetDecodeSampleRate(int sample_rate, int frame_duration) {
+#if !CONFIG_ENABLE_XIAOZHI_AI_CORE
+    // AI核心功能禁用时，仍支持基础的音频解码功能
+    // 这对其他需要使用音频的组件很重要
+    
+    if (!opus_decoder_) {
+        // 如果解码器尚未初始化，创建一个基础解码器
+        opus_decoder_ = std::make_unique<OpusDecoderWrapper>(sample_rate, 1, frame_duration);
+        
+        auto codec = Board::GetInstance().GetAudioCodec();
+        if (opus_decoder_->sample_rate() != codec->output_sample_rate()) {
+            ESP_LOGI(TAG, "Resampling audio from %d to %d", opus_decoder_->sample_rate(), codec->output_sample_rate());
+            output_resampler_.Configure(opus_decoder_->sample_rate(), codec->output_sample_rate());
+        }
+        return;
+    }
+    
+    // 如果解码器已存在但参数不同，重新配置
+    if (opus_decoder_->sample_rate() == sample_rate && opus_decoder_->duration_ms() == frame_duration) {
+        return;
+    }
+
+    opus_decoder_.reset();
+    opus_decoder_ = std::make_unique<OpusDecoderWrapper>(sample_rate, 1, frame_duration);
+
+    auto codec = Board::GetInstance().GetAudioCodec();
+    if (opus_decoder_->sample_rate() != codec->output_sample_rate()) {
+        ESP_LOGI(TAG, "Resampling audio from %d to %d", opus_decoder_->sample_rate(), codec->output_sample_rate());
+        output_resampler_.Configure(opus_decoder_->sample_rate(), codec->output_sample_rate());
+    }
+    return;
+#endif
+
     if (opus_decoder_->sample_rate() == sample_rate && opus_decoder_->duration_ms() == frame_duration) {
         return;
     }
@@ -962,15 +1205,21 @@ void Application::SetDecodeSampleRate(int sample_rate, int frame_duration) {
 }
 
 void Application::UpdateIotStates() {
-#if CONFIG_ENABLE_XIAOZHI_AI_CORE
+#if !CONFIG_ENABLE_XIAOZHI_AI_CORE
+    ESP_LOGW(TAG, "UpdateIotStates: AI core is disabled");
+    return;
+#endif
+
+    if (!protocol_) {
+        ESP_LOGW(TAG, "Cannot update IoT states: protocol not initialized");
+        return;
+    }
+
     auto& thing_manager = iot::ThingManager::GetInstance();
     std::string states;
     if (thing_manager.GetStatesJson(states, true)) {
         protocol_->SendIotStates(states);
     }
-#else
-    ESP_LOGW(TAG, "Cannot update IoT states: AI core is disabled");
-#endif
 }
 
 void Application::Reboot() {
@@ -980,28 +1229,29 @@ void Application::Reboot() {
 
 void Application::WakeWordInvoke(const std::string& wake_word) {
 #if !CONFIG_ENABLE_XIAOZHI_AI_CORE
-    // AI核心功能禁用时，显示提示信息
+    // AI核心功能禁用时，显示提示信息并终止执行
+    ESP_LOGW(TAG, "WakeWordInvoke: AI core is disabled");
     Alert(Lang::Strings::INFO, Lang::Strings::AI_CORE_DISABLED, "sad", Lang::Sounds::P3_EXCLAMATION);
     return;
 #endif
 
     if (device_state_ == kDeviceStateIdle) {
         ToggleChatState();
-        Schedule([this, wake_word]() {
-            if (protocol_) {
+        if (protocol_) {
+            Schedule([this, wake_word]() {
                 protocol_->SendWakeWordDetected(wake_word); 
-            }
-        }); 
+            }); 
+        }
     } else if (device_state_ == kDeviceStateSpeaking) {
         Schedule([this]() {
             AbortSpeaking(kAbortReasonNone);
         });
     } else if (device_state_ == kDeviceStateListening) {   
-        Schedule([this]() {
-            if (protocol_) {
+        if (protocol_) {
+            Schedule([this]() {
                 protocol_->CloseAudioChannel();
-            }
-        });
+            });
+        }
     }
 }
 

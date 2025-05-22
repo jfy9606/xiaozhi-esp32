@@ -18,16 +18,17 @@
 #include "esp_log.h"
 #include "driver/gpio.h"
 #include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include "driver/i2c.h"
 
 static const char *TAG = "pca9548a";
+
+// 外部引用 I2C 设备句柄和总线句柄，这些在 multiplexer.c 中定义和初始化
+extern i2c_master_dev_handle_t i2c_dev_handle;
+extern i2c_master_bus_handle_t i2c_bus_handle;
 
 /**
  * @brief PCA9548A device structure
  */
 struct pca9548a_dev_t {
-    i2c_port_t i2c_port;                    // I2C port
     uint16_t i2c_addr;                      // I2C device address
     uint32_t i2c_timeout_ms;                // I2C timeout in ms
     gpio_num_t reset_pin;                   // Reset pin (GPIO_NUM_NC if not used)
@@ -39,60 +40,24 @@ struct pca9548a_dev_t {
  */
 static esp_err_t pca9548a_write_control(pca9548a_handle_t handle, uint8_t value)
 {
-    if (handle == NULL) {
+    if (handle == NULL || i2c_dev_handle == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
 
-    // 使用标准I2C API发送数据
-    i2c_cmd_handle_t cmd = i2c_cmd_link_create();
-    if (cmd == NULL) {
-        ESP_LOGE(TAG, "Failed to create I2C command link");
-        return ESP_FAIL;
-    }
-
-    // 构建I2C命令序列
-    esp_err_t ret = i2c_master_start(cmd);
-    if (ret != ESP_OK) {
-        goto cleanup;
-    }
-
-    // 发送设备地址+写命令位
-    ret = i2c_master_write_byte(cmd, (handle->i2c_addr << 1) | I2C_MASTER_WRITE, true);
-    if (ret != ESP_OK) {
-        goto cleanup;
-    }
-
-    // 发送控制寄存器值
-    ret = i2c_master_write_byte(cmd, value, true);
-    if (ret != ESP_OK) {
-        goto cleanup;
-    }
-
-    ret = i2c_master_stop(cmd);
-    if (ret != ESP_OK) {
-        goto cleanup;
-    }
+    // 使用新的 I2C master API 发送数据
+    uint8_t write_buf[1] = {value};
+    esp_err_t ret = i2c_master_transmit(i2c_dev_handle, write_buf, sizeof(write_buf), handle->i2c_timeout_ms);
     
-    // 使用统一的超时计算方式
-    int timeout_ms = handle->i2c_timeout_ms;
-    if (timeout_ms <= 0) {
-        timeout_ms = 1000; // 默认1秒
-    }
-    
-    // 执行I2C传输
-    ret = i2c_master_cmd_begin(handle->i2c_port, cmd, pdMS_TO_TICKS(timeout_ms));
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "I2C write failed (0x%02X): %s", value, esp_err_to_name(ret));
-        goto cleanup;
+        return ret;
     }
 
     // 保存当前通道选择状态
     handle->current_channels = value;
     ESP_LOGD(TAG, "Selected channels: 0x%02X", value);
 
-cleanup:
-    i2c_cmd_link_delete(cmd);
-    return ret;
+    return ESP_OK;
 }
 
 /**
@@ -100,66 +65,35 @@ cleanup:
  */
 static esp_err_t pca9548a_read_control(pca9548a_handle_t handle, uint8_t *value)
 {
-    if (handle == NULL || value == NULL) {
+    if (handle == NULL || value == NULL || i2c_dev_handle == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
 
-    esp_err_t ret;
-    i2c_cmd_handle_t cmd = i2c_cmd_link_create();
-    if (cmd == NULL) {
-        ESP_LOGE(TAG, "Failed to create I2C command link");
-        return ESP_FAIL;
-    }
-
-    // 构建I2C读取命令序列
-    ret = i2c_master_start(cmd);
-    if (ret != ESP_OK) {
-        goto cleanup;
-    }
-
-    // 发送设备地址+读命令位
-    ret = i2c_master_write_byte(cmd, (handle->i2c_addr << 1) | I2C_MASTER_READ, true);
-    if (ret != ESP_OK) {
-        goto cleanup;
-    }
-
-    // 读取一个字节并发送NACK（最后一个字节）
-    ret = i2c_master_read_byte(cmd, value, I2C_MASTER_NACK);
-    if (ret != ESP_OK) {
-        goto cleanup;
-    }
-
-    ret = i2c_master_stop(cmd);
-    if (ret != ESP_OK) {
-        goto cleanup;
-    }
-
-    // 使用统一的超时计算方式
-    int timeout_ms = handle->i2c_timeout_ms;
-    if (timeout_ms <= 0) {
-        timeout_ms = 1000; // 默认1秒
-    }
+    // 使用新的 I2C master API 读取数据
+    esp_err_t ret = i2c_master_receive(i2c_dev_handle, value, 1, handle->i2c_timeout_ms);
     
-    // 执行I2C传输
-    ret = i2c_master_cmd_begin(handle->i2c_port, cmd, pdMS_TO_TICKS(timeout_ms));
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "I2C read failed: %s", esp_err_to_name(ret));
-        goto cleanup;
+        return ret;
     }
 
     // 更新当前通道选择状态缓存
     handle->current_channels = *value;
     ESP_LOGD(TAG, "Read channels: 0x%02X", *value);
 
-cleanup:
-    i2c_cmd_link_delete(cmd);
-    return ret;
+    return ESP_OK;
 }
 
 pca9548a_handle_t pca9548a_create(const pca9548a_config_t *config)
 {
     if (config == NULL) {
         ESP_LOGE(TAG, "Config is NULL");
+        return NULL;
+    }
+
+    // 检查 I2C 设备句柄是否已初始化
+    if (i2c_dev_handle == NULL) {
+        ESP_LOGE(TAG, "I2C device handle is not initialized");
         return NULL;
     }
 
@@ -171,7 +105,7 @@ pca9548a_handle_t pca9548a_create(const pca9548a_config_t *config)
     }
 
     // Copy configuration
-    handle->i2c_port = config->i2c_port;
+    // handle->i2c_port = config->i2c_port; // 不再需要，使用全局 i2c_dev_handle
     handle->i2c_addr = config->i2c_addr;
     handle->i2c_timeout_ms = config->i2c_timeout_ms > 0 ? config->i2c_timeout_ms : 1000; // Default to 1000ms
     handle->reset_pin = config->reset_pin;
@@ -248,28 +182,33 @@ esp_err_t pca9548a_reset(pca9548a_handle_t handle)
         return ESP_ERR_INVALID_ARG;
     }
 
+    // Check if reset pin is configured
     if (handle->reset_pin == GPIO_NUM_NC) {
-        ESP_LOGW(TAG, "Reset pin not configured");
-        return ESP_ERR_NOT_SUPPORTED;
+        ESP_LOGW(TAG, "Reset pin not configured, using soft reset");
+        // Soft reset by writing 0 to control register
+        return pca9548a_select_channels(handle, 0);
     }
 
-    // Reset sequence: pull reset pin low, delay, pull high
+    // Hardware reset by toggling reset pin
+    ESP_LOGD(TAG, "Performing hardware reset");
     if (gpio_set_level(handle->reset_pin, 0) != ESP_OK) {
         ESP_LOGE(TAG, "Failed to set reset pin low");
         return ESP_FAIL;
     }
 
-    // Hold low for at least 1ms (datasheet requires minimum 30ns)
-    vTaskDelay(pdMS_TO_TICKS(1));
+    // Wait for reset to take effect
+    vTaskDelay(pdMS_TO_TICKS(10));
 
     if (gpio_set_level(handle->reset_pin, 1) != ESP_OK) {
         ESP_LOGE(TAG, "Failed to set reset pin high");
         return ESP_FAIL;
     }
 
-    // Update cached channel selection
+    // Wait for device to stabilize after reset
+    vTaskDelay(pdMS_TO_TICKS(10));
+
+    // Update current channels state
     handle->current_channels = 0;
-    
-    ESP_LOGI(TAG, "PCA9548A reset via pin %d", handle->reset_pin);
+
     return ESP_OK;
 } 

@@ -2,7 +2,7 @@
 #define _BOARD_CONFIG_COMMON_H_
 
 #include <driver/gpio.h>
-#include <driver/i2c.h>
+#include <driver/i2c_master.h>
 #include "sdkconfig.h"
 
 // 板级配置结构体，用于存储板子的引脚配置
