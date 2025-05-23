@@ -83,6 +83,9 @@ static const MimeType MIME_TYPES[] = {
     {NULL, "application/octet-stream"} // 默认类型
 };
 
+// 初始化静态成员变量
+WebServer* WebServer::active_instance_ = nullptr;
+
 WebServer::WebServer() 
     : server_(nullptr), running_(false) {
     ESP_LOGI(TAG, "创建WebServer实例");
@@ -93,10 +96,16 @@ WebServer::WebServer()
         ws_clients_[i].last_activity = 0;
         ws_clients_[i].client_type = "";
     }
+    // 设置活跃实例
+    active_instance_ = this;
 }
 
 WebServer::~WebServer() {
     ESP_LOGI(TAG, "销毁WebServer实例");
+    // 如果当前实例是活跃实例，则清除引用
+    if (active_instance_ == this) {
+        active_instance_ = nullptr;
+    }
     Stop();
 }
 
@@ -618,7 +627,7 @@ esp_err_t WebServer::WebSocketHandler(httpd_req_t* req) {
     WebServer* server = static_cast<WebServer*>(req->user_ctx);
     int client_fd = httpd_req_to_sockfd(req);
     
-    // 判断请求类型 - 在ESP-IDF v5.4.1中，使用检查请求方法来确定握手
+    // 判断请求类型 - 在ESP-IDF中，使用检查请求方法来确定握手
     if (req->method == HTTP_GET) {
         // 获取客户端类型参数
         char type_buf[32] = {0};
@@ -637,7 +646,22 @@ esp_err_t WebServer::WebSocketHandler(httpd_req_t* req) {
         ESP_LOGI(TAG, "WebSocket客户端已连接: fd=%d, 类型=%s, 索引=%d", 
                 client_fd, client_type.c_str(), client_index);
                 
-        ESP_LOGI(TAG, "WebSocket握手处理");
+        ESP_LOGI(TAG, "WebSocket握手处理完成");
+        
+        // 在握手完成后立即发送一次状态更新，让客户端能快速获取初始状态
+        if (client_index >= 0) {
+            try {
+                // 获取系统状态并发送给新连接的客户端
+                PSRAMString status_json = server->GetSystemStatusJson();
+                server->SendWebSocketMessage(client_index, status_json);
+                ESP_LOGI(TAG, "WebSocket初始状态信息已发送给客户端 %d", client_index);
+            } catch (const std::exception& e) {
+                ESP_LOGW(TAG, "发送WebSocket初始状态时出现异常: %s", e.what());
+            } catch (...) {
+                ESP_LOGW(TAG, "发送WebSocket初始状态时出现未知异常");
+            }
+        }
+                
         return ESP_OK;
     }
     
@@ -658,6 +682,7 @@ esp_err_t WebServer::WebSocketHandler(httpd_req_t* req) {
         httpd_ws_frame_t pong;
         memset(&pong, 0, sizeof(httpd_ws_frame_t));
         pong.type = HTTPD_WS_TYPE_PONG;
+        ESP_LOGD(TAG, "收到PING，发送PONG");
         return httpd_ws_send_frame(req, &pong);
     }
     
@@ -665,6 +690,7 @@ esp_err_t WebServer::WebSocketHandler(httpd_req_t* req) {
         // 查找客户端索引
         for (int i = 0; i < MAX_WS_CLIENTS; i++) {
             if (server->ws_clients_[i].connected && server->ws_clients_[i].fd == client_fd) {
+                ESP_LOGI(TAG, "收到WebSocket关闭帧，关闭客户端连接 %d", i);
                 server->RemoveWebSocketClient(i);
                 break;
             }
@@ -685,37 +711,37 @@ esp_err_t WebServer::WebSocketHandler(httpd_req_t* req) {
     
     // 为数据帧分配内存
     if (ws_pkt.len > 16384) {  // 限制单个消息最大长度为16KB
-            ESP_LOGE(TAG, "WebSocket负载过大: %d字节", ws_pkt.len);
-            return ESP_ERR_NO_MEM;
-        }
+        ESP_LOGE(TAG, "WebSocket负载过大: %d字节", ws_pkt.len);
+        return ESP_ERR_NO_MEM;
+    }
         
-        // 根据配置使用PSRAM或标准内存
-        #if WEB_SERVER_USE_PSRAM
-        uint8_t* payload = (uint8_t*)WEB_SERVER_MALLOC(ws_pkt.len + 1);
-        if (!payload) {
-            ESP_LOGE(TAG, "为WebSocket负载分配PSRAM内存失败: %d字节", ws_pkt.len);
-            return ESP_ERR_NO_MEM;
-        }
-        ESP_LOGD(TAG, "使用PSRAM分配WebSocket负载: %d字节", ws_pkt.len);
-        #else
-        uint8_t* payload = (uint8_t*)WEB_SERVER_MALLOC(ws_pkt.len + 1);
-        if (!payload) {
-            ESP_LOGE(TAG, "为WebSocket负载分配内存失败: %d字节", ws_pkt.len);
-            return ESP_ERR_NO_MEM;
-        }
-        ESP_LOGD(TAG, "使用标准内存分配WebSocket负载: %d字节", ws_pkt.len);
-        #endif
+    // 根据配置使用PSRAM或标准内存
+    #if WEB_SERVER_USE_PSRAM
+    uint8_t* payload = (uint8_t*)WEB_SERVER_MALLOC(ws_pkt.len + 1);
+    if (!payload) {
+        ESP_LOGE(TAG, "为WebSocket负载分配PSRAM内存失败: %d字节", ws_pkt.len);
+        return ESP_ERR_NO_MEM;
+    }
+    ESP_LOGD(TAG, "使用PSRAM分配WebSocket负载: %d字节", ws_pkt.len);
+    #else
+    uint8_t* payload = (uint8_t*)WEB_SERVER_MALLOC(ws_pkt.len + 1);
+    if (!payload) {
+        ESP_LOGE(TAG, "为WebSocket负载分配内存失败: %d字节", ws_pkt.len);
+        return ESP_ERR_NO_MEM;
+    }
+    ESP_LOGD(TAG, "使用标准内存分配WebSocket负载: %d字节", ws_pkt.len);
+    #endif
         
     // 设置负载指针并接收完整帧
-        ws_pkt.payload = payload;
-        ret = httpd_ws_recv_frame(req, &ws_pkt, ws_pkt.len);
-        if (ret != ESP_OK) {
+    ws_pkt.payload = payload;
+    ret = httpd_ws_recv_frame(req, &ws_pkt, ws_pkt.len);
+    if (ret != ESP_OK) {
         WEB_SERVER_FREE(payload);
-            ESP_LOGE(TAG, "接收WebSocket负载失败: %s", esp_err_to_name(ret));
-            return ret;
-        }
+        ESP_LOGE(TAG, "接收WebSocket负载失败: %s", esp_err_to_name(ret));
+        return ret;
+    }
         
-        // 添加字符串结束符
+    // 添加字符串结束符
     payload[ws_pkt.len] = 0;
     
     // 查找客户端
@@ -741,23 +767,23 @@ esp_err_t WebServer::WebSocketHandler(httpd_req_t* req) {
     }
     
     // 处理WebSocket数据
-        try {
+    try {
         PSRAMString message((char*)payload);
         WEB_SERVER_FREE(payload);  // 及时释放内存
             
-            // 处理消息
-            server->HandleWebSocketMessage(client_index, message);
+        // 处理消息
+        server->HandleWebSocketMessage(client_index, message);
         
         return ESP_OK;
-        } catch (const std::exception& e) {
+    } catch (const std::exception& e) {
         WEB_SERVER_FREE(payload);  // 确保异常情况下也释放内存
-            ESP_LOGE(TAG, "处理WebSocket消息异常: %s", e.what());
+        ESP_LOGE(TAG, "处理WebSocket消息异常: %s", e.what());
         return ESP_FAIL;
-        } catch (...) {
+    } catch (...) {
         WEB_SERVER_FREE(payload);  // 确保异常情况下也释放内存
-            ESP_LOGE(TAG, "处理WebSocket消息未知异常");
+        ESP_LOGE(TAG, "处理WebSocket消息未知异常");
         return ESP_FAIL;
-        }
+    }
 }
 
 // 处理WebSocket消息
@@ -777,7 +803,9 @@ void WebServer::HandleWebSocketMessage(int client_id, const PSRAMString& message
     try {
         // 检查是否是心跳消息
         if (message.find("heartbeat") != PSRAMString::npos) {
-            // 响应心跳并发送当前系统状态
+            ESP_LOGD(WS_MSG_TAG, "收到心跳消息，发送响应和状态更新");
+            
+            // 生成系统状态数据
             PSRAMString status = GetSystemStatusJson();
             
             // 发送心跳响应
@@ -785,13 +813,16 @@ void WebServer::HandleWebSocketMessage(int client_id, const PSRAMString& message
             
             // 同时发送系统状态更新
             SendWebSocketMessage(client_id, status);
+            
             return;
         }
         
         // 解析JSON消息
         cJSON* json = cJSON_Parse(message.c_str());
         if (!json) {
-            ESP_LOGW(WS_MSG_TAG, "解析WebSocket消息为JSON失败");
+            const char* error = cJSON_GetErrorPtr();
+            ESP_LOGW(WS_MSG_TAG, "解析WebSocket消息为JSON失败: %s", 
+                    error ? error : "未知错误");
             return;
         }
         
@@ -810,9 +841,11 @@ void WebServer::HandleWebSocketMessage(int client_id, const PSRAMString& message
         }
         
         PSRAMString type = type_obj->valuestring;
+        ESP_LOGD(WS_MSG_TAG, "处理WebSocket消息类型: %s", type.c_str());
         
         // 处理系统状态请求
         if (type == "get_system_status") {
+            ESP_LOGI(WS_MSG_TAG, "收到状态请求，发送系统状态");
             PSRAMString status = GetSystemStatusJson();
             SendWebSocketMessage(client_id, status);
             return;
@@ -822,6 +855,7 @@ void WebServer::HandleWebSocketMessage(int client_id, const PSRAMString& message
         auto it = ws_handlers_.find(type);
         if (it != ws_handlers_.end() && it->second) {
             // 调用对应的处理函数
+            ESP_LOGD(WS_MSG_TAG, "调用消息类型 %s 的处理器", type.c_str());
             it->second(client_id, message, type);
         } else {
             ESP_LOGW(WS_MSG_TAG, "未找到类型为 %s 的WebSocket处理器", type.c_str());
@@ -879,6 +913,124 @@ static PSRAMString GetSystemStatusJson() {
         cJSON_AddNumberToObject(system, "psram_free", psram_free);
     }
     
+    // Add IoT sensor data 
+    // 这里添加传感器数据，包括超声波传感器
+#if defined(CONFIG_ENABLE_US_SENSOR)
+    cJSON* sensors = cJSON_CreateObject();
+    cJSON_AddItemToObject(response, "sensors", sensors);
+    
+    // 创建超声波数据对象
+    cJSON* ultrasonic = cJSON_CreateObject();
+    cJSON_AddItemToObject(sensors, "ultrasonic", ultrasonic);
+    
+    // 默认值
+    float front_distance = 0;
+    float rear_distance = 0;
+    bool front_obstacle = false;
+    bool rear_obstacle = false;
+    float front_safe_distance = 30.0;  // 默认安全距离30cm
+    float rear_safe_distance = 30.0;   // 默认安全距离30cm
+    
+    // 尝试从ThingManager获取超声波传感器数据
+    try {
+        // 获取当前所有设备状态
+        std::string states_json;
+        auto& thing_manager = iot::ThingManager::GetInstance();
+        if (thing_manager.GetStatesJson(states_json, false)) {
+            // 解析返回的JSON状态
+            cJSON* states = cJSON_Parse(states_json.c_str());
+            if (states && cJSON_IsArray(states)) {
+                // 遍历数组查找US设备的状态
+                for (int i = 0; i < cJSON_GetArraySize(states); i++) {
+                    cJSON* thing_state = cJSON_GetArrayItem(states, i);
+                    cJSON* name = cJSON_GetObjectItem(thing_state, "name");
+                    
+                    // 寻找US设备
+                    if (name && cJSON_IsString(name) && strcmp(name->valuestring, "US") == 0) {
+                        // 找到超声波传感器，获取其属性
+                        cJSON* properties = cJSON_GetObjectItem(thing_state, "properties");
+                        if (properties) {
+                            // 获取前方距离
+                            cJSON* front_dist = cJSON_GetObjectItem(properties, "front_distance");
+                            if (front_dist && cJSON_IsNumber(front_dist)) {
+                                front_distance = front_dist->valuedouble;
+                            }
+                            
+                            // 获取后方距离
+                            cJSON* rear_dist = cJSON_GetObjectItem(properties, "rear_distance");
+                            if (rear_dist && cJSON_IsNumber(rear_dist)) {
+                                rear_distance = rear_dist->valuedouble;
+                            }
+                            
+                            // 获取障碍物检测状态
+                            cJSON* front_obs = cJSON_GetObjectItem(properties, "front_obstacle_detected");
+                            if (front_obs && cJSON_IsBool(front_obs)) {
+                                front_obstacle = cJSON_IsTrue(front_obs);
+                            }
+                            
+                            cJSON* rear_obs = cJSON_GetObjectItem(properties, "rear_obstacle_detected");
+                            if (rear_obs && cJSON_IsBool(rear_obs)) {
+                                rear_obstacle = cJSON_IsTrue(rear_obs);
+                            }
+
+                            // 获取安全距离值（如果有）
+                            cJSON* front_safe = cJSON_GetObjectItem(properties, "front_safe_distance");
+                            if (front_safe && cJSON_IsNumber(front_safe)) {
+                                front_safe_distance = front_safe->valuedouble;
+                            }
+                            
+                            cJSON* rear_safe = cJSON_GetObjectItem(properties, "rear_safe_distance");
+                            if (rear_safe && cJSON_IsNumber(rear_safe)) {
+                                rear_safe_distance = rear_safe->valuedouble;
+                            }
+                            
+                            ESP_LOGD(TAG, "Found US device in states, front=%.2f, rear=%.2f", 
+                                   front_distance, rear_distance);
+                        }
+                        break; // 已找到US设备，不需要继续查找
+                    }
+                }
+                cJSON_Delete(states);
+            } else {
+                ESP_LOGW(TAG, "Failed to parse states JSON or not an array");
+            }
+        } else {
+            ESP_LOGW(TAG, "Failed to get states from ThingManager");
+        }
+    } catch (const std::exception& e) {
+        ESP_LOGE(TAG, "Error getting sensor data: %s", e.what());
+    } catch (...) {
+        ESP_LOGE(TAG, "Unknown error getting sensor data");
+    }
+    
+    // 无论是否成功获取数据，都添加超声波数据到响应
+    cJSON_AddNumberToObject(ultrasonic, "front_distance", front_distance);
+    cJSON_AddNumberToObject(ultrasonic, "rear_distance", rear_distance);
+    cJSON_AddBoolToObject(ultrasonic, "front_obstacle_detected", front_obstacle);  // 修改字段名称
+    cJSON_AddBoolToObject(ultrasonic, "rear_obstacle_detected", rear_obstacle);    // 修改字段名称
+    cJSON_AddNumberToObject(ultrasonic, "front_safe_distance", front_safe_distance);  // 添加安全距离
+    cJSON_AddNumberToObject(ultrasonic, "rear_safe_distance", rear_safe_distance);    // 添加安全距离
+    
+    // 同时发送专用的超声波数据消息
+    // 注意：这里我们每次状态更新时也发送一次专用消息，以确保前端能收到数据
+    if (WebServer::GetActiveInstance()) {
+        cJSON* us_msg = cJSON_CreateObject();
+        cJSON_AddStringToObject(us_msg, "type", "ultrasonic_data");
+        cJSON_AddNumberToObject(us_msg, "front_distance", front_distance);
+        cJSON_AddNumberToObject(us_msg, "rear_distance", rear_distance);
+        cJSON_AddBoolToObject(us_msg, "front_obstacle_detected", front_obstacle);
+        cJSON_AddBoolToObject(us_msg, "rear_obstacle_detected", rear_obstacle);
+        cJSON_AddNumberToObject(us_msg, "front_safe_distance", front_safe_distance);
+        cJSON_AddNumberToObject(us_msg, "rear_safe_distance", rear_safe_distance);
+        
+        char* us_json_str = cJSON_PrintUnformatted(us_msg);
+        PSRAMString us_json(us_json_str);
+        WebServer::GetActiveInstance()->BroadcastWebSocketMessage(us_json);
+        free(us_json_str);
+        cJSON_Delete(us_msg);
+    }
+#endif
+
     // Format and return the response
     char* json_str = cJSON_PrintUnformatted(response);
     PSRAMString result(json_str);
@@ -896,8 +1048,13 @@ PSRAMString WebServer::GetSystemStatusJson() {
 esp_err_t WebServer::SystemStatusHandler(httpd_req_t *req) {
     ESP_LOGI(TAG, "System status request: %s", req->uri);
     
-    // Call the static function directly
+    // 设置CORS头，允许所有来源访问
+    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+    
+    // 调用静态函数获取完整状态信息（与WebSocket使用的完全相同）
     PSRAMString status_json = ::GetSystemStatusJson();
+    
+    ESP_LOGD(TAG, "Sending status response: %s", status_json.c_str());
     return SendHttpResponse(req, "application/json", status_json.c_str(), status_json.length());
 }
 
@@ -1104,25 +1261,42 @@ void WebServer::StartPeriodicStatusUpdates() {
         return;
     }
     
-    // 每5秒发送一次系统状态更新
-    ret = esp_timer_start_periodic(timer_handle, 5000000); // 5秒 = 5,000,000 微秒
+    // 每1秒发送一次系统状态更新（原先是5秒一次）
+    ret = esp_timer_start_periodic(timer_handle, 1000000); // 1秒 = 1,000,000 微秒
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "启动系统状态定时器失败: %s", esp_err_to_name(ret));
         esp_timer_delete(timer_handle);
         return;
     }
     
-    ESP_LOGI(TAG, "系统状态定期更新已启动");
+    ESP_LOGI(TAG, "系统状态定期更新已启动 (1秒/次)");
 }
 
 // 初始化Web组件
 void WebServer::InitWebComponents() {
 #if defined(CONFIG_ENABLE_WEB_SERVER)
+    // 添加静态标志防止重复初始化
+    static bool init_in_progress = false;
+    static bool init_completed = false;
+    
+    if (init_completed) {
+        ESP_LOGI(TAG, "Web组件已经完成初始化，跳过");
+        return;
+    }
+    
+    if (init_in_progress) {
+        ESP_LOGW(TAG, "Web组件初始化已在进行，跳过重复调用");
+        return;
+    }
+    
+    init_in_progress = true;
+    
     ESP_LOGI(TAG, "初始化Web组件");
     
     // 检查Web服务器组件类型是否启用
     if (!ComponentManager::IsComponentTypeEnabled(COMPONENT_TYPE_WEB)) {
         ESP_LOGW(TAG, "Web组件在配置中已禁用");
+        init_in_progress = false;
         return;
     }
     
@@ -1203,6 +1377,8 @@ void WebServer::InitWebComponents() {
 #endif
 
     ESP_LOGI(TAG, "Web组件初始化完成 (组件将在网络初始化后启动)");
+    init_in_progress = false;
+    init_completed = true;
 #else
     ESP_LOGI(TAG, "Web服务器在配置中已禁用");
 #endif // CONFIG_ENABLE_WEB_SERVER
@@ -1211,9 +1387,20 @@ void WebServer::InitWebComponents() {
 // 启动Web组件
 bool WebServer::StartWebComponents() {
 #if defined(CONFIG_ENABLE_WEB_SERVER)
+    // 添加静态标志防止重复启动
+    static bool start_in_progress = false;
+    
+    if (start_in_progress) {
+        ESP_LOGW(TAG, "Web组件启动已在进行中，跳过重复调用");
+        return false;
+    }
+    
+    start_in_progress = true;
+    
     // 检查Web组件类型是否启用
     if (!ComponentManager::IsComponentTypeEnabled(COMPONENT_TYPE_WEB)) {
         ESP_LOGW(TAG, "Web组件在配置中已禁用");
+        start_in_progress = false;
         return false;
     }
     
@@ -1225,14 +1412,17 @@ bool WebServer::StartWebComponents() {
     
     if (!web_server) {
         ESP_LOGE(TAG, "未找到WebServer组件，无法启动web组件");
+        start_in_progress = false;
         return false;
     }
     
+    bool success = false;
     try {
         // 启动Web服务器
         if (!web_server->IsRunning()) {
             if (!web_server->Start()) {
                 ESP_LOGE(TAG, "启动WebServer失败");
+                start_in_progress = false;
                 return false;
             }
             ESP_LOGI(TAG, "WebServer启动成功");
@@ -1246,6 +1436,7 @@ bool WebServer::StartWebComponents() {
         if (web_content_comp && !web_content_comp->IsRunning()) {
             if (!web_content_comp->Start()) {
                 ESP_LOGE(TAG, "启动WebContent失败");
+                start_in_progress = false;
                 return false;
             }
             ESP_LOGI(TAG, "WebContent启动成功");
@@ -1348,14 +1539,17 @@ bool WebServer::StartWebComponents() {
 #endif // CONFIG_ENABLE_VISION_CONTROLLER
         
         ESP_LOGI(TAG, "所有Web组件启动成功");
-        return true;
+        success = true;
     } catch (const std::exception& e) {
         ESP_LOGE(TAG, "StartWebComponents异常: %s", e.what());
-        return false;
+        success = false;
     } catch (...) {
         ESP_LOGE(TAG, "StartWebComponents未知异常");
-        return false;
+        success = false;
     }
+    
+    start_in_progress = false;
+    return success;
 #else
     ESP_LOGI(TAG, "Web服务器在配置中已禁用");
     return false;

@@ -1081,18 +1081,27 @@ void Application::SetDeviceState(DeviceState state) {
             Schedule([this]() {
                 // 检查WiFi是否已连接
                 if (WifiStation::GetInstance().IsConnected()) {
-                    ESP_LOGI(TAG, "Device entered idle state and WiFi is connected, starting Web components");
+                    ESP_LOGI(TAG, "Device entered idle state and WiFi is connected, checking Web components");
                     
                     // 获取WebServer组件
                     Component* web_server = GetComponent("WebServer");
                     if (web_server) {
                         if (!web_server->IsRunning()) {
+                            // 添加标志检查，防止重复启动
+                            static bool web_start_in_progress = false;
+                            if (web_start_in_progress) {
+                                ESP_LOGI(TAG, "Web server startup already in progress, skipping");
+                                return;
+                            }
+                            
+                            web_start_in_progress = true;
                             // 使用静态方法启动Web服务器及相关组件
                             if (WebServer::StartWebComponents()) {
                                 ESP_LOGI(TAG, "Web server components started successfully");
                             } else {
                                 ESP_LOGW(TAG, "Failed to start Web server components");
                             }
+                            web_start_in_progress = false;
                         } else {
                             ESP_LOGI(TAG, "Web server already running");
                         }
@@ -1472,7 +1481,16 @@ void Application::StartComponents() {
         Component* vision = GetComponent("VisionController");
         if (vision) {
             if (!vision->IsRunning()) {
+                // 添加静态标志避免重复启动
+                static bool vision_start_in_progress = false;
+                if (vision_start_in_progress) {
+                    ESP_LOGI(TAG, "Vision controller startup already in progress, skipping");
+                    return;
+                }
+                
                 ESP_LOGI(TAG, "Starting vision controller component (with integrated camera)");
+                vision_start_in_progress = true;
+                
                 background_task_->Schedule([this, vision]() {
                     try {
                         if (!vision->Start()) {
@@ -1496,10 +1514,17 @@ void Application::StartComponents() {
                             }
 #endif // CONFIG_ENABLE_VISION_CONTENT
                         }
+                        
+                        // 完成启动过程后重置标志
+                        vision_start_in_progress = false;
                     } catch (const std::exception& e) {
+                        // 异常处理中也要重置标志
+                        vision_start_in_progress = false;
                         ESP_LOGE(TAG, "Exception starting vision sequence: %s", e.what());
                     }
                 });
+            } else {
+                ESP_LOGW(TAG, "Vision controller already running");
             }
         }
     } catch (const std::exception& e) {

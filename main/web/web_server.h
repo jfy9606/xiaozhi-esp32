@@ -170,6 +170,11 @@ public:
     static void InitWebComponents();
     static bool StartWebComponents();
 
+    // 获取当前活跃的WebServer实例(用于全局访问)
+    static WebServer* GetActiveInstance() {
+        return active_instance_;
+    }
+
 private:
     void RegisterDefaultHandlers();
     void HandleWebSocketMessage(int client_id, const PSRAMString& message);
@@ -185,6 +190,9 @@ private:
     std::map<PSRAMString, std::pair<httpd_method_t, HttpRequestHandler>> http_handlers_;
     std::map<PSRAMString, WebSocketMessageHandler> ws_handlers_;
     WebSocketMessageCallback legacy_ws_callback_;
+
+    // 静态成员变量，跟踪当前活跃的实例
+    static WebServer* active_instance_;
 };
 
 #endif // WEB_SERVER_H 

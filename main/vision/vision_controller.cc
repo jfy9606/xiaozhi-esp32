@@ -30,13 +30,24 @@ bool VisionController::Start() {
         ESP_LOGW(TAG, "Vision controller already running");
         return true;
     }
-
+    
+    // 添加静态标志避免并发启动
+    static bool start_in_progress = false;
+    if (start_in_progress) {
+        ESP_LOGW(TAG, "Vision controller start already in progress");
+        return false;
+    }
+    
+    start_in_progress = true;
+    
     ESP_LOGI(TAG, "Starting VisionController with integrated camera functionality");
 
     // 摄像头初始化已经在iot/things/cam.cc中完成
     // 这里直接标记为已启动状态
     running_ = true;
     ESP_LOGI(TAG, "VisionController started successfully, camera ready for use");
+    
+    start_in_progress = false;
     return true;
 }
 
