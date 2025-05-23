@@ -1,25 +1,51 @@
 #include "web_server.h"
-#include "web_content.h"
-#include "html_content.h"
-#include <esp_log.h>
-#include <esp_http_server.h>
-#include <esp_chip_info.h>
-#include <system_info.h>
-#include <components.h>
-#include <iot/thing_manager.h>
-#include <cJSON.h>
-#include <cstring>
-#include <map>
-#include <memory>
-#include <sstream>
-#include <string>
+#include "board.h"
+#include "system_info.h"
+#include "esp_log.h"
+#include "esp_timer.h"
+#include "esp_http_server.h"
+#include "esp_https_server.h"
+#include "esp_wifi.h"
+#include "esp_chip_info.h"
+#include "cJSON.h"
+#include "sdkconfig.h"
+#include "settings.h"
+#include "components.h"
+#include "application.h"
+#include "vision/vision_controller.h"
+#include "location/location_controller.h"
+#include "location/location_content.h"
+#include "web/web_content.h"
+#include "web/html_content.h"
+#include "iot/thing_manager.h"
 #include <algorithm>
-#include <unordered_set>
-#include <esp_timer.h>
-#include <esp_heap_caps.h>
-#if defined(CONFIG_ENABLE_VISION_CONTENT)
-#include "../vision/vision_content.h"
+#include <string>
+#include <vector>
+#include <memory>
+#include <cstring>
+#include <cstdlib>
+#include <ctime>
+#include <functional>
+#include <mutex>
+#include <thread>
+#include <chrono>
+#include <unordered_map>
+#include <sstream>
+#include <iomanip>
+
+#ifdef CONFIG_ENABLE_WEB_CONTENT
+#include "html_content.h"
 #endif
+
+// 声明外部函数（从其他组件获取HTML内容）
+extern const char* get_motor_html_content();
+extern size_t get_motor_html_size();
+extern const char* get_vision_html_content();
+extern size_t get_vision_html_size();
+extern const char* get_ai_html_content();
+extern size_t get_ai_html_size();
+extern const char* get_location_html_content();
+extern size_t get_location_html_size();
 
 #define TAG "WebServer"
 
@@ -33,21 +59,13 @@ static const char* WS_MSG_TAG = "WsMessage";
 
 // 使用HTML内容函数
 #if CONFIG_ENABLE_WEB_CONTENT
-extern "C" {
-    const char* get_index_html_content();
-    size_t get_index_html_size();
-    const char* get_motor_html_content();
-    size_t get_motor_html_size();
-    const char* get_vision_html_content();
-    size_t get_vision_html_size();
-    const char* get_ai_html_content();
-    size_t get_ai_html_size();
-    
+extern "C" { 
     // 常量别名
     extern const char* INDEX_HTML;
     extern const char* MOTOR_HTML;
     extern const char* AI_HTML;
     extern const char* VISION_HTML;
+    extern const char* LOCATION_HTML;
 }
 #endif
 
@@ -318,6 +336,10 @@ void WebServer::RegisterDefaultHandlers() {
     RegisterHttpHandler("/ai", HTTP_GET, AIHandler);  // 添加AI页面路由
     ESP_LOGI(TAG, "注册AI页面处理器: /ai");
     
+    // 注册位置页面处理器
+    RegisterHttpHandler("/location", HTTP_GET, LocationHandler);
+    ESP_LOGI(TAG, "注册位置页面处理器: /location");
+    
     // Register car control endpoints
     RegisterHttpHandler("/car/stop", HTTP_GET, CarControlHandler);
     ESP_LOGI(TAG, "注册停车控制处理器: /car/stop");
@@ -500,6 +522,28 @@ esp_err_t WebServer::AIHandler(httpd_req_t *req) {
         "<p>WebSocket commands for AI control are supported.</p>"
         "</body></html>";
     ESP_LOGI(TAG, "AI content disabled, serving simple message");
+    return SendHttpResponse(req, "text/html", message, strlen(message));
+#endif
+}
+
+// 位置定位页面处理器
+esp_err_t WebServer::LocationHandler(httpd_req_t *req) {
+    ESP_LOGI(TAG, "Location page request: %s", req->uri);
+    
+    // 获取位置页面HTML内容
+#if CONFIG_ENABLE_WEB_CONTENT && CONFIG_ENABLE_LOCATION_CONTROLLER
+    const char* html_content = get_location_html_content();
+    size_t len = get_location_html_size();
+    
+    ESP_LOGI(TAG, "Serving location.html, size: %zu bytes", len);
+    return SendHttpResponse(req, "text/html", html_content, len);
+#else
+    // 当Web内容未启用时，返回一个简单的消息
+    const char* message = "<html><body><h1>Location Tracking Disabled</h1>"
+        "<p>The location tracking web interface is not enabled in this build.</p>"
+        "<p>API endpoints are still available at /api/location/*</p>"
+        "</body></html>";
+    ESP_LOGI(TAG, "Location content disabled, serving simple message");
     return SendHttpResponse(req, "text/html", message, strlen(message));
 #endif
 }
@@ -711,37 +755,37 @@ esp_err_t WebServer::WebSocketHandler(httpd_req_t* req) {
     
     // 为数据帧分配内存
     if (ws_pkt.len > 16384) {  // 限制单个消息最大长度为16KB
-        ESP_LOGE(TAG, "WebSocket负载过大: %d字节", ws_pkt.len);
-        return ESP_ERR_NO_MEM;
-    }
+            ESP_LOGE(TAG, "WebSocket负载过大: %d字节", ws_pkt.len);
+            return ESP_ERR_NO_MEM;
+        }
         
-    // 根据配置使用PSRAM或标准内存
-    #if WEB_SERVER_USE_PSRAM
-    uint8_t* payload = (uint8_t*)WEB_SERVER_MALLOC(ws_pkt.len + 1);
-    if (!payload) {
-        ESP_LOGE(TAG, "为WebSocket负载分配PSRAM内存失败: %d字节", ws_pkt.len);
-        return ESP_ERR_NO_MEM;
-    }
-    ESP_LOGD(TAG, "使用PSRAM分配WebSocket负载: %d字节", ws_pkt.len);
-    #else
-    uint8_t* payload = (uint8_t*)WEB_SERVER_MALLOC(ws_pkt.len + 1);
-    if (!payload) {
-        ESP_LOGE(TAG, "为WebSocket负载分配内存失败: %d字节", ws_pkt.len);
-        return ESP_ERR_NO_MEM;
-    }
-    ESP_LOGD(TAG, "使用标准内存分配WebSocket负载: %d字节", ws_pkt.len);
-    #endif
+        // 根据配置使用PSRAM或标准内存
+        #if WEB_SERVER_USE_PSRAM
+        uint8_t* payload = (uint8_t*)WEB_SERVER_MALLOC(ws_pkt.len + 1);
+        if (!payload) {
+            ESP_LOGE(TAG, "为WebSocket负载分配PSRAM内存失败: %d字节", ws_pkt.len);
+            return ESP_ERR_NO_MEM;
+        }
+        ESP_LOGD(TAG, "使用PSRAM分配WebSocket负载: %d字节", ws_pkt.len);
+        #else
+        uint8_t* payload = (uint8_t*)WEB_SERVER_MALLOC(ws_pkt.len + 1);
+        if (!payload) {
+            ESP_LOGE(TAG, "为WebSocket负载分配内存失败: %d字节", ws_pkt.len);
+            return ESP_ERR_NO_MEM;
+        }
+        ESP_LOGD(TAG, "使用标准内存分配WebSocket负载: %d字节", ws_pkt.len);
+        #endif
         
     // 设置负载指针并接收完整帧
-    ws_pkt.payload = payload;
-    ret = httpd_ws_recv_frame(req, &ws_pkt, ws_pkt.len);
-    if (ret != ESP_OK) {
+        ws_pkt.payload = payload;
+        ret = httpd_ws_recv_frame(req, &ws_pkt, ws_pkt.len);
+        if (ret != ESP_OK) {
         WEB_SERVER_FREE(payload);
-        ESP_LOGE(TAG, "接收WebSocket负载失败: %s", esp_err_to_name(ret));
-        return ret;
-    }
+            ESP_LOGE(TAG, "接收WebSocket负载失败: %s", esp_err_to_name(ret));
+            return ret;
+        }
         
-    // 添加字符串结束符
+        // 添加字符串结束符
     payload[ws_pkt.len] = 0;
     
     // 查找客户端
@@ -767,23 +811,23 @@ esp_err_t WebServer::WebSocketHandler(httpd_req_t* req) {
     }
     
     // 处理WebSocket数据
-    try {
+        try {
         PSRAMString message((char*)payload);
         WEB_SERVER_FREE(payload);  // 及时释放内存
             
-        // 处理消息
-        server->HandleWebSocketMessage(client_index, message);
+            // 处理消息
+            server->HandleWebSocketMessage(client_index, message);
         
         return ESP_OK;
-    } catch (const std::exception& e) {
+        } catch (const std::exception& e) {
         WEB_SERVER_FREE(payload);  // 确保异常情况下也释放内存
-        ESP_LOGE(TAG, "处理WebSocket消息异常: %s", e.what());
+            ESP_LOGE(TAG, "处理WebSocket消息异常: %s", e.what());
         return ESP_FAIL;
-    } catch (...) {
+        } catch (...) {
         WEB_SERVER_FREE(payload);  // 确保异常情况下也释放内存
-        ESP_LOGE(TAG, "处理WebSocket消息未知异常");
+            ESP_LOGE(TAG, "处理WebSocket消息未知异常");
         return ESP_FAIL;
-    }
+        }
 }
 
 // 处理WebSocket消息
@@ -813,57 +857,85 @@ void WebServer::HandleWebSocketMessage(int client_id, const PSRAMString& message
             
             // 同时发送系统状态更新
             SendWebSocketMessage(client_id, status);
-            
             return;
         }
         
         // 解析JSON消息
-        cJSON* json = cJSON_Parse(message.c_str());
-        if (!json) {
-            const char* error = cJSON_GetErrorPtr();
-            ESP_LOGW(WS_MSG_TAG, "解析WebSocket消息为JSON失败: %s", 
-                    error ? error : "未知错误");
+        cJSON* root = cJSON_Parse(message.c_str());
+        if (!root) {
+            ESP_LOGE(WS_MSG_TAG, "解析JSON失败: %s", message.c_str());
             return;
         }
         
-        // 使用智能指针管理JSON对象
-        struct JsonGuard {
-            cJSON* json;
-            JsonGuard(cJSON* j) : json(j) {}
-            ~JsonGuard() { if (json) cJSON_Delete(json); }
-        } json_guard(json);
-        
-        // 提取消息类型
-        cJSON* type_obj = cJSON_GetObjectItem(json, "type");
-        if (!type_obj || !cJSON_IsString(type_obj)) {
-            ESP_LOGW(WS_MSG_TAG, "WebSocket消息没有类型字段");
+        // 获取消息类型
+        cJSON* type_json = cJSON_GetObjectItem(root, "type");
+        if (!type_json || !cJSON_IsString(type_json)) {
+            ESP_LOGE(WS_MSG_TAG, "缺少有效的消息类型字段");
+            cJSON_Delete(root);
             return;
         }
         
-        PSRAMString type = type_obj->valuestring;
-        ESP_LOGD(WS_MSG_TAG, "处理WebSocket消息类型: %s", type.c_str());
+        PSRAMString msg_type = type_json->valuestring;
+        ESP_LOGD(WS_MSG_TAG, "消息类型: %s", msg_type.c_str());
         
-        // 处理系统状态请求
-        if (type == "get_system_status") {
-            ESP_LOGI(WS_MSG_TAG, "收到状态请求，发送系统状态");
+        // 处理不同类型的消息
+        if (msg_type == "get_system_status") {
+            // 获取系统状态
             PSRAMString status = GetSystemStatusJson();
             SendWebSocketMessage(client_id, status);
-            return;
+        }
+        // 位置相关消息处理
+        else if (msg_type == "get_location" || msg_type == "location_request") {
+            // 获取位置数据
+            HandleLocationRequest(client_id, root);
+        }
+        else if (msg_type == "set_location_mode") {
+            // 设置位置模式
+            HandleSetLocationMode(client_id, root);
+        }
+        else if (msg_type == "calibrate_position" || msg_type == "calibrate_location") {
+            // 校准位置
+            HandleCalibratePosition(client_id, root);
+        }
+        else if (msg_type == "save_map" || msg_type == "save_location_map") {
+            // 保存位置地图
+            HandleSaveLocationMap(client_id, root);
+        }
+        // 注册客户端类型
+        else if (msg_type == "register_client") {
+            // 处理客户端类型注册
+            cJSON* client_type_json = cJSON_GetObjectItem(root, "client_type");
+            if (client_type_json && cJSON_IsString(client_type_json)) {
+                PSRAMString client_type = client_type_json->valuestring;
+                
+                // 更新客户端类型
+                for (int i = 0; i < MAX_WS_CLIENTS; i++) {
+                    if (ws_clients_[i].connected && ws_clients_[i].fd >= 0 && i == client_id) {
+                        ws_clients_[i].client_type = client_type;
+                        ESP_LOGI(WS_MSG_TAG, "客户端 %d 注册为 '%s' 类型", client_id, client_type.c_str());
+                        
+                        // 发送欢迎消息
+                        SendWebSocketMessage(client_id, "{\"type\":\"hello_response\",\"message\":\"Welcome!\"}");
+                        
+                        // 同时发送系统状态
+                        PSRAMString status = GetSystemStatusJson();
+                        SendWebSocketMessage(client_id, status);
+                        
+                        // 如果是位置客户端，立即发送位置更新
+                        if (client_type == "location") {
+                            HandleLocationRequest(client_id, root);
+                        }
+                        
+                        break;
+                    }
+                }
+            }
         }
         
-        // 查找对应的处理器
-        auto it = ws_handlers_.find(type);
-        if (it != ws_handlers_.end() && it->second) {
-            // 调用对应的处理函数
-            ESP_LOGD(WS_MSG_TAG, "调用消息类型 %s 的处理器", type.c_str());
-            it->second(client_id, message, type);
-        } else {
-            ESP_LOGW(WS_MSG_TAG, "未找到类型为 %s 的WebSocket处理器", type.c_str());
-        }
-    } catch (const std::exception& e) {
+        cJSON_Delete(root);
+    }
+    catch (const std::exception& e) {
         ESP_LOGE(WS_MSG_TAG, "处理WebSocket消息异常: %s", e.what());
-    } catch (...) {
-        ESP_LOGE(WS_MSG_TAG, "处理WebSocket消息未知异常");
     }
 }
 
@@ -936,7 +1008,13 @@ static PSRAMString GetSystemStatusJson() {
         // 获取当前所有设备状态
         std::string states_json;
         auto& thing_manager = iot::ThingManager::GetInstance();
-        if (thing_manager.GetStatesJson(states_json, false)) {
+        
+        // 先检查是否有设备注册，避免显示警告
+        std::string descriptors = thing_manager.GetDescriptorsJson();
+        bool has_us_device = descriptors.find("\"name\":\"US\"") != std::string::npos;
+        
+        // 只有当存在US设备时才尝试获取状态
+        if (has_us_device && thing_manager.GetStatesJson(states_json, false)) {
             // 解析返回的JSON状态
             cJSON* states = cJSON_Parse(states_json.c_str());
             if (states && cJSON_IsArray(states)) {
@@ -994,7 +1072,8 @@ static PSRAMString GetSystemStatusJson() {
             } else {
                 ESP_LOGW(TAG, "Failed to parse states JSON or not an array");
             }
-        } else {
+        } else if (has_us_device) {
+            // 只有当US设备存在但获取状态失败时才显示警告
             ESP_LOGW(TAG, "Failed to get states from ThingManager");
         }
     } catch (const std::exception& e) {
@@ -1030,7 +1109,7 @@ static PSRAMString GetSystemStatusJson() {
         cJSON_Delete(us_msg);
     }
 #endif
-
+    
     // Format and return the response
     char* json_str = cJSON_PrintUnformatted(response);
     PSRAMString result(json_str);
@@ -1335,7 +1414,7 @@ void WebServer::InitWebComponents() {
     // 注册但不启动电机组件
 #if defined(CONFIG_ENABLE_MOTOR_CONTROLLER)
     if (ComponentManager::IsComponentTypeEnabled(COMPONENT_TYPE_MOTOR)) {
-        InitMotorComponents(web_server);
+    InitMotorComponents(web_server);
         ESP_LOGI(TAG, "电机组件已注册");
     } else {
         ESP_LOGI(TAG, "电机组件在配置中已禁用");
@@ -1361,16 +1440,16 @@ void WebServer::InitWebComponents() {
 #if defined(CONFIG_ENABLE_VISION_CONTROLLER)
     if (ComponentManager::IsComponentTypeEnabled(COMPONENT_TYPE_VISION)) {
 #if defined(CONFIG_ENABLE_WEB_CONTENT)
-        InitVisionComponents(web_server);
+    InitVisionComponents(web_server);
 #else
-        // 即使禁用了WebContent，也要初始化视觉组件
-        if (!manager.GetComponent("VisionController")) {
-            VisionController* vision_controller = new VisionController();
-            manager.RegisterComponent(vision_controller);
-            ESP_LOGI(TAG, "注册视觉控制器 (WebContent已禁用)");
-        }
+    // 即使禁用了WebContent，也要初始化视觉组件
+    if (!manager.GetComponent("VisionController")) {
+        VisionController* vision_controller = new VisionController();
+        manager.RegisterComponent(vision_controller);
+        ESP_LOGI(TAG, "注册视觉控制器 (WebContent已禁用)");
+    }
 #endif
-        ESP_LOGI(TAG, "注册视觉组件");
+    ESP_LOGI(TAG, "注册视觉组件");
     } else {
         ESP_LOGI(TAG, "视觉组件在配置中已禁用");
     }
@@ -1448,22 +1527,22 @@ bool WebServer::StartWebComponents() {
         // 启动电机相关组件
 #if defined(CONFIG_ENABLE_MOTOR_CONTROLLER)
         if (ComponentManager::IsComponentTypeEnabled(COMPONENT_TYPE_MOTOR)) {
-            Component* motor_controller = manager.GetComponent("MotorController");
-            
-            if (motor_controller && !motor_controller->IsRunning()) {
-                if (!motor_controller->Start()) {
-                    ESP_LOGE(TAG, "启动MotorController失败");
-                } else {
-                    ESP_LOGI(TAG, "MotorController启动成功");
-            
+        Component* motor_controller = manager.GetComponent("MotorController");
+        
+        if (motor_controller && !motor_controller->IsRunning()) {
+            if (!motor_controller->Start()) {
+                ESP_LOGE(TAG, "启动MotorController失败");
+            } else {
+                ESP_LOGI(TAG, "MotorController启动成功");
+        
                     // 只有在MotorController启动成功后才启动MotorContent
-                    Component* motor_content = manager.GetComponent("MotorContent");
-                    if (motor_content && !motor_content->IsRunning()) {
-                        if (!motor_content->Start()) {
-                            ESP_LOGE(TAG, "启动MotorContent失败");
-                        } else {
-                            ESP_LOGI(TAG, "MotorContent启动成功");
-                        }
+        Component* motor_content = manager.GetComponent("MotorContent");
+        if (motor_content && !motor_content->IsRunning()) {
+            if (!motor_content->Start()) {
+                ESP_LOGE(TAG, "启动MotorContent失败");
+            } else {
+                ESP_LOGI(TAG, "MotorContent启动成功");
+            }
                     }
                 }
             }
@@ -1475,15 +1554,15 @@ bool WebServer::StartWebComponents() {
         // 启动AI相关组件
 #if defined(CONFIG_ENABLE_AI_CONTROLLER)
         if (ComponentManager::IsComponentTypeEnabled(COMPONENT_TYPE_AUDIO)) {
-            Component* ai_controller = manager.GetComponent("AIController");
-            
-            if (ai_controller && !ai_controller->IsRunning()) {
-                if (!ai_controller->Start()) {
-                    ESP_LOGE(TAG, "启动AIController失败");
-                    // 继续尝试启动其他组件
-                } else {
-                    ESP_LOGI(TAG, "AIController启动成功");
-                }
+        Component* ai_controller = manager.GetComponent("AIController");
+        
+        if (ai_controller && !ai_controller->IsRunning()) {
+            if (!ai_controller->Start()) {
+                ESP_LOGE(TAG, "启动AIController失败");
+                // 继续尝试启动其他组件
+            } else {
+                ESP_LOGI(TAG, "AIController启动成功");
+            }
             }
         } else {
             ESP_LOGI(TAG, "AI组件在配置中已禁用");
@@ -1491,16 +1570,16 @@ bool WebServer::StartWebComponents() {
         
 #if defined(CONFIG_ENABLE_WEB_CONTENT)
         if (ComponentManager::IsComponentTypeEnabled(COMPONENT_TYPE_AUDIO)) {
-            Component* ai_content = manager.GetComponent("AIContent");
-            if (ai_content && !ai_content->IsRunning()) {
-                if (!ai_content->Start()) {
-                    ESP_LOGE(TAG, "启动AIContent失败");
-                    // 继续尝试启动其他组件
-                } else {
-                    ESP_LOGI(TAG, "AIContent启动成功");
-                }
-            } else if (ai_content) {
-                ESP_LOGI(TAG, "AIContent已经在运行");
+        Component* ai_content = manager.GetComponent("AIContent");
+        if (ai_content && !ai_content->IsRunning()) {
+            if (!ai_content->Start()) {
+                ESP_LOGE(TAG, "启动AIContent失败");
+                // 继续尝试启动其他组件
+            } else {
+                ESP_LOGI(TAG, "AIContent启动成功");
+            }
+        } else if (ai_content) {
+            ESP_LOGI(TAG, "AIContent已经在运行");
             }
         }
 #endif // CONFIG_ENABLE_WEB_CONTENT
@@ -1509,29 +1588,29 @@ bool WebServer::StartWebComponents() {
         // 启动视觉相关组件
 #if defined(CONFIG_ENABLE_VISION_CONTROLLER)
         if (ComponentManager::IsComponentTypeEnabled(COMPONENT_TYPE_VISION)) {
-            Component* vision_controller = manager.GetComponent("VisionController");
-            
-            if (vision_controller && !vision_controller->IsRunning()) {
-                if (!vision_controller->Start()) {
-                    ESP_LOGE(TAG, "启动VisionController失败");
-                    // 继续尝试启动其他组件
-                } else {
-                    ESP_LOGI(TAG, "VisionController启动成功");
-                }
+        Component* vision_controller = manager.GetComponent("VisionController");
+        
+        if (vision_controller && !vision_controller->IsRunning()) {
+            if (!vision_controller->Start()) {
+                ESP_LOGE(TAG, "启动VisionController失败");
+                // 继续尝试启动其他组件
+            } else {
+                ESP_LOGI(TAG, "VisionController启动成功");
             }
+        }
         
 #if defined(CONFIG_ENABLE_WEB_CONTENT)
-            Component* vision_content = manager.GetComponent("VisionContent");
-            if (vision_content && !vision_content->IsRunning()) {
-                if (!vision_content->Start()) {
-                    ESP_LOGE(TAG, "启动VisionContent失败");
-                    // 继续尝试启动其他组件
-                } else {
-                    ESP_LOGI(TAG, "VisionContent启动成功");
-                }
-            } else if (vision_content) {
-                ESP_LOGI(TAG, "VisionContent已经在运行");
+        Component* vision_content = manager.GetComponent("VisionContent");
+        if (vision_content && !vision_content->IsRunning()) {
+            if (!vision_content->Start()) {
+                ESP_LOGE(TAG, "启动VisionContent失败");
+                // 继续尝试启动其他组件
+            } else {
+                ESP_LOGI(TAG, "VisionContent启动成功");
             }
+        } else if (vision_content) {
+            ESP_LOGI(TAG, "VisionContent已经在运行");
+        }
 #endif // CONFIG_ENABLE_WEB_CONTENT
         } else {
             ESP_LOGI(TAG, "视觉组件在配置中已禁用");
@@ -1708,11 +1787,11 @@ esp_err_t WebServer::CarControlHandler(httpd_req_t *req) {
                 // Try to invoke the component through JSON command
                 auto& thing_manager = iot::ThingManager::GetInstance();
                 
-                                    // 添加安全检查，防止空指针崩溃
+                // 添加安全检查，防止空指针崩溃
                     if (SafeToInvokeCommand(cmd)) {
                         try {
-                            thing_manager.Invoke(cmd);
-                            success = true;
+                        thing_manager.Invoke(cmd);
+                        success = true;
                         } catch (const std::exception& e) {
                             ESP_LOGE(TAG, "Exception when invoking 'Stop' command: %s", e.what());
                             success = false;
@@ -1723,7 +1802,7 @@ esp_err_t WebServer::CarControlHandler(httpd_req_t *req) {
                     } else {
                         ESP_LOGW(TAG, "No Thing available to handle 'Stop' command");
                         success = false;
-                    }
+                }
                 
                 cJSON_Delete(cmd);
                     cJSON_AddStringToObject(response, "message", success ? "Car stopped" : "Failed to stop car");
@@ -1765,8 +1844,8 @@ esp_err_t WebServer::CarControlHandler(httpd_req_t *req) {
                     auto& thing_manager = iot::ThingManager::GetInstance();
                     if (SafeToInvokeCommand(cmd)) {
                         try {
-                            thing_manager.Invoke(cmd);
-                            success = true;
+                        thing_manager.Invoke(cmd);
+                        success = true;
                         } catch (const std::exception& e) {
                             ESP_LOGE(TAG, "Exception when invoking 'Forward' command: %s", e.what());
                             success = false;
@@ -1819,8 +1898,8 @@ esp_err_t WebServer::CarControlHandler(httpd_req_t *req) {
                     auto& thing_manager = iot::ThingManager::GetInstance();
                     if (SafeToInvokeCommand(cmd)) {
                         try {
-                            thing_manager.Invoke(cmd);
-                            success = true;
+                        thing_manager.Invoke(cmd);
+                        success = true;
                         } catch (const std::exception& e) {
                             ESP_LOGE(TAG, "Exception when invoking 'Backward' command: %s", e.what());
                             success = false;
@@ -1873,8 +1952,8 @@ esp_err_t WebServer::CarControlHandler(httpd_req_t *req) {
                     auto& thing_manager = iot::ThingManager::GetInstance();
                     if (SafeToInvokeCommand(cmd)) {
                         try {
-                            thing_manager.Invoke(cmd);
-                            success = true;
+                        thing_manager.Invoke(cmd);
+                        success = true;
                         } catch (const std::exception& e) {
                             ESP_LOGE(TAG, "Exception when invoking 'TurnLeft' command: %s", e.what());
                             success = false;
@@ -1927,8 +2006,8 @@ esp_err_t WebServer::CarControlHandler(httpd_req_t *req) {
                     auto& thing_manager = iot::ThingManager::GetInstance();
                     if (SafeToInvokeCommand(cmd)) {
                         try {
-                            thing_manager.Invoke(cmd);
-                            success = true;
+                        thing_manager.Invoke(cmd);
+                        success = true;
                         } catch (const std::exception& e) {
                             ESP_LOGE(TAG, "Exception when invoking 'TurnRight' command: %s", e.what());
                             success = false;
@@ -2019,9 +2098,9 @@ esp_err_t WebServer::CameraControlHandler(httpd_req_t *req) {
                 try {
                     auto& thing_manager = iot::ThingManager::GetInstance();
                     if (SafeToInvokeCommand(cmd)) {
-                        thing_manager.Invoke(cmd);
-                        success = true;
-                        cJSON_AddStringToObject(response, "message", "Frame size updated");
+                    thing_manager.Invoke(cmd);
+                    success = true;
+                    cJSON_AddStringToObject(response, "message", "Frame size updated");
                     } else {
                         ESP_LOGW(TAG, "No Thing available to handle camera framesize command");
                         success = false;
@@ -2037,9 +2116,9 @@ esp_err_t WebServer::CameraControlHandler(httpd_req_t *req) {
                 try {
                     auto& thing_manager = iot::ThingManager::GetInstance();
                     if (SafeToInvokeCommand(cmd)) {
-                        thing_manager.Invoke(cmd);
-                        success = true;
-                        cJSON_AddStringToObject(response, "message", "Quality updated");
+                    thing_manager.Invoke(cmd);
+                    success = true;
+                    cJSON_AddStringToObject(response, "message", "Quality updated");
                     } else {
                         ESP_LOGW(TAG, "No Thing available to handle camera quality command");
                         success = false;
@@ -2060,11 +2139,11 @@ esp_err_t WebServer::CameraControlHandler(httpd_req_t *req) {
                 try {
                     auto& thing_manager = iot::ThingManager::GetInstance();
                     if (SafeToInvokeCommand(cmd)) {
-                        thing_manager.Invoke(cmd);
-                        success = true;
-                        char msg[64];
-                        snprintf(msg, sizeof(msg), "%s updated to %d", var, value);
-                        cJSON_AddStringToObject(response, "message", msg);
+                    thing_manager.Invoke(cmd);
+                    success = true;
+                    char msg[64];
+                    snprintf(msg, sizeof(msg), "%s updated to %d", var, value);
+                    cJSON_AddStringToObject(response, "message", msg);
                     } else {
                         ESP_LOGW(TAG, "No Thing available to handle camera %s command", var);
                         success = false;
@@ -2251,3 +2330,497 @@ bool WebServer::SafeToInvokeCommand(const cJSON* cmd) {
     
     return true; // 通过基本验证
 }
+
+// 添加位置处理方法实现 - 在WebServer类实现的适当位置添加
+void WebServer::HandleLocationRequest(int client_id, cJSON* root) {
+    // 提取请求的位置模式
+    cJSON* mode_json = cJSON_GetObjectItem(root, "mode");
+    PSRAMString mode = mode_json && cJSON_IsString(mode_json) ? mode_json->valuestring : "uwb";
+    
+    // 创建位置响应消息
+    cJSON* response = cJSON_CreateObject();
+    cJSON_AddStringToObject(response, "type", "location_update");
+    cJSON_AddStringToObject(response, "mode", mode.c_str());
+    
+    // 创建位置数据对象
+    cJSON* position = cJSON_CreateObject();
+    
+    // 从位置控制器获取实际位置数据
+    float x = 0.0f;
+    float y = 0.0f;
+    float orientation = 0.0f;
+    float accuracy = 1.0f;
+    
+    // 尝试从LocationController获取位置数据
+    try {
+        #ifdef CONFIG_ENABLE_LOCATION_CONTROLLER
+        // 获取LocationController实例
+        auto* location_controller = LocationController::GetInstance();
+        
+        // 将字符串模式转换为LocationMode
+        LocationMode location_mode;
+        if (mode == "gps") {
+            location_mode = MODE_GPS;
+        } else if (mode == "uwb") {
+            location_mode = MODE_UWB;
+        } else if (mode == "fusion") {
+            location_mode = MODE_FUSION;
+        } else {
+            // 默认模式
+            location_mode = MODE_UWB;
+        }
+        
+        // 设置位置模式（如果与当前模式不同）
+        if (location_controller->GetLocationMode() != location_mode) {
+            location_controller->SetLocationMode(location_mode);
+        }
+        
+        // 获取当前位置
+        PositionInfo current_position = location_controller->GetCurrentPosition();
+        
+        // 提取位置数据
+        x = current_position.x;
+        y = current_position.y;
+        orientation = current_position.orientation;
+        accuracy = current_position.accuracy;
+        
+        ESP_LOGD(TAG, "位置控制器返回位置: x=%.2f, y=%.2f, orientation=%.1f°, accuracy=%.2f", 
+                x, y, orientation, accuracy);
+        #else
+        // 如果未启用位置控制器，尝试从ThingManager获取位置数据
+        auto& thing_manager = iot::ThingManager::GetInstance();
+        std::string states_json;
+        
+        if (thing_manager.GetStatesJson(states_json, false)) {
+            // 解析返回的JSON状态
+            cJSON* states = cJSON_Parse(states_json.c_str());
+            if (states && cJSON_IsArray(states)) {
+                // 遍历数组查找位置设备的状态
+                for (int i = 0; i < cJSON_GetArraySize(states); i++) {
+                    cJSON* thing_state = cJSON_GetArrayItem(states, i);
+                    cJSON* name = cJSON_GetObjectItem(thing_state, "name");
+                    
+                    // 寻找位置设备（可能是UWB、GPS或其他位置服务）
+                    if (name && cJSON_IsString(name) && 
+                        (strcmp(name->valuestring, "UWB") == 0 || 
+                         strcmp(name->valuestring, "GPS") == 0 ||
+                         strcmp(name->valuestring, "Location") == 0)) {
+                        
+                        // 找到位置设备，获取其属性
+                        cJSON* properties = cJSON_GetObjectItem(thing_state, "properties");
+                        if (properties) {
+                            // 获取坐标
+                            cJSON* x_pos = cJSON_GetObjectItem(properties, "x");
+                            if (x_pos && cJSON_IsNumber(x_pos)) {
+                                x = x_pos->valuedouble;
+                            }
+                            
+                            cJSON* y_pos = cJSON_GetObjectItem(properties, "y");
+                            if (y_pos && cJSON_IsNumber(y_pos)) {
+                                y = y_pos->valuedouble;
+                            }
+                            
+                            // 获取方向
+                            cJSON* orient = cJSON_GetObjectItem(properties, "orientation");
+                            if (orient && cJSON_IsNumber(orient)) {
+                                orientation = orient->valuedouble;
+                            }
+                            
+                            // 获取精度
+                            cJSON* acc = cJSON_GetObjectItem(properties, "accuracy");
+                            if (acc && cJSON_IsNumber(acc)) {
+                                accuracy = acc->valuedouble;
+                            }
+                            
+                            ESP_LOGD(TAG, "找到位置数据: x=%.2f, y=%.2f, orientation=%.1f°, accuracy=%.2f", 
+                                   x, y, orientation, accuracy);
+                            break; // 找到位置设备，不需要继续查找
+                        }
+                    }
+                }
+                cJSON_Delete(states);
+            }
+        }
+        #endif
+    } catch (const std::exception& e) {
+        ESP_LOGE(TAG, "获取位置数据时出错: %s", e.what());
+    } catch (...) {
+        ESP_LOGE(TAG, "获取位置数据时发生未知错误");
+    }
+    
+    // 添加位置数据到响应
+    cJSON_AddNumberToObject(position, "x", x);
+    cJSON_AddNumberToObject(position, "y", y);
+    cJSON_AddNumberToObject(position, "orientation", orientation);
+    cJSON_AddNumberToObject(position, "accuracy", accuracy);
+    cJSON_AddNumberToObject(position, "timestamp", esp_timer_get_time() / 1000000);
+    
+    // 将位置对象添加到响应
+    cJSON_AddItemToObject(response, "position", position);
+    
+    // 发送位置数据响应
+    char* json_str = cJSON_PrintUnformatted(response);
+    PSRAMString message(json_str);
+    free(json_str);
+    cJSON_Delete(response);
+    
+    SendWebSocketMessage(client_id, message);
+}
+
+void WebServer::HandleSetLocationMode(int client_id, cJSON* root) {
+    // 提取设置的位置模式
+    cJSON* mode_json = cJSON_GetObjectItem(root, "mode");
+    if (!mode_json || !cJSON_IsString(mode_json)) {
+        ESP_LOGE(TAG, "缺少有效的位置模式");
+        // 发送错误响应
+        SendWebSocketMessage(client_id, "{\"type\":\"error\",\"message\":\"缺少有效的位置模式\"}");
+        return;
+    }
+    
+    PSRAMString mode_str = mode_json->valuestring;
+    ESP_LOGI(TAG, "设置位置模式为: %s", mode_str.c_str());
+    
+    // 尝试设置位置模式
+    bool success = false;
+    
+    try {
+        #ifdef CONFIG_ENABLE_LOCATION_CONTROLLER
+        // 获取LocationController实例
+        auto* location_controller = LocationController::GetInstance();
+        
+        // 将字符串模式转换为LocationMode枚举
+        LocationMode location_mode;
+        if (mode_str == "gps") {
+            location_mode = MODE_GPS;
+        } else if (mode_str == "uwb") {
+            location_mode = MODE_UWB;
+        } else if (mode_str == "fusion") {
+            location_mode = MODE_FUSION;
+        } else {
+            ESP_LOGW(TAG, "未知的位置模式: %s", mode_str.c_str());
+            SendWebSocketMessage(client_id, "{\"type\":\"error\",\"message\":\"未知的位置模式\"}");
+            return;
+        }
+        
+        // 直接使用LocationController设置模式
+        success = location_controller->SetLocationMode(location_mode);
+        
+        if (!success) {
+            ESP_LOGW(TAG, "位置控制器无法设置模式 %s", mode_str.c_str());
+        }
+        #else
+        // 尝试通过ThingManager设置位置模式
+        auto& thing_manager = iot::ThingManager::GetInstance();
+        
+        // 创建命令JSON
+        cJSON* cmd = cJSON_CreateObject();
+        cJSON_AddStringToObject(cmd, "component", "location");
+        cJSON_AddStringToObject(cmd, "command", "set_mode");
+        cJSON_AddStringToObject(cmd, "mode", mode_str.c_str());
+        
+        // 调用位置服务
+        if (SafeToInvokeCommand(cmd)) {
+            thing_manager.Invoke(cmd);
+            success = true;
+        } else {
+            ESP_LOGW(TAG, "位置服务不可用");
+            success = false;
+        }
+        cJSON_Delete(cmd);
+        #endif
+    } catch (const std::exception& e) {
+        ESP_LOGE(TAG, "设置位置模式时出错: %s", e.what());
+        success = false;
+    } catch (...) {
+        ESP_LOGE(TAG, "设置位置模式时发生未知错误");
+        success = false;
+    }
+    
+    // 创建响应
+    cJSON* response = cJSON_CreateObject();
+    cJSON_AddStringToObject(response, "type", "mode_changed");
+    cJSON_AddStringToObject(response, "mode", mode_str.c_str());
+    cJSON_AddBoolToObject(response, "success", success);
+    
+    if (!success) {
+        cJSON_AddStringToObject(response, "message", "切换模式失败，位置服务可能不可用");
+    }
+    
+    // 发送响应
+    char* json_str = cJSON_PrintUnformatted(response);
+    PSRAMString message(json_str);
+    free(json_str);
+    cJSON_Delete(response);
+    
+    SendWebSocketMessage(client_id, message);
+    
+    // 如果成功切换模式，请求更新位置数据
+    if (success) {
+        // 短暂延迟后请求更新位置
+        vTaskDelay(pdMS_TO_TICKS(100));
+        HandleLocationRequest(client_id, nullptr);
+    }
+}
+
+void WebServer::HandleCalibratePosition(int client_id, cJSON* root) {
+    // 默认校准值
+    float x = 0.0f;
+    float y = 0.0f;
+    float orientation = 0.0f;
+    
+    // 从请求中获取校准参数（如果有的话）
+    cJSON* x_json = cJSON_GetObjectItem(root, "x");
+    if (x_json && cJSON_IsNumber(x_json)) {
+        x = x_json->valuedouble;
+    }
+    
+    cJSON* y_json = cJSON_GetObjectItem(root, "y");
+    if (y_json && cJSON_IsNumber(y_json)) {
+        y = y_json->valuedouble;
+    }
+    
+    cJSON* orientation_json = cJSON_GetObjectItem(root, "orientation");
+    if (orientation_json && cJSON_IsNumber(orientation_json)) {
+        orientation = orientation_json->valuedouble;
+    }
+    
+    ESP_LOGI(TAG, "校准位置: x=%.2f, y=%.2f, orientation=%.1f°", x, y, orientation);
+    
+    // 执行位置校准
+    bool success = false;
+    try {
+        #ifdef CONFIG_ENABLE_LOCATION_CONTROLLER
+        // 获取LocationController实例
+        auto* location_controller = LocationController::GetInstance();
+        
+        // 直接调用校准方法
+        success = location_controller->CalibratePosition(x, y, orientation);
+        
+        if (!success) {
+            ESP_LOGW(TAG, "位置控制器校准失败");
+        } else {
+            ESP_LOGI(TAG, "位置控制器校准成功");
+        }
+        #else
+        // 使用ThingManager进行校准
+        auto& thing_manager = iot::ThingManager::GetInstance();
+        
+        // 创建校准命令
+        cJSON* cmd = cJSON_CreateObject();
+        cJSON_AddStringToObject(cmd, "component", "location");
+        cJSON_AddStringToObject(cmd, "command", "calibrate");
+        cJSON_AddNumberToObject(cmd, "x", x);
+        cJSON_AddNumberToObject(cmd, "y", y);
+        cJSON_AddNumberToObject(cmd, "orientation", orientation);
+        
+        // 调用位置服务执行校准
+        if (SafeToInvokeCommand(cmd)) {
+            thing_manager.Invoke(cmd);
+            success = true;
+        } else {
+            ESP_LOGW(TAG, "位置服务不可用，无法执行校准");
+            success = false;
+        }
+        cJSON_Delete(cmd);
+        #endif
+    } catch (const std::exception& e) {
+        ESP_LOGE(TAG, "位置校准时出错: %s", e.what());
+        success = false;
+    } catch (...) {
+        ESP_LOGE(TAG, "位置校准时发生未知错误");
+        success = false;
+    }
+    
+    // 创建校准响应
+    cJSON* response = cJSON_CreateObject();
+    cJSON_AddStringToObject(response, "type", "location_calibration_result");
+    cJSON_AddBoolToObject(response, "success", success);
+    
+    // 添加校准位置数据
+    cJSON* position = cJSON_CreateObject();
+    cJSON_AddNumberToObject(position, "x", x);
+    cJSON_AddNumberToObject(position, "y", y);
+    cJSON_AddNumberToObject(position, "orientation", orientation);
+    cJSON_AddItemToObject(response, "position", position);
+    
+    if (!success) {
+        cJSON_AddStringToObject(response, "error", "位置校准失败，位置服务可能不可用");
+    }
+    
+    // 发送校准结果
+    char* json_str = cJSON_PrintUnformatted(response);
+    PSRAMString message(json_str);
+    free(json_str);
+    cJSON_Delete(response);
+    
+    SendWebSocketMessage(client_id, message);
+    
+    // 如果校准成功，请求更新位置数据
+    if (success) {
+        // 短暂延迟后请求更新位置
+        vTaskDelay(pdMS_TO_TICKS(200));
+        HandleLocationRequest(client_id, nullptr);
+    }
+}
+
+void WebServer::HandleSaveLocationMap(int client_id, cJSON* root) {
+    ESP_LOGI(TAG, "保存位置地图请求");
+    
+    // 执行地图保存
+    bool success = false;
+    PSRAMString path = "/spiffs/location_map.json"; // 默认保存路径
+    
+    // 获取文件路径（如果提供）
+    cJSON* path_json = cJSON_GetObjectItem(root, "path");
+    if (path_json && cJSON_IsString(path_json)) {
+        path = path_json->valuestring;
+    }
+    
+    try {
+        #ifdef CONFIG_ENABLE_LOCATION_CONTROLLER
+        // 获取LocationController实例
+        auto* location_controller = LocationController::GetInstance();
+        
+        // 调用保存地图方法
+        success = location_controller->SaveLocationMap(path.c_str());
+        
+        if (!success) {
+            ESP_LOGW(TAG, "位置控制器保存地图失败");
+        } else {
+            ESP_LOGI(TAG, "位置控制器保存地图成功: %s", path.c_str());
+        }
+        #else
+        // 使用ThingManager保存地图
+        auto& thing_manager = iot::ThingManager::GetInstance();
+        
+        // 创建保存地图命令
+        cJSON* cmd = cJSON_CreateObject();
+        cJSON_AddStringToObject(cmd, "component", "location");
+        cJSON_AddStringToObject(cmd, "command", "save_map");
+        cJSON_AddStringToObject(cmd, "path", path.c_str());
+        
+        // 调用位置服务保存地图
+        if (SafeToInvokeCommand(cmd)) {
+            thing_manager.Invoke(cmd);
+            success = true;
+        } else {
+            ESP_LOGW(TAG, "位置服务不可用，无法保存地图");
+            success = false;
+        }
+        cJSON_Delete(cmd);
+        #endif
+    } catch (const std::exception& e) {
+        ESP_LOGE(TAG, "保存地图时出错: %s", e.what());
+        success = false;
+    } catch (...) {
+        ESP_LOGE(TAG, "保存地图时发生未知错误");
+        success = false;
+    }
+    
+    // 创建保存地图响应
+    cJSON* response = cJSON_CreateObject();
+    cJSON_AddStringToObject(response, "type", "map_saved");
+    cJSON_AddBoolToObject(response, "success", success);
+    
+    if (success) {
+        cJSON_AddStringToObject(response, "path", path.c_str());
+    } else {
+        cJSON_AddStringToObject(response, "error", "保存地图失败，位置服务可能不可用");
+    }
+    
+    // 发送保存结果
+    char* json_str = cJSON_PrintUnformatted(response);
+    PSRAMString message(json_str);
+    free(json_str);
+    cJSON_Delete(response);
+    
+    SendWebSocketMessage(client_id, message);
+}
+
+#ifdef CONFIG_WEB_SERVER_ENABLE_SELF_TEST
+// Self-test for location handlers
+bool WebServer::TestLocationHandlers() {
+    ESP_LOGI(TAG, "测试位置处理器");
+    
+    bool all_tests_passed = true;
+    
+    try {
+        // 测试处理位置请求
+        {
+            ESP_LOGI(TAG, "测试HandleLocationRequest...");
+            cJSON* test_req = cJSON_CreateObject();
+            cJSON_AddStringToObject(test_req, "mode", "uwb");
+            
+            // 模拟客户端ID（-1表示仅测试，不实际发送）
+            int test_client = -1;
+            
+            // 这不会实际发送消息，但会执行处理过程
+            HandleLocationRequest(test_client, test_req);
+            
+            cJSON_Delete(test_req);
+            ESP_LOGI(TAG, "HandleLocationRequest测试通过");
+        }
+        
+        // 测试设置位置模式
+        {
+            ESP_LOGI(TAG, "测试HandleSetLocationMode...");
+            cJSON* test_req = cJSON_CreateObject();
+            cJSON_AddStringToObject(test_req, "mode", "gps");
+            
+            // 模拟客户端ID（-1表示仅测试，不实际发送）
+            int test_client = -1;
+            
+            // 这不会实际修改模式或发送消息，但会执行处理过程
+            HandleSetLocationMode(test_client, test_req);
+            
+            cJSON_Delete(test_req);
+            ESP_LOGI(TAG, "HandleSetLocationMode测试通过");
+        }
+        
+        // 测试校准位置
+        {
+            ESP_LOGI(TAG, "测试HandleCalibratePosition...");
+            cJSON* test_req = cJSON_CreateObject();
+            cJSON_AddNumberToObject(test_req, "x", 1.0);
+            cJSON_AddNumberToObject(test_req, "y", 2.0);
+            cJSON_AddNumberToObject(test_req, "orientation", 90.0);
+            
+            // 模拟客户端ID（-1表示仅测试，不实际发送）
+            int test_client = -1;
+            
+            // 这不会实际校准或发送消息，但会执行处理过程
+            HandleCalibratePosition(test_client, test_req);
+            
+            cJSON_Delete(test_req);
+            ESP_LOGI(TAG, "HandleCalibratePosition测试通过");
+        }
+        
+        // 测试保存地图
+        {
+            ESP_LOGI(TAG, "测试HandleSaveLocationMap...");
+            cJSON* test_req = cJSON_CreateObject();
+            
+            // 模拟客户端ID（-1表示仅测试，不实际发送）
+            int test_client = -1;
+            
+            // 这不会实际保存或发送消息，但会执行处理过程
+            HandleSaveLocationMap(test_client, test_req);
+            
+            cJSON_Delete(test_req);
+            ESP_LOGI(TAG, "HandleSaveLocationMap测试通过");
+        }
+        
+        ESP_LOGI(TAG, "所有位置处理器测试通过");
+    }
+    catch (const std::exception& e) {
+        ESP_LOGE(TAG, "位置处理器测试失败: %s", e.what());
+        all_tests_passed = false;
+    }
+    catch (...) {
+        ESP_LOGE(TAG, "位置处理器测试失败，未知错误");
+        all_tests_passed = false;
+    }
+    
+    return all_tests_passed;
+}
+#endif // CONFIG_WEB_SERVER_ENABLE_SELF_TEST

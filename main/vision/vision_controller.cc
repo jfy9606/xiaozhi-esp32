@@ -39,7 +39,7 @@ bool VisionController::Start() {
     }
     
     start_in_progress = true;
-    
+
     ESP_LOGI(TAG, "Starting VisionController with integrated camera functionality");
 
     // 摄像头初始化已经在iot/things/cam.cc中完成

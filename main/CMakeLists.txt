@@ -31,7 +31,7 @@ set(SOURCES "audio_codecs/audio_codec.cc"
             "vision/vision_content.cc"
             )
 
-set(INCLUDE_DIRS "." "display" "audio_codecs" "protocols" "audio_processing")
+set(INCLUDE_DIRS "." "display" "audio_codecs" "protocols" "audio_processing" "location")
 
 # HTML文件列表 - 只在启用web内容时使用
 set(EMBED_FILES "")
@@ -61,6 +61,13 @@ if(CONFIG_ENABLE_WEB_SERVER)
         "web/web_server.cc"
     )
     list(APPEND INCLUDE_DIRS "web")
+    list(APPEND INCLUDE_DIRS "assets/html")
+    
+    # 添加web组件所需依赖
+    if(NOT DEFINED COMPONENT_REQUIRES)
+        set(COMPONENT_REQUIRES "")
+    endif()
+    list(APPEND COMPONENT_REQUIRES "lwip" "esp_http_server")
     
     if(CONFIG_ENABLE_WEB_CONTENT)
         list(APPEND SOURCES 
@@ -70,9 +77,33 @@ if(CONFIG_ENABLE_WEB_SERVER)
     endif()
 endif()
 
-# 添加 IOT 相关文件
-file(GLOB IOT_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/iot/things/*.cc)
-list(APPEND SOURCES ${IOT_SOURCES})
+# 根据配置添加Location组件
+if(CONFIG_ENABLE_LOCATION_CONTROLLER)
+    list(APPEND SOURCES 
+        "location/location_controller.cc"
+        "location/location_content.cc"
+    )
+    message(STATUS "位置定位组件已启用")
+endif()
+
+# 使用file(GLOB...)来收集额外的源文件
+file(GLOB IOT_THINGS_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/iot/things/*.cc)
+file(GLOB WEB_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/web/*.cc)
+
+# 收集其他protocols文件(排除已经明确列出的主要文件)
+file(GLOB_RECURSE ALL_PROTOCOLS_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/protocols/*.cc)
+list(FILTER ALL_PROTOCOLS_SOURCES EXCLUDE REGEX ".*(protocol|mqtt_protocol|websocket_protocol)\\.cc$")
+set(PROTOCOLS_SOURCES ${ALL_PROTOCOLS_SOURCES})
+
+file(GLOB ADDITIONAL_MOTOR_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/motor/*.cc)
+list(FILTER ADDITIONAL_MOTOR_SOURCES EXCLUDE REGEX ".*(motor_controller|motor_content)\\.cc$")
+set(MOTOR_SOURCES ${ADDITIONAL_MOTOR_SOURCES})
+
+# 将所有收集的文件添加到SOURCES列表
+list(APPEND SOURCES ${IOT_THINGS_SOURCES})
+list(APPEND SOURCES ${WEB_SOURCES})
+list(APPEND SOURCES ${PROTOCOLS_SOURCES})
+list(APPEND SOURCES ${MOTOR_SOURCES})
 
 # 添加板级公共文件
 file(GLOB BOARD_COMMON_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/boards/common/*.cc)
@@ -269,6 +300,7 @@ list(APPEND INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/ext ${CMAKE_CURRENT_SOURCE_
 idf_component_register(SRCS ${SOURCES}
                     EMBED_FILES ${EMBED_FILES}
                     INCLUDE_DIRS ${INCLUDE_DIRS}
+                    REQUIRES ${COMPONENT_REQUIRES}
                     WHOLE_ARCHIVE
                     )
 

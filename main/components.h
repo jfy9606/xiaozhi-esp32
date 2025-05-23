@@ -14,7 +14,8 @@ enum ComponentType {
     COMPONENT_TYPE_MOTOR = 3,      // 电机控制相关组件
     COMPONENT_TYPE_IOT = 4,        // IoT设备相关组件
     COMPONENT_TYPE_AUDIO = 5,      // 音频相关组件
-    COMPONENT_TYPE_SYSTEM = 6      // 系统相关组件
+    COMPONENT_TYPE_SYSTEM = 6,     // 系统相关组件
+    COMPONENT_TYPE_LOCATION = 7    // 位置定位相关组件
 };
 
 // 组件接口基类
@@ -106,6 +107,13 @@ public:
                 return false;
                 #endif
                 
+            case COMPONENT_TYPE_LOCATION:
+                #if defined(CONFIG_ENABLE_LOCATION_CONTROLLER)
+                return true;
+                #else
+                return false;
+                #endif
+                
             case COMPONENT_TYPE_IOT:
                 #if defined(CONFIG_IOT_PROTOCOL_XIAOZHI) || defined(CONFIG_IOT_PROTOCOL_MCP)
                 return true;
@@ -114,11 +122,7 @@ public:
                 #endif
                 
             case COMPONENT_TYPE_AUDIO:
-                #if defined(CONFIG_ENABLE_XIAOZHI_AI_CORE)
-                return true;
-                #else
-                return false;
-                #endif
+                return true; // 音频组件总是启用
                 
             default:
                 return true; // 通用组件和系统组件默认启用

@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset='UTF-8'>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>ESP32S3位置定位</title>
+  <link rel='stylesheet' href='https://fonts.googleapis.com/css2?family=Roboto:wght@400;500&display=swap'>
+  <style>
+    body {
+      font-family: 'Roboto', sans-serif;
+      text-align: center;
+      margin: 0;
+      padding: 0;
+      background-color: #f5f5f5;
+      color: #333;
+      touch-action: none;
+      overflow-x: hidden;
+    }
+    .container {
+      max-width: 100%;
+      margin: 0 auto;
+      padding: 8px;
+      background-color: white;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    h1 {
+      color: #6200ea;
+      margin: 5px 0 10px 0;
+      font-size: 1.3rem;
+    }
+    /* 创建响应式布局 */
+    .main-content {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      gap: 5px;
+    }
+    /* 在宽屏设备上使用水平布局 */
+    @media (min-width: 768px) {
+      .container {
+        max-width: 95%;
+        padding: 10px;
+      }
+      .main-content {
+        flex-direction: row;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 10px;
+      }
+      .map-container {
+        flex: 1;
+        max-width: 60%;
+        margin-right: 10px;
+      }
+      .controls-container {
+        flex: 1;
+        max-width: 38%;
+      }
+      h1 {
+        font-size: 1.5rem;
+      }
+    }
+    /* 在更大的屏幕上调整比例 */
+    @media (min-width: 1200px) {
+      .container {
+        max-width: 1200px;
+        padding: 15px;
+      }
+      h1 {
+        font-size: 1.8rem;
+        margin: 10px 0 15px 0;
+      }
+    }
+    /* 在小屏幕设备上优化布局 */
+    @media (max-width: 767px) {
+      .container {
+        padding: 5px;
+        border-radius: 0;
+      }
+      h1 {
+        margin: 5px 0;
+        font-size: 1.2rem;
+      }
+      .map-container {
+        margin-bottom: 5px;
+      }
+      .main-content {
+        gap: 5px;
+      }
+    }
+    
+    /* 地图容器样式 */
+    .map-container {
+      width: 100%;
+      margin: 0 auto 5px;
+      overflow: hidden;
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      position: relative;
+      background-color: #eee;
+      aspect-ratio: 1/1;
+    }
+    
+    .map-canvas {
+      width: 100%;
+      height: 100%;
+      background-color: #f0f0f0;
+      position: relative;
+    }
+    
+    /* 地图设备标记 */
+    .device-marker {
+      position: absolute;
+      width: 20px;
+      height: 20px;
+      background-color: #6200ea;
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 10;
+      box-shadow: 0 0 8px rgba(0,0,0,0.3);
+    }
+    
+    /* 设备方向指示器 */
+    .direction-indicator {
+      position: absolute;
+      width: 0;
+      height: 0;
+      border-left: 6px solid transparent;
+      border-right: 6px solid transparent;
+      border-bottom: 12px solid #ff4081;
+      transform-origin: center bottom;
+      z-index: 11;
+    }
+    
+    /* 位置信息样式 */
+    .location-info {
+      width: 100%;
+      margin-top: 10px;
+      padding: 10px;
+      background-color: #f0f0f0;
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    
+    .info-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+      margin-top: 10px;
+    }
+    
+    .info-item {
+      background-color: white;
+      padding: 10px;
+      border-radius: 5px;
+      text-align: left;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    }
+    
+    .info-label {
+      font-size: 0.8rem;
+      color: #666;
+      margin-bottom: 3px;
+    }
+    
+    .info-value {
+      font-size: 1.2rem;
+      color: #333;
+      font-weight: bold;
+    }
+    
+    .info-unit {
+      font-size: 0.8rem;
+      color: #999;
+      margin-left: 2px;
+    }
+    
+    /* 状态信息样式 */
+    .status-container {
+      width: 100%;
+      margin-top: 5px;
+      padding: 5px;
+      background-color: #f9f9f9;
+      border-radius: 6px;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+    }
+    
+    .status {
+      color: #666;
+      font-size: 0.8rem;
+      text-align: center;
+      margin: 3px 0;
+    }
+    
+    .connection-status {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background-color: #f44336;
+      margin-right: 5px;
+    }
+    
+    .connected {
+      background-color: #4caf50;
+    }
+    
+    .debug-info {
+      font-size: 11px;
+      color: #888;
+      margin-top: 3px;
+      text-align: center;
+    }
+    
+    /* 定位模式控制 */
+    .mode-controls {
+      display: flex;
+      justify-content: space-between;
+      margin: 10px 0;
+      gap: 5px;
+    }
+    
+    .mode-button {
+      flex: 1;
+      padding: 8px;
+      background-color: #e0e0e0;
+      border: none;
+      border-radius: 4px;
+      color: #333;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background-color 0.2s;
+    }
+    
+    .mode-button.active {
+      background-color: #6200ea;
+      color: white;
+    }
+    
+    /* 校准按钮 */
+    .action-button {
+      display: block;
+      width: 100%;
+      padding: 10px;
+      margin-top: 10px;
+      background-color: #6200ea;
+      border: none;
+      border-radius: 4px;
+      color: white;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background-color 0.2s;
+    }
+    
+    .action-button:hover {
+      background-color: #3700b3;
+    }
+    
+    /* 返回主页按钮 */
+    .back-button {
+      display: inline-block;
+      margin: 15px 0 5px;
+      padding: 8px 15px;
+      background-color: #6200ea;
+      color: white;
+      text-decoration: none;
+      border-radius: 5px;
+      font-weight: 500;
+      font-size: 0.85rem;
+      transition: background-color 0.3s;
+    }
+    
+    .back-button:hover {
+      background-color: #3700b3;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <h1>ESP32S3位置定位</h1>
+    
+    <div class="main-content">
+      <div class="map-container">
+        <div id="map-canvas" class="map-canvas">
+          <div id="device-marker" class="device-marker"></div>
+          <div id="direction-indicator" class="direction-indicator"></div>
+        </div>
+      </div>
+      
+      <div class="controls-container">
+        <div class="mode-controls">
+          <button id="mode-gps" class="mode-button">GPS模式</button>
+          <button id="mode-uwb" class="mode-button active">UWB模式</button>
+          <button id="mode-fusion" class="mode-button">融合模式</button>
+        </div>
+        
+        <div class="location-info">
+          <h3>位置信息</h3>
+          <div class="info-grid">
+            <div class="info-item">
+              <div class="info-label">X坐标</div>
+              <div class="info-value" id="pos-x">0.00<span class="info-unit">m</span></div>
+            </div>
+            <div class="info-item">
+              <div class="info-label">Y坐标</div>
+              <div class="info-value" id="pos-y">0.00<span class="info-unit">m</span></div>
+            </div>
+            <div class="info-item">
+              <div class="info-label">方向角</div>
+              <div class="info-value" id="orientation">0.0<span class="info-unit">°</span></div>
+            </div>
+            <div class="info-item">
+              <div class="info-label">精度</div>
+              <div class="info-value" id="accuracy">0.00<span class="info-unit">m</span></div>
+            </div>
+          </div>
+          
+          <div class="status-container">
+            <div class="status">
+              <span id="connectionStatus" class="connection-status"></span>
+              <span id="statusText">连接中...</span>
+            </div>
+            <div class="status" id="modeText">当前模式: UWB定位</div>
+            <div class="debug-info" id="debugInfo"></div>
+          </div>
+          
+          <button id="calibrate-button" class="action-button">校准位置</button>
+          <button id="save-map-button" class="action-button">保存地图</button>
+        </div>
+      </div>
+    </div>
+    
+    <!-- 添加返回主页按钮 -->
+    <div class="button-container">
+      <a href="/" class="back-button">返回主页</a>
+    </div>
+  </div>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      const baseHost = document.location.origin;
+      const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${wsProtocol}//${window.location.host}/ws`;
+      
+      // 地图相关元素
+      const mapCanvas = document.getElementById('map-canvas');
+      const deviceMarker = document.getElementById('device-marker');
+      const directionIndicator = document.getElementById('direction-indicator');
+      
+      // 位置信息元素
+      const posXElem = document.getElementById('pos-x');
+      const posYElem = document.getElementById('pos-y');
+      const orientationElem = document.getElementById('orientation');
+      const accuracyElem = document.getElementById('accuracy');
+      
+      // 状态元素
+      const connectionStatus = document.getElementById('connectionStatus');
+      const statusText = document.getElementById('statusText');
+      const modeText = document.getElementById('modeText');
+      const debugInfo = document.getElementById('debugInfo');
+      
+      // 模式按钮
+      const modeGpsBtn = document.getElementById('mode-gps');
+      const modeUwbBtn = document.getElementById('mode-uwb');
+      const modeFusionBtn = document.getElementById('mode-fusion');
+      
+      // 动作按钮
+      const calibrateBtn = document.getElementById('calibrate-button');
+      const saveMapBtn = document.getElementById('save-map-button');
+      
+      // 当前位置和设置
+      let currentPosition = { x: 0, y: 0, orientation: 0, accuracy: 0 };
+      let currentMode = 'uwb'; // 默认使用UWB模式
+      let mapWidth = 10;  // 地图宽度（米）
+      let mapHeight = 10; // 地图高度（米）
+      let socket;
+      let socketConnected = false;
+      let statusCheckInterval;
+      let reconnectAttempts = 0;
+      const MAX_RECONNECT_ATTEMPTS = 5;
+      
+      // 连接WebSocket
+      function connectWebSocket() {
+        // 确保之前的WebSocket已关闭
+        if (socket) {
+          socket.close();
+          clearInterval(statusCheckInterval);
+        }
+        
+        console.log('连接到WebSocket:', wsUrl);
+        socket = new WebSocket(wsUrl);
+        
+        // 连接打开时
+        socket.onopen = function() {
+          console.log('WebSocket连接已建立');
+          socketConnected = true;
+          connectionStatus.classList.add('connected');
+          statusText.innerText = '已连接';
+          reconnectAttempts = 0;
+          
+          // 发送客户端类型
+          socket.send(JSON.stringify({
+            type: 'register_client',
+            client_type: 'location'
+          }));
+          
+          // 定期请求定位状态
+          requestLocationUpdate();
+          statusCheckInterval = setInterval(requestLocationUpdate, 1000);
+        };
+        
+        // 接收消息时
+        socket.onmessage = function(event) {
+          try {
+            const data = JSON.parse(event.data);
+            handleWebSocketMessage(data);
+          } catch (e) {
+            console.error('解析WebSocket消息出错:', e, event.data);
+          }
+        };
+        
+        // 发生错误时
+        socket.onerror = function(error) {
+          console.error('WebSocket错误:', error);
+          socketConnected = false;
+          connectionStatus.classList.remove('connected');
+          statusText.innerText = '连接错误';
+        };
+        
+        // 连接关闭时
+        socket.onclose = function() {
+          console.log('WebSocket连接已关闭');
+          socketConnected = false;
+          connectionStatus.classList.remove('connected');
+          statusText.innerText = '断开连接';
+          
+          // 清除状态检查定时器
+          clearInterval(statusCheckInterval);
+          
+          // 重新连接逻辑
+          if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+            reconnectAttempts++;
+            const delay = Math.min(1000 * reconnectAttempts, 5000);
+            console.log(`${delay}ms后尝试重新连接 (尝试 ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})...`);
+            setTimeout(connectWebSocket, delay);
+          } else {
+            console.log('达到最大重连次数，停止重连');
+            statusText.innerText = '重连失败，请刷新页面';
+          }
+        };
+      }
+      
+      // 请求位置更新
+      function requestLocationUpdate() {
+        if (socket && socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({
+            type: 'get_location',
+            mode: currentMode
+          }));
+        }
+      }
+      
+      // 处理WebSocket消息
+      function handleWebSocketMessage(data) {
+        if (data.type === 'location_update') {
+          updateLocationInfo(data);
+        } else if (data.type === 'status_response') {
+          updateSystemStatus(data);
+        } else if (data.type === 'heartbeat_response') {
+          // 收到心跳响应，可以不做任何事情
+        } else if (data.type === 'location_calibration_result') {
+          handleCalibrationResult(data);
+        } else if (data.type === 'map_saved') {
+          // 显示地图保存成功的消息
+          debugInfo.textContent = `地图保存成功: ${data.path}`;
+        } else {
+          console.log('收到未知类型消息:', data.type);
+        }
+      }
+      
+      // 更新位置信息
+      function updateLocationInfo(data) {
+        if (!data.position) return;
+        
+        // 更新当前位置数据
+        currentPosition = {
+          x: data.position.x || 0,
+          y: data.position.y || 0,
+          orientation: data.position.orientation || 0,
+          accuracy: data.position.accuracy || 0
+        };
+        
+        // 更新UI显示
+        posXElem.innerHTML = currentPosition.x.toFixed(2) + '<span class="info-unit">m</span>';
+        posYElem.innerHTML = currentPosition.y.toFixed(2) + '<span class="info-unit">m</span>';
+        orientationElem.innerHTML = currentPosition.orientation.toFixed(1) + '<span class="info-unit">°</span>';
+        accuracyElem.innerHTML = currentPosition.accuracy.toFixed(2) + '<span class="info-unit">m</span>';
+        
+        // 更新地图上的标记位置
+        updateMarkerPosition(currentPosition.x, currentPosition.y, currentPosition.orientation);
+        
+        // 更新定位模式文本
+        modeText.textContent = `当前模式: ${getModeName(data.mode || currentMode)}`;
+      }
+      
+      // 更新系统状态
+      function updateSystemStatus(data) {
+        if (data.system) {
+          // 更新连接状态
+          connectionStatus.classList.add('connected');
+          statusText.innerText = '系统正常';
+        }
+        
+        // 如果有位置传感器数据，也可以在这里更新
+        if (data.sensors && data.sensors.location) {
+          // 更新额外的位置传感器信息
+          debugInfo.textContent = `更新时间: ${new Date().toLocaleTimeString()}`;
+        }
+      }
+      
+      // 处理校准结果
+      function handleCalibrationResult(data) {
+        if (data.success) {
+          debugInfo.textContent = `校准成功: (${data.position.x.toFixed(2)}, ${data.position.y.toFixed(2)})`;
+          
+          // 更新当前位置
+          updateLocationInfo(data);
+        } else {
+          debugInfo.textContent = `校准失败: ${data.error}`;
+        }
+      }
+      
+      // 更新地图上的设备标记位置
+      function updateMarkerPosition(x, y, orientation) {
+        // 将实际坐标转换为地图上的像素位置
+        const mapRect = mapCanvas.getBoundingClientRect();
+        const pixelX = (x / mapWidth) * mapRect.width;
+        const pixelY = mapRect.height - (y / mapHeight) * mapRect.height; // Y轴反转，底部是0
+        
+        // 设置设备标记位置
+        deviceMarker.style.left = pixelX + 'px';
+        deviceMarker.style.top = pixelY + 'px';
+        
+        // 设置方向指示器的位置和角度
+        directionIndicator.style.left = pixelX + 'px';
+        directionIndicator.style.top = (pixelY - 12) + 'px'; // 调整偏移使箭头底部位于中心点
+        directionIndicator.style.transform = `rotate(${orientation}deg)`;
+      }
+      
+      // 获取模式名称
+      function getModeName(mode) {
+        switch (mode) {
+          case 'gps': return 'GPS定位';
+          case 'uwb': return 'UWB定位';
+          case 'fusion': return '融合定位';
+          default: return '未知模式';
+        }
+      }
+      
+      // 设置定位模式
+      function setLocationMode(mode) {
+        currentMode = mode;
+        
+        // 更新按钮状态
+        modeGpsBtn.classList.toggle('active', mode === 'gps');
+        modeUwbBtn.classList.toggle('active', mode === 'uwb');
+        modeFusionBtn.classList.toggle('active', mode === 'fusion');
+        
+        // 发送模式更改请求
+        if (socket && socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({
+            type: 'set_location_mode',
+            mode: mode
+          }));
+        }
+        
+        // 更新模式文本
+        modeText.textContent = `当前模式: ${getModeName(mode)}`;
+        
+        // 立即请求更新
+        requestLocationUpdate();
+      }
+      
+      // 绑定模式切换按钮事件
+      modeGpsBtn.addEventListener('click', () => setLocationMode('gps'));
+      modeUwbBtn.addEventListener('click', () => setLocationMode('uwb'));
+      modeFusionBtn.addEventListener('click', () => setLocationMode('fusion'));
+      
+      // 绑定校准按钮事件
+      calibrateBtn.addEventListener('click', function() {
+        if (socket && socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({
+            type: 'calibrate_location',
+            mode: currentMode
+          }));
+          debugInfo.textContent = '正在校准位置...';
+        }
+      });
+      
+      // 绑定保存地图按钮事件
+      saveMapBtn.addEventListener('click', function() {
+        if (socket && socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({
+            type: 'save_location_map',
+            mode: currentMode
+          }));
+          debugInfo.textContent = '正在保存地图...';
+        }
+      });
+      
+      // 计算地图尺寸
+      function calculateMapSize() {
+        const mapRect = mapCanvas.getBoundingClientRect();
+        mapCanvas.style.height = mapRect.width + 'px'; // 保持1:1比例
+      }
+      
+      // 屏幕尺寸变化时重新计算地图尺寸
+      window.addEventListener('resize', calculateMapSize);
+      
+      // 页面加载后的初始化
+      calculateMapSize();
+      connectWebSocket();
+      setLocationMode('uwb'); // 默认设置为UWB模式
+    });
+  </script>
+</body>
+</html> 

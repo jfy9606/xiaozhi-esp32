@@ -159,6 +159,7 @@ public:
     static esp_err_t VisionHandler(httpd_req_t *req);
     static esp_err_t MotorHandler(httpd_req_t *req);
     static esp_err_t AIHandler(httpd_req_t *req);
+    static esp_err_t LocationHandler(httpd_req_t *req);
     static esp_err_t CarControlHandler(httpd_req_t *req);
     static esp_err_t CameraControlHandler(httpd_req_t *req);
     static esp_err_t CameraStreamHandler(httpd_req_t *req);
@@ -175,6 +176,11 @@ public:
         return active_instance_;
     }
 
+#ifdef CONFIG_WEB_SERVER_ENABLE_SELF_TEST
+    // 测试位置处理器功能
+    bool TestLocationHandlers();
+#endif
+
 private:
     void RegisterDefaultHandlers();
     void HandleWebSocketMessage(int client_id, const PSRAMString& message);
@@ -183,6 +189,12 @@ private:
     
     // 辅助方法：检查是否可以安全地调用命令（修改为静态方法）
     static bool SafeToInvokeCommand(const cJSON* cmd);
+
+    // 处理WebSocket位置请求
+    void HandleLocationRequest(int client_id, cJSON* root);
+    void HandleSetLocationMode(int client_id, cJSON* root);
+    void HandleCalibratePosition(int client_id, cJSON* root);
+    void HandleSaveLocationMap(int client_id, cJSON* root);
 
     httpd_handle_t server_;
     bool running_;

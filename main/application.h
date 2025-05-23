@@ -86,6 +86,7 @@ public:
     void StopComponents();
     Component* GetComponent(const char* name);
     void SendMcpMessage(const std::string& payload);
+    bool InitComponents();
 
 private:
     Application();
@@ -144,6 +145,11 @@ private:
     void OnClockTimer();
     void SetListeningMode(ListeningMode mode);
     void AudioLoop();
+
+#ifdef CONFIG_ENABLE_LOCATION_CONTROLLER
+    // 初始化位置控制器
+    void InitLocationController();
+#endif
 };
 
 #endif // _APPLICATION_H_

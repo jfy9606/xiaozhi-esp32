@@ -1,12 +1,5 @@
 menu "Xiaozhi Assistant"
 
-config ENABLE_XIAOZHI_AI_CORE
-    bool "启用小智AI核心功能"
-    default y
-    help
-        开启或关闭小智AI的核心功能，包括语音唤醒、语音对话及与AI后端的交互功能。
-        关闭此功能不会影响OTA、WIFI、显示屏功能，以及WIFI配对及其网页服务器。
-
 config OTA_URL
     string "Default OTA URL"
     default "https://api.tenclass.net/xiaozhi/ota/"
@@ -256,14 +249,14 @@ config USE_WECHAT_MESSAGE_STYLE
 config USE_WAKE_WORD_DETECT
     bool "Enable Wake Word Detection"
     default y
-    depends on IDF_TARGET_ESP32S3 && SPIRAM && ENABLE_XIAOZHI_AI_CORE
+    depends on IDF_TARGET_ESP32S3 && SPIRAM
     help
         需要 ESP32 S3 与 AFE 支持
 
 config USE_AUDIO_PROCESSOR
     bool "Enable Audio Noise Reduction"
     default y
-    depends on IDF_TARGET_ESP32S3 && SPIRAM && ENABLE_XIAOZHI_AI_CORE
+    depends on IDF_TARGET_ESP32S3 && SPIRAM
     help
         需要 ESP32 S3 与 AFE 支持
 
@@ -646,6 +639,61 @@ menu "组件管理器"
             default y
             help
                 启用视觉控制器，用于摄像头功能
+    endmenu
+
+    # 位置控制器配置
+    menu "Location Controller"
+        config ENABLE_LOCATION_CONTROLLER
+            bool "启用位置定位功能"
+            default y
+            help
+                启用位置定位功能，用于GPS、UWB等定位系统的支持，以及位置数据处理
+                
+        choice LOCATION_MODE
+            prompt "默认位置定位模式"
+            default LOCATION_MODE_UWB
+            depends on ENABLE_LOCATION_CONTROLLER
+            help
+                选择默认使用的位置定位模式
+                
+            config LOCATION_MODE_UWB
+                bool "UWB定位模式"
+                help
+                    使用UWB模块进行室内高精度定位
+                    
+            config LOCATION_MODE_GPS
+                bool "GPS定位模式"
+                help
+                    使用GPS模块进行卫星定位，适合室外使用
+                    
+            config LOCATION_MODE_FUSION
+                bool "融合定位模式"
+                help
+                    融合多种定位方式，提高精度和稳定性
+        endchoice
+        
+        config LOCATION_CALIBRATION_ENABLED
+            bool "启用位置校准功能"
+            default y
+            depends on ENABLE_LOCATION_CONTROLLER
+            help
+                启用位置校准功能，允许用户在Web界面手动校准位置数据
+                
+        config LOCATION_SAVE_MAP_ENABLED
+            bool "启用地图保存功能"
+            default y
+            depends on ENABLE_LOCATION_CONTROLLER
+            help
+                启用地图保存功能，允许用户保存位置定位地图数据
+                
+        config LOCATION_UPDATE_INTERVAL_MS
+            int "位置更新间隔(毫秒)"
+            default 100
+            range 50 1000
+            depends on ENABLE_LOCATION_CONTROLLER
+            help
+                位置数据更新的时间间隔，单位为毫秒
+                较小的值提供更实时的数据，但会增加系统负担
     endmenu
 
     # 超声波传感器配置
