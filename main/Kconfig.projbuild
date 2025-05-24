@@ -327,13 +327,14 @@ menu "组件管理器"
                 关闭此选项将只提供基本的Web API接口，不包含HTML页面。
     endmenu
     
-    # Multiplexer配置
-    menu "Multiplexer"
+    # 扩展器/多路复用器配置
+    menu "Multiplexer & Expander"
         config ENABLE_MULTIPLEXER
-            bool "启用多路复用器支持"
+            bool "启用扩展器/多路复用器"
             default n
             help
-                启用多路复用器支持，可使用PCA9548A或HW-178等多路复用器扩展I/O或I2C设备
+                启用扩展器模块，支持各种多路复用器和扩展芯片，如PCA9548A、HW-178、PCF8575、LU9685等，
+                用于扩展I/O、I2C设备、GPIO接口和舵机控制等功能。
 
         config ENABLE_PCA9548A
             bool "启用PCA9548A I2C多路复用器"
@@ -403,12 +404,11 @@ menu "组件管理器"
                 PCA9548A I2C通信的超时时间，单位毫秒。
 
         config ENABLE_HW178
-            bool "启用HW-178 16路模拟多路复用器"
+            bool "启用HW-178多路复用器"
             default n
             depends on ENABLE_MULTIPLEXER
             help
-                启用HW-178多路复用器支持，可扩展模拟输入接口。
-                HW-178通过S0-S3四路选择引脚控制，可连接多达16个模拟信号(C0-C15)。
+                启用HW-178模拟多路复用器支持，可扩展模拟传感器数量
 
         config HW178_S0_PIN
             int "HW-178 S0控制引脚"
@@ -465,6 +465,62 @@ menu "组件管理器"
             depends on ENABLE_HW178
             help
                 连接HW-178输出的ADC通道号。
+
+        config ENABLE_PCF8575
+            bool "启用PCF8575 I2C GPIO扩展器"
+            default n
+            depends on ENABLE_PCA9548A
+            help
+                启用PCF8575 I2C GPIO扩展器支持，可扩展GPIO接口。
+                PCF8575通过I2C连接到PCA9548A的通道0，提供16路GPIO扩展。
+
+        config PCF8575_I2C_ADDR
+            hex "PCF8575 I2C地址"
+            default 0x20
+            range 0x20 0x27
+            depends on ENABLE_PCF8575
+            help
+                PCF8575的I2C地址，默认为0x20。
+                可通过A0-A2引脚设置为0x20-0x27之间的值。
+
+        config PCF8575_I2C_TIMEOUT_MS
+            int "PCF8575 I2C超时时间 (ms)"
+            default 1000
+            range 100 10000
+            depends on ENABLE_PCF8575
+            help
+                PCF8575 I2C通信的超时时间，单位毫秒。
+
+        config PCF8575_PCA9548A_CHANNEL
+            int "PCF8575连接的PCA9548A通道"
+            default 0
+            range 0 7
+            depends on ENABLE_PCF8575
+            help
+                PCF8575连接的PCA9548A通道号(0-7)。
+                
+        config ENABLE_LU9685
+            bool "启用LU9685-20CU舵机控制器"
+            default n
+            depends on ENABLE_PCA9548A
+            help
+                启用LU9685-20CU舵机控制器支持，可控制多个舵机。
+                LU9685-20CU通过I2C总线通信，连接在PCA9548A的通道1上。
+
+        config LU9685_I2C_ADDR
+            hex "LU9685-20CU I2C地址"
+            default 0x80
+            depends on ENABLE_LU9685
+            help
+                LU9685-20CU的I2C地址，默认为0x80。
+
+        config LU9685_PCA9548A_CHANNEL
+            int "LU9685-20CU连接的PCA9548A通道"
+            default 1
+            range 0 7
+            depends on ENABLE_LU9685
+            help
+                LU9685-20CU连接的PCA9548A通道号(0-7)。
     endmenu
     
     # 电机控制器配置
@@ -491,11 +547,31 @@ menu "组件管理器"
             help
                 连接到电机驱动的PWMB/ENB引脚的GPIO编号
                 
+        choice MOTOR_CONNECTION_TYPE
+            prompt "电机控制引脚连接方式"
+            default MOTOR_CONNECTION_DIRECT
+            depends on ENABLE_MOTOR_CONTROLLER
+            help
+                选择电机控制引脚(IN1-IN4)的连接方式
+                
+            config MOTOR_CONNECTION_DIRECT
+                bool "直接连接GPIO引脚"
+                help
+                    电机控制引脚直接连接到ESP32的GPIO引脚
+                    
+            config MOTOR_CONNECTION_PCF8575
+                bool "通过PCF8575 GPIO扩展器连接"
+                depends on ENABLE_PCF8575
+                help
+                    电机控制引脚通过PCF8575 GPIO扩展器连接
+                    IN1-IN4连接在P04-P07引脚
+        endchoice
+                
         config MOTOR_IN1_PIN
             int "电机A输入1引脚"
             default 47
             range 0 48
-            depends on ENABLE_MOTOR_CONTROLLER
+            depends on ENABLE_MOTOR_CONTROLLER && MOTOR_CONNECTION_DIRECT
             help
                 连接到电机驱动的IN1引脚的GPIO编号
                 
@@ -503,7 +579,7 @@ menu "组件管理器"
             int "电机A输入2引脚"
             default 21
             range 0 48
-            depends on ENABLE_MOTOR_CONTROLLER
+            depends on ENABLE_MOTOR_CONTROLLER && MOTOR_CONNECTION_DIRECT
             help
                 连接到电机驱动的IN2引脚的GPIO编号
                 
@@ -511,7 +587,7 @@ menu "组件管理器"
             int "电机B输入1引脚"
             default 20
             range 0 48
-            depends on ENABLE_MOTOR_CONTROLLER
+            depends on ENABLE_MOTOR_CONTROLLER && MOTOR_CONNECTION_DIRECT
             help
                 连接到电机驱动的IN3引脚的GPIO编号
                 
@@ -519,9 +595,45 @@ menu "组件管理器"
             int "电机B输入2引脚"
             default 19
             range 0 48
-            depends on ENABLE_MOTOR_CONTROLLER
+            depends on ENABLE_MOTOR_CONTROLLER && MOTOR_CONNECTION_DIRECT
             help
                 连接到电机驱动的IN4引脚的GPIO编号
+                
+        config MOTOR_PCF8575_IN1_PIN
+            int "PCF8575电机A输入1引脚"
+            range 0 15
+            default 4  # P04
+            depends on ENABLE_MOTOR_CONTROLLER && MOTOR_CONNECTION_PCF8575
+            help
+                PCF8575上连接到电机驱动的IN1引脚的引脚编号（P00-P17，对应值为0-15）
+                例如，4代表P04，12代表P14
+
+        config MOTOR_PCF8575_IN2_PIN
+            int "PCF8575电机A输入2引脚"
+            range 0 15
+            default 5  # P05
+            depends on ENABLE_MOTOR_CONTROLLER && MOTOR_CONNECTION_PCF8575
+            help
+                PCF8575上连接到电机驱动的IN2引脚的引脚编号（P00-P17，对应值为0-15）
+                例如，5代表P05，13代表P15
+
+        config MOTOR_PCF8575_IN3_PIN
+            int "PCF8575电机B输入1引脚"
+            range 0 15
+            default 6  # P06
+            depends on ENABLE_MOTOR_CONTROLLER && MOTOR_CONNECTION_PCF8575
+            help
+                PCF8575上连接到电机驱动的IN3引脚的引脚编号（P00-P17，对应值为0-15）
+                例如，6代表P06，14代表P16
+
+        config MOTOR_PCF8575_IN4_PIN
+            int "PCF8575电机B输入2引脚"
+            range 0 15
+            default 7  # P07
+            depends on ENABLE_MOTOR_CONTROLLER && MOTOR_CONNECTION_PCF8575
+            help
+                PCF8575上连接到电机驱动的IN4引脚的引脚编号（P00-P17，对应值为0-15）
+                例如，7代表P07，15代表P17
     endmenu
     
     # 舵机控制器配置
@@ -532,35 +644,55 @@ menu "组件管理器"
             help
                 启用舵机控制器，用于舵机云台、机械臂等控制功能
                 
+        choice SERVO_CONNECTION_TYPE
+            prompt "舵机连接方式"
+            default SERVO_CONNECTION_DIRECT
+            depends on ENABLE_SERVO_CONTROLLER
+            help
+                选择舵机的连接方式
+                
+            config SERVO_CONNECTION_DIRECT
+                bool "直接连接GPIO引脚"
+                help
+                    舵机直接连接到ESP32的GPIO引脚
+                    
+            config SERVO_CONNECTION_LU9685
+                bool "通过LU9685-20CU舵机控制器"
+                depends on ENABLE_LU9685
+                help
+                    舵机通过LU9685-20CU舵机控制器连接
+                    左右云台舵机接在0-1号通道，上下云台舵机接在2-3号通道
+        endchoice
+                
         config SERVO_COUNT
             int "舵机数量"
             default 2
             range 1 8
-            depends on ENABLE_SERVO_CONTROLLER
+            depends on ENABLE_SERVO_CONTROLLER && SERVO_CONNECTION_DIRECT
             help
                 使用的舵机数量，最多支持8个
                 
         config SERVO_PIN_1
-            int "舵机1引脚(水平舵机)"
+            int "左侧舵机引脚"
             default 45
             range 0 48
-            depends on ENABLE_SERVO_CONTROLLER && SERVO_COUNT >= 1
+            depends on ENABLE_SERVO_CONTROLLER && SERVO_CONNECTION_DIRECT && SERVO_COUNT >= 1
             help
-                连接到舵机1的信号引脚，通常用作水平舵机(云台水平转向)
+                连接到左侧舵机的信号引脚，用于云台水平控制
                 
         config SERVO_PIN_2
-            int "舵机2引脚(垂直舵机)"
+            int "右侧舵机引脚"
             default 46
             range 0 48
-            depends on ENABLE_SERVO_CONTROLLER && SERVO_COUNT >= 2
+            depends on ENABLE_SERVO_CONTROLLER && SERVO_CONNECTION_DIRECT && SERVO_COUNT >= 2
             help
-                连接到舵机2的信号引脚，通常用作垂直舵机(云台俯仰)
+                连接到右侧舵机的信号引脚，用于上下控制
                 
         config SERVO_PIN_3
             int "舵机3引脚"
             default -1
             range -1 48
-            depends on ENABLE_SERVO_CONTROLLER && SERVO_COUNT >= 3
+            depends on ENABLE_SERVO_CONTROLLER && SERVO_CONNECTION_DIRECT && SERVO_COUNT >= 3
             help
                 连接到舵机3的信号引脚
                 
@@ -568,7 +700,7 @@ menu "组件管理器"
             int "舵机4引脚"
             default -1
             range -1 48
-            depends on ENABLE_SERVO_CONTROLLER && SERVO_COUNT >= 4
+            depends on ENABLE_SERVO_CONTROLLER && SERVO_CONNECTION_DIRECT && SERVO_COUNT >= 4
             help
                 连接到舵机4的信号引脚
                 
@@ -576,7 +708,7 @@ menu "组件管理器"
             int "舵机5引脚"
             default -1
             range -1 48
-            depends on ENABLE_SERVO_CONTROLLER && SERVO_COUNT >= 5
+            depends on ENABLE_SERVO_CONTROLLER && SERVO_CONNECTION_DIRECT && SERVO_COUNT >= 5
             help
                 连接到舵机5的信号引脚
                 
@@ -584,7 +716,7 @@ menu "组件管理器"
             int "舵机6引脚"
             default -1
             range -1 48
-            depends on ENABLE_SERVO_CONTROLLER && SERVO_COUNT >= 6
+            depends on ENABLE_SERVO_CONTROLLER && SERVO_CONNECTION_DIRECT && SERVO_COUNT >= 6
             help
                 连接到舵机6的信号引脚
                 
@@ -592,7 +724,7 @@ menu "组件管理器"
             int "舵机7引脚"
             default -1
             range -1 48
-            depends on ENABLE_SERVO_CONTROLLER && SERVO_COUNT >= 7
+            depends on ENABLE_SERVO_CONTROLLER && SERVO_CONNECTION_DIRECT && SERVO_COUNT >= 7
             help
                 连接到舵机7的信号引脚
                 
@@ -600,9 +732,41 @@ menu "组件管理器"
             int "舵机8引脚"
             default -1
             range -1 48
-            depends on ENABLE_SERVO_CONTROLLER && SERVO_COUNT >= 8
+            depends on ENABLE_SERVO_CONTROLLER && SERVO_CONNECTION_DIRECT && SERVO_COUNT >= 8
             help
                 连接到舵机8的信号引脚
+            
+        config SERVO_LU9685_LEFT_CHANNEL
+            int "LU9685左侧舵机通道"
+            default 0
+            range 0 15
+            depends on ENABLE_SERVO_CONTROLLER && SERVO_CONNECTION_LU9685
+            help
+                LU9685-20CU控制器上连接左侧舵机的通道编号(0-15)
+                
+        config SERVO_LU9685_RIGHT_CHANNEL
+            int "LU9685右侧舵机通道"
+            default 1
+            range 0 15
+            depends on ENABLE_SERVO_CONTROLLER && SERVO_CONNECTION_LU9685
+            help
+                LU9685-20CU控制器上连接右侧舵机的通道编号(0-15)
+                
+        config SERVO_LU9685_UP_CHANNEL
+            int "LU9685上部舵机通道"
+            default 2
+            range 0 15
+            depends on ENABLE_SERVO_CONTROLLER && SERVO_CONNECTION_LU9685
+            help
+                LU9685-20CU控制器上连接上部舵机的通道编号(0-15)
+                
+        config SERVO_LU9685_DOWN_CHANNEL
+            int "LU9685下部舵机通道"
+            default 3
+            range 0 15
+            depends on ENABLE_SERVO_CONTROLLER && SERVO_CONNECTION_LU9685
+            help
+                LU9685-20CU控制器上连接下部舵机的通道编号(0-15)
                 
         config SERVO_MIN_PULSE_WIDTH
             int "舵机最小脉冲宽度(μs)"
@@ -639,6 +803,13 @@ menu "组件管理器"
             default y
             help
                 启用视觉控制器，用于摄像头功能
+
+        config ENABLE_VISION_CONTENT
+            bool "启用视觉内容处理"
+            default n
+            depends on ENABLE_VISION_CONTROLLER
+            help
+                启用视觉内容处理能力，用于图像内容识别和分析，依赖于视觉控制器
     endmenu
 
     # 位置控制器配置
@@ -723,7 +894,7 @@ menu "组件管理器"
                 
         choice US_CONNECTION_TYPE
             prompt "超声波传感器连接方式"
-            default US_CONNECTION_PCA9548A
+            default US_CONNECTION_PCF8575
             depends on ENABLE_US_SENSOR
             help
                 选择超声波传感器的连接方式
@@ -733,13 +904,13 @@ menu "组件管理器"
                 help
                     超声波传感器直接连接到ESP32的GPIO引脚
                     
-            config US_CONNECTION_PCA9548A
-                bool "通过PCA9548A多路复用器连接"
-                depends on ENABLE_PCA9548A
+            config US_CONNECTION_PCF8575
+                bool "通过PCF8575 GPIO扩展器连接"
+                depends on ENABLE_PCF8575
                 help
-                    超声波传感器通过PCA9548A I2C多路复用器连接
-                    前置传感器连接在SD0/SA0通道(通道0)
-                    后置传感器连接在SD1/SA1通道(通道1)
+                    超声波传感器通过PCF8575 GPIO扩展器连接
+                    前置传感器的TRIG/ECHO连接在P00/P01引脚
+                    后置传感器的TRIG/ECHO连接在P02/P03引脚
         endchoice
         
         config US_FRONT_TRIG_PIN
@@ -773,6 +944,69 @@ menu "组件管理器"
             depends on ENABLE_US_SENSOR && US_CONNECTION_DIRECT
             help
                 连接到后置超声波传感器的回响引脚(ECHO)的GPIO编号
+                
+        config US_PCF8575_FRONT_TRIG_PIN
+            int "PCF8575前置超声波传感器触发引脚"
+            range 0 15
+            default 0  # P00
+            depends on ENABLE_US_SENSOR && US_CONNECTION_PCF8575
+            help
+                PCF8575上连接到前置超声波传感器的触发引脚(TRIG)的引脚编号（P00-P17，对应值为0-15）
+                例如，0代表P00，8代表P10
+
+        config US_PCF8575_FRONT_ECHO_PIN
+            int "PCF8575前置超声波传感器回响引脚"
+            range 0 15
+            default 1  # P01
+            depends on ENABLE_US_SENSOR && US_CONNECTION_PCF8575
+            help
+                PCF8575上连接到前置超声波传感器的回响引脚(ECHO)的引脚编号（P00-P17，对应值为0-15）
+                例如，1代表P01，9代表P11
+                
+        config US_PCF8575_REAR_TRIG_PIN
+            int "PCF8575后置超声波传感器触发引脚"
+            range 0 15
+            default 2  # P02
+            depends on ENABLE_US_SENSOR && US_CONNECTION_PCF8575
+            help
+                PCF8575上连接到后置超声波传感器的触发引脚(TRIG)的引脚编号（P00-P17，对应值为0-15）
+                例如，2代表P02，10代表P12
+
+        config US_PCF8575_REAR_ECHO_PIN
+            int "PCF8575后置超声波传感器回响引脚"
+            range 0 15
+            default 3  # P03
+            depends on ENABLE_US_SENSOR && US_CONNECTION_PCF8575
+            help
+                PCF8575上连接到后置超声波传感器的回响引脚(ECHO)的引脚编号（P00-P17，对应值为0-15）
+                例如，3代表P03，11代表P13
+    endmenu
+
+    # 摄像头配置
+    menu "Camera"
+        config ENABLE_CAM
+            bool "启用摄像头"
+            default n
+            help
+                启用摄像头功能，用于视觉识别和图像捕获
+    endmenu
+
+    # IMU传感器配置
+    menu "IMU Sensor"
+        config ENABLE_IMU
+            bool "启用IMU传感器"
+            default n
+            help
+                启用惯性测量单元(IMU)传感器，用于姿态检测和运动跟踪
+    endmenu
+
+    # 光线传感器配置
+    menu "Light Sensor"
+        config ENABLE_LIGHT
+            bool "启用光线传感器"
+            default n
+            help
+                启用光线传感器和控制器，用于环境光照检测和灯光控制
     endmenu
 
 endmenu

@@ -10,6 +10,16 @@ void ThingManager::AddThing(Thing* thing) {
     things_.push_back(thing);
 }
 
+// 添加FindThingByName实现
+Thing* ThingManager::FindThingByName(const std::string& name) {
+    for (auto& thing : things_) {
+        if (thing->name() == name) {
+            return thing;
+        }
+    }
+    return nullptr;
+}
+
 std::string ThingManager::GetDescriptorsJson() {
     std::string json_str = "[";
     for (auto& thing : things_) {

@@ -38,8 +38,8 @@
 #endif
 
 // 声明外部函数（从其他组件获取HTML内容）
-extern const char* get_motor_html_content();
-extern size_t get_motor_html_size();
+extern const char* get_move_html_content();
+extern size_t get_move_html_size();
 extern const char* get_vision_html_content();
 extern size_t get_vision_html_size();
 extern const char* get_ai_html_content();
@@ -62,7 +62,7 @@ static const char* WS_MSG_TAG = "WsMessage";
 extern "C" { 
     // 常量别名
     extern const char* INDEX_HTML;
-    extern const char* MOTOR_HTML;
+    extern const char* MOVE_HTML;
     extern const char* AI_HTML;
     extern const char* VISION_HTML;
     extern const char* LOCATION_HTML;
@@ -71,7 +71,7 @@ extern "C" {
 
 // Forward declarations
 #if defined(CONFIG_ENABLE_MOTOR_CONTROLLER)
-extern void InitMotorComponents(WebServer* server);
+extern void InitMoveComponents(WebServer* server);
 #endif
 #if CONFIG_ENABLE_AI_CONTROLLER && CONFIG_ENABLE_WEB_CONTENT
 extern void InitAIComponents(WebServer* server);
@@ -488,10 +488,10 @@ esp_err_t WebServer::VisionHandler(httpd_req_t *req) {
 esp_err_t WebServer::MotorHandler(httpd_req_t *req) {
 #if defined(CONFIG_ENABLE_MOTOR_CONTROLLER)
     // 获取电机控制相关的HTML内容
-    const char* html_content = get_motor_html_content();
-    size_t len = get_motor_html_size();
+            const char* html_content = get_move_html_content();
+        size_t len = get_move_html_size();
     
-    ESP_LOGI(TAG, "Serving motor.html, size: %d bytes", len);
+        ESP_LOGI(TAG, "Serving move.html, size: %d bytes", len);
     return SendHttpResponse(req, "text/html", html_content, len);
 #else
     // 当电机内容未启用时，返回一个简单的消息
@@ -1411,13 +1411,13 @@ void WebServer::InitWebComponents() {
     ESP_LOGI(TAG, "WebContent在配置中已禁用");
 #endif
     
-    // 注册但不启动电机组件
+    // 注册但不启动移动组件
 #if defined(CONFIG_ENABLE_MOTOR_CONTROLLER)
     if (ComponentManager::IsComponentTypeEnabled(COMPONENT_TYPE_MOTOR)) {
-    InitMotorComponents(web_server);
-        ESP_LOGI(TAG, "电机组件已注册");
+    InitMoveComponents(web_server);
+        ESP_LOGI(TAG, "移动组件已注册");
     } else {
-        ESP_LOGI(TAG, "电机组件在配置中已禁用");
+        ESP_LOGI(TAG, "移动组件在配置中已禁用");
     }
 #endif
 
@@ -1524,30 +1524,30 @@ bool WebServer::StartWebComponents() {
         ESP_LOGI(TAG, "WebContent已禁用，但WebServer启动成功，API和WebSocket可用");
 #endif // CONFIG_ENABLE_WEB_CONTENT
 
-        // 启动电机相关组件
+        // 启动移动相关组件
 #if defined(CONFIG_ENABLE_MOTOR_CONTROLLER)
         if (ComponentManager::IsComponentTypeEnabled(COMPONENT_TYPE_MOTOR)) {
-        Component* motor_controller = manager.GetComponent("MotorController");
+        Component* move_controller = manager.GetComponent("MoveController");
         
-        if (motor_controller && !motor_controller->IsRunning()) {
-            if (!motor_controller->Start()) {
-                ESP_LOGE(TAG, "启动MotorController失败");
+        if (move_controller && !move_controller->IsRunning()) {
+            if (!move_controller->Start()) {
+                ESP_LOGE(TAG, "启动MoveController失败");
             } else {
-                ESP_LOGI(TAG, "MotorController启动成功");
+                ESP_LOGI(TAG, "MoveController启动成功");
         
-                    // 只有在MotorController启动成功后才启动MotorContent
-        Component* motor_content = manager.GetComponent("MotorContent");
-        if (motor_content && !motor_content->IsRunning()) {
-            if (!motor_content->Start()) {
-                ESP_LOGE(TAG, "启动MotorContent失败");
+                    // 只有在MoveController启动成功后才启动MoveContent
+        Component* move_content = manager.GetComponent("MoveContent");
+        if (move_content && !move_content->IsRunning()) {
+            if (!move_content->Start()) {
+                ESP_LOGE(TAG, "启动MoveContent失败");
             } else {
-                ESP_LOGI(TAG, "MotorContent启动成功");
+                ESP_LOGI(TAG, "MoveContent启动成功");
             }
                     }
                 }
             }
         } else {
-            ESP_LOGI(TAG, "电机组件在配置中已禁用");
+            ESP_LOGI(TAG, "移动组件在配置中已禁用");
         }
 #endif // CONFIG_ENABLE_MOTOR_CONTROLLER
         

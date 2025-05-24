@@ -24,6 +24,12 @@ public:
 
     void AddThing(Thing* thing);
 
+    // 根据名称查找Thing
+    Thing* FindThingByName(const std::string& name);
+
+    // 获取所有注册的Things
+    const std::vector<Thing*>& GetThings() const { return things_; }
+
     std::string GetDescriptorsJson();
     bool GetStatesJson(std::string& json, bool delta = false);
     void Invoke(const cJSON* command);

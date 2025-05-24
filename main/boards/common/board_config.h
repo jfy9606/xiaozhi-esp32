@@ -42,6 +42,63 @@ typedef struct {
 // 获取板级配置
 board_config_t* board_get_config(void);
 
+// Default motor pins - using Kconfig values or fallback to defaults
+#ifndef MOTOR_ENA_PIN
+#ifdef CONFIG_MOTOR_ENA_PIN
+#define MOTOR_ENA_PIN             CONFIG_MOTOR_ENA_PIN
+#else
+#define MOTOR_ENA_PIN             2  // Default ENA pin
+#endif
+#endif
+
+#ifndef MOTOR_ENB_PIN
+#ifdef CONFIG_MOTOR_ENB_PIN
+#define MOTOR_ENB_PIN             CONFIG_MOTOR_ENB_PIN
+#else
+#define MOTOR_ENB_PIN             1  // Default ENB pin
+#endif
+#endif
+
+#ifndef MOTOR_IN1_PIN
+#ifdef CONFIG_MOTOR_IN1_PIN
+#define MOTOR_IN1_PIN             CONFIG_MOTOR_IN1_PIN
+#else
+#define MOTOR_IN1_PIN             47  // Default IN1 pin
+#endif
+#endif
+
+#ifndef MOTOR_IN2_PIN
+#ifdef CONFIG_MOTOR_IN2_PIN
+#define MOTOR_IN2_PIN             CONFIG_MOTOR_IN2_PIN
+#else
+#define MOTOR_IN2_PIN             21  // Default IN2 pin
+#endif
+#endif
+
+#ifndef MOTOR_IN3_PIN
+#ifdef CONFIG_MOTOR_IN3_PIN
+#define MOTOR_IN3_PIN             CONFIG_MOTOR_IN3_PIN
+#else
+#define MOTOR_IN3_PIN             20  // Default IN3 pin
+#endif
+#endif
+
+#ifndef MOTOR_IN4_PIN
+#ifdef CONFIG_MOTOR_IN4_PIN
+#define MOTOR_IN4_PIN             CONFIG_MOTOR_IN4_PIN
+#else
+#define MOTOR_IN4_PIN             19  // Default IN4 pin
+#endif
+#endif
+
+#ifndef SERVO_COUNT
+#ifdef CONFIG_SERVO_COUNT
+#define SERVO_COUNT               CONFIG_SERVO_COUNT
+#else
+#define SERVO_COUNT               4  // Default servo count
+#endif
+#endif
+
 // Default I2C Multiplexer pins - using Kconfig values or fallback to defaults
 #ifndef I2C_MUX_SDA_PIN
 #ifdef CONFIG_PCA9548A_SDA_PIN

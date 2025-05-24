@@ -7,6 +7,7 @@
 #include <vector>
 #include <stdexcept>
 #include <cJSON.h>
+#include "../components.h"
 
 namespace iot {
 
@@ -272,6 +273,9 @@ public:
 
     const std::string& name() const { return name_; }
     const std::string& description() const { return description_; }
+    
+    // 作为组件时的类型
+    ComponentType GetType() const { return COMPONENT_TYPE_IOT; }
 
 protected:
     PropertyList properties_;
@@ -289,6 +293,23 @@ Thing* CreateThing(const std::string& type);
 #define DECLARE_THING(TypeName) \
     static iot::Thing* Create##TypeName() { \
         return new iot::TypeName(); \
+    } \
+    static bool Register##TypeNameHelper = []() { \
+        RegisterThing(#TypeName, Create##TypeName); \
+        return true; \
+    }();
+
+// 添加通用传感器注册宏，简化传感器注册过程
+#define DECLARE_SENSOR_THING(TypeName, RegisterFunc) \
+    static iot::Thing* Create##TypeName() { \
+        return new iot::TypeName(); \
+    } \
+    void RegisterFunc() { \
+        static iot::TypeName* instance = nullptr; \
+        if (instance == nullptr) { \
+            instance = new iot::TypeName(); \
+            ThingManager::GetInstance().AddThing(instance); \
+        } \
     } \
     static bool Register##TypeNameHelper = []() { \
         RegisterThing(#TypeName, Create##TypeName); \

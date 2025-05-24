@@ -3,6 +3,8 @@
 #include "board.h"
 #include "../boards/common/board_config.h"
 #include "motor.h"
+#include "ext/include/pcf8575.h"
+#include "ext/include/pca9548a.h"
 
 #include <driver/gpio.h>
 #include <driver/ledc.h>
@@ -26,6 +28,14 @@
 #define DEFAULT_IN3_PIN -1  // 电机B输入1
 #define DEFAULT_IN4_PIN -1  // 电机B输入2
 
+// PCF8575引脚定义 - 将使用menuconfig配置
+#ifdef CONFIG_MOTOR_CONNECTION_PCF8575
+#define MOTOR_PCF8575_IN1_PIN CONFIG_MOTOR_PCF8575_IN1_PIN
+#define MOTOR_PCF8575_IN2_PIN CONFIG_MOTOR_PCF8575_IN2_PIN
+#define MOTOR_PCF8575_IN3_PIN CONFIG_MOTOR_PCF8575_IN3_PIN
+#define MOTOR_PCF8575_IN4_PIN CONFIG_MOTOR_PCF8575_IN4_PIN
+#endif
+
 // 速度控制参数
 #define DEFAULT_SPEED 100
 #define MIN_SPEED 100
@@ -47,7 +57,7 @@
 
 namespace iot {
 
-class MotorThing : public Thing {
+class Motor : public Thing {
 private:
     int ena_pin_;  // 电机A使能引脚
     int enb_pin_;  // 电机B使能引脚
@@ -66,6 +76,7 @@ private:
 
     // 状态标志
     bool running_;
+    bool use_pcf8575_;      // 是否使用PCF8575
     
     // 缓存值
     int last_dir_x_;  // 缓存上一次的X方向
@@ -86,6 +97,67 @@ private:
             if (config->in4_pin >= 0) in4_pin_ = config->in4_pin;
         }
 
+#ifdef CONFIG_MOTOR_CONNECTION_PCF8575
+        // 检查是否使用PCF8575连接方式
+        use_pcf8575_ = true;
+        
+        // 检查PCF8575是否已初始化
+        if (!pcf8575_is_initialized()) {
+            ESP_LOGW(TAG, "PCF8575 not initialized, attempting initialization");
+            // 检查PCA9548A是否已初始化，因为PCF8575连接在PCA9548A上
+            if (!pca9548a_is_initialized()) {
+                ESP_LOGE(TAG, "PCA9548A multiplexer is not enabled, but motors are configured to use PCF8575");
+                ESP_LOGE(TAG, "Please enable PCA9548A and PCF8575 in menuconfig or change motor connection type");
+                use_pcf8575_ = false;
+            } else {
+                // 尝试初始化PCF8575
+                ESP_LOGI(TAG, "Initializing PCF8575 for motor control");
+                esp_err_t ret = pcf8575_init();
+                if (ret != ESP_OK) {
+                    ESP_LOGE(TAG, "Failed to initialize PCF8575: %s", esp_err_to_name(ret));
+                    use_pcf8575_ = false;
+                }
+            }
+        }
+        
+        // 如果PCF8575可用，则使用PCF8575
+        if (use_pcf8575_) {
+            ESP_LOGI(TAG, "Using PCF8575 GPIO expander for motor control");
+            // 获取PCF8575句柄
+            pcf8575_handle_t pcf_handle = pcf8575_get_handle();
+            if (!pcf_handle) {
+                ESP_LOGE(TAG, "Failed to get PCF8575 handle");
+                use_pcf8575_ = false;
+            } else {
+                // 配置PCF8575上的电机引脚
+                ESP_LOGI(TAG, "Configuring PCF8575 pins for motor control");
+                ESP_LOGI(TAG, "Motor control pins: IN1: P%02d, IN2: P%02d, IN3: P%02d, IN4: P%02d", 
+                        MOTOR_PCF8575_IN1_PIN, MOTOR_PCF8575_IN2_PIN, MOTOR_PCF8575_IN3_PIN, MOTOR_PCF8575_IN4_PIN);
+                
+                // 设置所有引脚为输出模式
+                pcf8575_set_gpio_mode(pcf_handle, (pcf8575_gpio_t)MOTOR_PCF8575_IN1_PIN, PCF8575_GPIO_MODE_OUTPUT);
+                pcf8575_set_gpio_mode(pcf_handle, (pcf8575_gpio_t)MOTOR_PCF8575_IN2_PIN, PCF8575_GPIO_MODE_OUTPUT);
+                pcf8575_set_gpio_mode(pcf_handle, (pcf8575_gpio_t)MOTOR_PCF8575_IN3_PIN, PCF8575_GPIO_MODE_OUTPUT);
+                pcf8575_set_gpio_mode(pcf_handle, (pcf8575_gpio_t)MOTOR_PCF8575_IN4_PIN, PCF8575_GPIO_MODE_OUTPUT);
+                
+                // 设置初始状态为低电平
+                pcf8575_set_gpio_level(pcf_handle, (pcf8575_gpio_t)MOTOR_PCF8575_IN1_PIN, 0);
+                pcf8575_set_gpio_level(pcf_handle, (pcf8575_gpio_t)MOTOR_PCF8575_IN2_PIN, 0);
+                pcf8575_set_gpio_level(pcf_handle, (pcf8575_gpio_t)MOTOR_PCF8575_IN3_PIN, 0);
+                pcf8575_set_gpio_level(pcf_handle, (pcf8575_gpio_t)MOTOR_PCF8575_IN4_PIN, 0);
+                
+                // PCF8575配置成功，标记初始化完成
+                ledc_initialized_ = true;
+                init_retry_count_ = 0; // 重置重试计数器
+                ESP_LOGI(TAG, "Motor pins initialized successfully with PCF8575");
+                return; // 使用PCF8575配置成功，不需要继续进行直接GPIO配置
+            }
+        }
+#else
+        use_pcf8575_ = false;
+#endif
+
+        // 如果代码运行到这里，要么不使用PCF8575，要么PCF8575初始化失败，需要使用直接GPIO
         ESP_LOGI(TAG, "Initializing motor GPIO pins: ENA=%d, ENB=%d, IN1=%d, IN2=%d, IN3=%d, IN4=%d",
                  ena_pin_, enb_pin_, in1_pin_, in2_pin_, in3_pin_, in4_pin_);
         
@@ -248,6 +320,7 @@ private:
             ESP_LOGW(TAG, "Failed to set initial ENB duty: %s", esp_err_to_name(err));
         }
         
+        // 等待ESP32处理完成
         err = ledc_update_duty(MOTOR_LEDC_MODE, MOTOR_LEDC_CHANNEL_B);
         if (err != ESP_OK) {
             ESP_LOGW(TAG, "Failed to update initial ENB duty: %s", esp_err_to_name(err));
@@ -262,6 +335,37 @@ private:
     
     // 控制电机函数
     void ControlMotor(int in1, int in2, int in3, int in4) {
+        // 检查是否使用PCF8575连接
+#ifdef CONFIG_MOTOR_CONNECTION_PCF8575
+        if (use_pcf8575_) {
+            pcf8575_handle_t pcf_handle = pcf8575_get_handle();
+            if (!pcf_handle) {
+                ESP_LOGE(TAG, "PCF8575 handle is NULL");
+                return;
+            }
+            
+            // 设置电机控制引脚电平
+            pcf8575_set_gpio_level(pcf_handle, (pcf8575_gpio_t)MOTOR_PCF8575_IN1_PIN, in1);
+            pcf8575_set_gpio_level(pcf_handle, (pcf8575_gpio_t)MOTOR_PCF8575_IN2_PIN, in2);
+            pcf8575_set_gpio_level(pcf_handle, (pcf8575_gpio_t)MOTOR_PCF8575_IN3_PIN, in3);
+            pcf8575_set_gpio_level(pcf_handle, (pcf8575_gpio_t)MOTOR_PCF8575_IN4_PIN, in4);
+            
+            // 如果是停止状态，两个电机都停止
+            if (in1 == LOW && in2 == LOW && in3 == LOW && in4 == LOW) {
+                // 停止，不需要额外处理
+                return;
+            }
+            
+            // 计算PWM控制
+            // ... existing PWM calculation code
+            
+            // 对于PCF8575控制，仅使用方向控制，不能控制PWM
+            ESP_LOGD(TAG, "PCF8575 motor control: IN1=%d, IN2=%d, IN3=%d, IN4=%d", in1, in2, in3, in4);
+            return;
+        }
+#endif
+        
+        // 使用直接GPIO控制（原有代码）
         // 检查引脚是否有效
         if (in1_pin_ < 0 || in2_pin_ < 0 || in3_pin_ < 0 || in4_pin_ < 0) {
             ESP_LOGW(TAG, "Invalid motor pins, cannot control motors");
@@ -418,7 +522,7 @@ private:
     }
 
 public:
-    MotorThing() : Thing("Motor", "小车电机控制"),
+    Motor() : Thing("Motor", "小车电机控制"),
               ena_pin_(DEFAULT_ENA_PIN), 
               enb_pin_(DEFAULT_ENB_PIN), 
               in1_pin_(DEFAULT_IN1_PIN), 
@@ -428,13 +532,14 @@ public:
         ledc_initialized_(false),
         init_retry_count_(0),
         motor_speed_(DEFAULT_SPEED),
-              direction_x_(0),
-              direction_y_(0),
-              distance_percent_(0),
+        direction_x_(0),
+        direction_y_(0),
+        distance_percent_(0),
         running_(false),
-              last_dir_x_(0),
-              last_dir_y_(0),
-              cached_angle_degrees_(0) {
+        use_pcf8575_(false),
+        last_dir_x_(0),
+        last_dir_y_(0),
+        cached_angle_degrees_(0) {
         
         // 初始化GPIO
         InitGPIO();
@@ -620,20 +725,20 @@ public:
         });
     }
     
-    ~MotorThing() {
+    ~Motor() {
         // 确保电机停止
         ControlMotor(LOW, LOW, LOW, LOW);
     }
 };
 
 void RegisterMotor() {
-    static MotorThing* motor = nullptr;
+    static Motor* motor = nullptr;
     if (motor == nullptr) {
-        motor = new MotorThing();
+        motor = new Motor();
         ThingManager::GetInstance().AddThing(motor);
-        }
     }
+}
 
 } // namespace iot
 
-DECLARE_THING(MotorThing); 
+DECLARE_THING(Motor); 

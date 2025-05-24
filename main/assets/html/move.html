@@ -1,0 +1,1494 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>小车控制</title>
+    <link rel='stylesheet' href='https://fonts.googleapis.com/css2?family=Roboto:wght@400;500&display=swap'>
+    <style>
+        body {
+            font-family: 'Roboto', sans-serif;
+            text-align: center;
+            margin: 0;
+            padding: 0;
+            background-color: #f5f5f5;
+            color: #333;
+            touch-action: none;
+            overflow-x: hidden;
+        }
+        .container {
+            max-width: 100%;
+            margin: 0 auto;
+            padding: 8px;
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #6200ea;
+            margin: 5px 0 10px 0;
+            font-size: 1.3rem;
+        }
+        /* 创建响应式布局 */
+        .main-content {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            gap: 5px;
+        }
+        /* 在宽屏设备上使用水平布局 */
+        @media (min-width: 768px) {
+            .container {
+                max-width: 95%;
+                padding: 10px;
+            }
+            .main-content {
+                flex-direction: row;
+                align-items: flex-start;
+                justify-content: space-between;
+                gap: 10px;
+            }
+            .video-container {
+                flex: 1;
+                max-width: 60%;
+                margin-right: 10px;
+            }
+            .controls-container {
+                flex: 1;
+                max-width: 38%;
+            }
+            h1 {
+                font-size: 1.5rem;
+            }
+        }
+        /* 在更大的屏幕上调整比例 */
+        @media (min-width: 1200px) {
+            .container {
+                max-width: 1200px;
+                padding: 15px;
+            }
+            h1 {
+                font-size: 1.8rem;
+                margin: 10px 0 15px 0;
+            }
+        }
+        /* 在小屏幕设备上优化布局 */
+        @media (max-width: 767px) {
+            .container {
+                padding: 5px;
+                border-radius: 0;
+            }
+            h1 {
+                margin: 5px 0;
+                font-size: 1.2rem;
+            }
+            .joystick-container {
+                margin: 5px auto;
+            }
+            .video-container {
+                margin-bottom: 5px;
+            }
+            .main-content {
+                gap: 5px;
+            }
+        }
+        /* 视频容器样式 */
+        .video-container {
+            width: 100%;
+            margin: 0 auto 5px;
+            overflow: hidden;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            position: relative;
+            background-color: #222;
+            aspect-ratio: 4/3;
+        }
+        .video-stream {
+            width: 100%;
+            height: 100%;
+            display: block;
+            object-fit: cover;
+        }
+        /* 视频控制按钮样式 */
+        .video-controls {
+            margin-top: 5px;
+            display: flex;
+            justify-content: center;
+            gap: 8px;
+        }
+        .video-controls button {
+            padding: 4px 8px;
+            background-color: #6200ea;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 500;
+            font-size: 0.85rem;
+            min-height: 30px;
+            flex: 1;
+            max-width: 150px;
+        }
+        .video-controls button:hover {
+            background-color: #3700b3;
+        }
+        .video-controls button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        /* 操控区容器 */
+        .controls-container {
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 5px;
+        }
+        /* 摇杆容器样式 */
+        .joystick-container {
+            position: relative;
+            width: 160px;
+            height: 160px;
+            margin: 5px auto;
+        }
+        /* 在大屏设备上增大摇杆尺寸 */
+        @media (min-width: 992px) {
+            .joystick-container {
+                width: 200px;
+                height: 200px;
+            }
+        }
+        /* 在特大屏设备上进一步增大摇杆尺寸 */
+        @media (min-width: 1400px) {
+            .joystick-container {
+                width: 250px;
+                height: 250px;
+            }
+        }
+        /* 确保在小屏设备上摇杆足够小 */
+        @media (max-width: 480px) {
+            .joystick-container {
+                width: 140px;
+                height: 140px;
+            }
+        }
+        .joystick {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            background-color: #e0e0e0;
+            box-shadow: inset 0 0 10px rgba(0,0,0,0.3);
+            touch-action: none;
+        }
+        .button {
+            position: absolute;
+            width: 33%;
+            height: 33%;
+            background: linear-gradient(145deg, #6200ea, #3700b3);
+            border-radius: 50%;
+            top: 33.5%;
+            left: 33.5%;
+            cursor: pointer;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+            touch-action: none;
+            user-select: none;
+            z-index: 10;
+        }
+        .direction-indicator {
+            position: absolute;
+            width: 10px;
+            height: 10px;
+            background-color: #ff4081;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        /* 状态信息样式 */
+        .status-container {
+            width: 100%;
+            margin-top: 5px;
+            padding: 5px;
+            background-color: #f9f9f9;
+            border-radius: 6px;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+        }
+        .status {
+            color: #666;
+            font-size: 0.8rem;
+            text-align: center;
+            margin: 3px 0;
+        }
+        .connection-status {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: #f44336;
+            margin-right: 5px;
+        }
+        .connected {
+            background-color: #4caf50;
+        }
+        .debug-info {
+            font-size: 11px;
+            color: #888;
+            margin-top: 3px;
+            text-align: center;
+        }
+        /* 摄像头控制链接 */
+        .camera-controls {
+            margin-top: 5px;
+            padding: 3px;
+            width: 100%;
+            text-align: center;
+        }
+        .camera-controls a {
+            color: #6200ea;
+            text-decoration: none;
+            font-weight: 500;
+            font-size: 0.85rem;
+        }
+        .camera-controls a:hover {
+            text-decoration: underline;
+        }
+
+        /* 返回主页按钮 */
+        .back-button {
+            display: inline-block;
+            margin: 15px 0 5px;
+            padding: 8px 15px;
+            background-color: #6200ea;
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+            font-weight: 500;
+            font-size: 0.85rem;
+            transition: background-color 0.3s;
+        }
+        .back-button:hover {
+            background-color: #3700b3;
+        }
+
+        /* 按钮容器 */
+        .button-container {
+            width: 100%;
+            text-align: center;
+            margin-top: 10px;
+        }
+        
+        /* 按钮网格 - 移动控制按钮 */
+        .button-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            grid-gap: 10px;
+            margin: 20px 0;
+        }
+        
+        .control-btn {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            padding: 15px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+            text-align: center;
+        }
+        
+        .control-btn:hover {
+            background-color: #2980b9;
+        }
+        
+        .control-btn:active {
+            background-color: #1c6ea4;
+        }
+        
+        .control-btn.stop {
+            background-color: #e74c3c;
+        }
+        
+        .control-btn.stop:hover {
+            background-color: #c0392b;
+        }
+
+        /* 超声波显示样式 */
+        .ultrasonic-container {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            width: 100%;
+            margin-bottom: 20px;
+        }
+        
+        .ultrasonic-card {
+            background-color: rgba(0, 0, 0, 0.5);
+            border-radius: 10px;
+            padding: 10px;
+            margin: 5px;
+            flex: 1 0 45%;
+            text-align: center;
+        }
+        
+        .ultrasonic-card h3 {
+            margin: 0 0 10px 0;
+            font-size: 16px;
+            color: #ddd;
+        }
+        
+        .ultrasonic-icon {
+            width: 80px;
+            height: 80px;
+            margin: 0 auto;
+            border-radius: 50%;
+            background-color: rgba(0, 0, 0, 0.2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background-color 0.3s;
+        }
+        
+        .ultrasonic-icon.alert {
+            background-color: rgba(255, 0, 0, 0.3);
+            animation: pulse 1s infinite;
+        }
+        
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+        
+        .ultrasonic-value {
+            font-size: 18px;
+            font-weight: bold;
+            color: white;
+        }
+        
+        .safe-distance-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #4CAF50;
+        }
+
+        .warning-alert {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%) translateY(-100px);
+            background-color: rgba(255, 50, 50, 0.9);
+            color: white;
+            padding: 12px 20px;
+            border-radius: 5px;
+            z-index: 1000;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+            font-weight: bold;
+            transition: transform 0.5s ease;
+            pointer-events: none;
+        }
+        
+        .warning-alert.show {
+            transform: translateX(-50%) translateY(0);
+        }
+        
+        /* 舵机控制样式 */
+        .servo-controls {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            margin: 10px 0;
+            background-color: #f9f9f9;
+            border-radius: 8px;
+            padding: 10px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        
+        .servo-control {
+            width: 48%;
+            margin-bottom: 15px;
+        }
+        
+        .servo-control label {
+            display: block;
+            margin-bottom: 5px;
+            font-size: 14px;
+            font-weight: 500;
+            color: #333;
+        }
+        
+        .slider-container {
+            display: flex;
+            align-items: center;
+        }
+        
+        .slider {
+            flex-grow: 1;
+            height: 8px;
+            -webkit-appearance: none;
+            background: #ddd;
+            outline: none;
+            border-radius: 4px;
+        }
+        
+        .slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 18px;
+            height: 18px;
+            background: #6200ea;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+        
+        .slider-value {
+            width: 40px;
+            text-align: center;
+            margin-left: 10px;
+            font-size: 14px;
+            color: #555;
+        }
+        
+        /* 在小屏幕上让舵机控制垂直排列 */
+        @media (max-width: 600px) {
+            .servo-control {
+                width: 100%;
+            }
+        }
+        
+        .control-section {
+            background: white;
+            border-radius: 10px;
+            padding: 10px;
+            margin-bottom: 15px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            width: 100%;
+        }
+        
+        .control-section h2 {
+            margin-top: 0;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 8px;
+            color: #6200ea;
+            font-size: 1.1rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>ESP32S3 移动控制</h1>
+
+        <div class="main-content">
+            <div class="video-container">
+                <img class="video-stream" id="video-stream" src="" alt="Camera Stream" crossorigin="anonymous">
+            </div>
+
+            <div class="controls-container">
+                <div class="ultrasonic-container">
+                    <div class="ultrasonic-card">
+                        <h3>前方距离:</h3>
+                        <div id="front-ultrasonic" class="ultrasonic-icon">
+                            <span id="front-distance" class="ultrasonic-value">-- cm</span>
+                        </div>
+                    </div>
+                    <div class="ultrasonic-card">
+                        <h3>后方距离:</h3>
+                        <div id="rear-ultrasonic" class="ultrasonic-icon">
+                            <span id="rear-distance" class="ultrasonic-value">-- cm</span>
+                        </div>
+                    </div>
+                    <div class="ultrasonic-card">
+                        <h3>前方安全距离:</h3>
+                        <span id="front-safe-distance" class="safe-distance-value">-- cm</span>
+                    </div>
+                    <div class="ultrasonic-card">
+                        <h3>后方安全距离:</h3>
+                        <span id="rear-safe-distance" class="safe-distance-value">-- cm</span>
+                    </div>
+                </div>
+                
+                <div class="control-section">
+                    <h2>摇杆控制</h2>
+                    <div class="joystick-container">
+                        <div class="joystick" id="joystick">
+                            <div class="button" id="button"></div>
+                            <div class="direction-indicator" id="direction-indicator"></div>
+                        </div>
+                    </div>
+                    <div style="text-align: center; margin-top: 5px;">
+                        <span id="joystick-status">方向: <span id="direction-text">停止</span></span>
+                    </div>
+                </div>
+                
+                <div class="control-section">
+                    <h2>按钮控制</h2>
+                    <div class="button-grid">
+                        <div></div>
+                        <button class="control-btn" id="btnForward">前进</button>
+                        <div></div>
+                        <button class="control-btn" id="btnLeft">左转</button>
+                        <button class="control-btn stop" id="btnStop">停止</button>
+                        <button class="control-btn" id="btnRight">右转</button>
+                        <div></div>
+                        <button class="control-btn" id="btnBackward">后退</button>
+                        <div></div>
+                    </div>
+                </div>
+                
+                <div class="control-section">
+                    <h2>舵机控制</h2>
+                    <div class="servo-controls">
+                        <div class="servo-control">
+                            <label for="horizontalServo">左右舵机(水平方向)</label>
+                            <div class="slider-container">
+                                <input type="range" min="0" max="180" value="90" class="slider" id="horizontalServo" onchange="updateServoPosition('horizontal')" oninput="updateServoPosition('horizontal')">
+                                <div class="slider-value" id="servo-horizontal-value">90°</div>
+                            </div>
+                        </div>
+                        <div class="servo-control">
+                            <label for="verticalServo">上下舵机(垂直方向)</label>
+                            <div class="slider-container">
+                                <input type="range" min="0" max="180" value="90" class="slider" id="verticalServo" onchange="updateServoPosition('vertical')" oninput="updateServoPosition('vertical')">
+                                <div class="slider-value" id="servo-vertical-value">90°</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="control-section">
+                    <h2>速度控制</h2>
+                    <div class="servo-control" style="width: 100%;">
+                        <label for="speedControl">电机速度 (100-255)</label>
+                        <div class="slider-container">
+                            <input type="range" min="100" max="255" value="150" class="slider" id="speedControl">
+                            <span class="slider-value" id="speedValue">150</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="video-controls">
+                    <button id="start-stream">启动视频</button>
+                    <button id="stop-stream">停止视频</button>
+                </div>
+
+                <div class="status-container">
+                    <div class="status">
+                        <span class="connection-status" id="connection-status"></span>
+                        <span id="connection-text">未连接</span>
+                    </div>
+                    <div class="status">
+                        方向: <span id="direction-text-status">停止</span>
+                    </div>
+                    <div class="debug-info" id="debug-info"></div>
+                </div>
+
+                <div class="camera-controls">
+                    <a href="" id="camera-settings-link" target="_blank">打开摄像头设置</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const baseHost = document.location.origin;
+            const streamUrl = `${baseHost}/camera/stream`;
+            const stillUrl = `${baseHost}/camera/capture`;
+            const controlUrl = `${baseHost}/camera/control`;
+            const statusUrl = `${baseHost}/camera/status`;
+
+            const stream = document.getElementById('video-stream');
+            const startStreamBtn = document.getElementById('start-stream');
+            const stopStreamBtn = document.getElementById('stop-stream');
+
+            // 视频流控制
+            let streamActive = false;
+            let userWantsStream = false;
+
+            // WebSocket连接变量
+            let wsConnection = null;
+            let reconnectAttempt = 0;
+            const maxReconnectAttempts = 15; // 增加到15次重连尝试
+            let reconnectInterval = 1000;
+            let reconnecting = false;
+            let lastPongTime = 0;
+            let heartbeatInterval = null;
+            let connectionTimeout = null;
+            
+            // 控制参数
+            let joystickActive = false;
+            let joystickX = 0;
+            let joystickY = 0;
+            let currentSpeed = 150;
+
+            // 创建WebSocket连接
+            function connectWebSocket() {
+                if (wsConnection && (wsConnection.readyState === WebSocket.CONNECTING ||
+                                    wsConnection.readyState === WebSocket.OPEN)) {
+                    console.log('WebSocket已连接或正在连接中');
+                    return;
+                }
+
+                // 清除之前的定时器
+                if (heartbeatInterval) {
+                    clearInterval(heartbeatInterval);
+                    heartbeatInterval = null;
+                }
+
+                if (connectionTimeout) {
+                    clearTimeout(connectionTimeout);
+                    connectionTimeout = null;
+                }
+
+                console.log('正在创建WebSocket连接...');
+
+                try {
+                    // 确保使用正确的WebSocket URL
+                    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                    
+                    // 使用当前主机的地址
+                    const wsUrl = `${protocol}//${window.location.host}/ws`;
+                    console.log(`连接到WebSocket: ${wsUrl}`);
+
+                    wsConnection = new WebSocket(wsUrl);
+
+                    // 保存到window对象，允许其他组件访问
+                    window.wsConnection = wsConnection;
+
+                    wsConnection.onopen = function() {
+                        console.log('WebSocket连接已建立');
+                        reconnectAttempt = 0;
+                        reconnectInterval = 1000;
+                        reconnecting = false;
+
+                        // 记录连接时间
+                        lastPongTime = Date.now();
+
+                        // 发送欢迎消息
+                        try {
+                            const helloMsg = JSON.stringify({
+                                type: "hello", 
+                                client: "web_controller", 
+                                version: "1.0"
+                            });
+                            wsConnection.send(helloMsg);
+                            console.log('发送hello消息');
+                        } catch (e) {
+                            console.error('发送欢迎消息失败:', e);
+                        }
+
+                        // 设置定期心跳
+                        heartbeatInterval = setInterval(function() {
+                            if (wsConnection && wsConnection.readyState === WebSocket.OPEN) {
+                                try {
+                                    // 发送正确格式的ping消息
+                                    const pingMsg = JSON.stringify({type: "ping"});
+                                    wsConnection.send(pingMsg);
+
+                                    // 检查是否收到了pong响应
+                                    const currentTime = Date.now();
+                                    if (currentTime - lastPongTime > 10000) { // 10秒没有收到pong
+                                        console.warn('WebSocket心跳超时，尝试重连');
+                                        wsConnection.close();
+                                        connectWebSocket();
+                                    }
+                                } catch (e) {
+                                    console.error('发送心跳失败:', e);
+                                    wsConnection.close();
+                                }
+                            }
+                        }, 5000); // 每5秒发送一次心跳
+
+                        // 更新UI状态
+                        document.getElementById('connection-status').classList.add('connected');
+                        document.getElementById('connection-text').innerText = '已连接';
+                    };
+
+                    wsConnection.onmessage = function(e) {
+                        // 处理来自服务器的消息
+                        const data = e.data;
+                        
+                        try {
+                            // 尝试解析JSON消息
+                            const jsonData = JSON.parse(data);
+                            
+                            // 检查消息类型
+                            if (jsonData.type === "pong") {
+                                // 收到心跳响应，更新时间戳
+                                lastPongTime = Date.now();
+                            } else if (jsonData.type === "hello_response") {
+                                // 收到欢迎消息
+                                console.log('收到欢迎消息:', jsonData.message);
+                                if (jsonData.status === "ok") {
+                                    // 连接成功，更新UI
+                                    document.getElementById('connection-status').classList.add('connected');
+                                    document.getElementById('connection-text').innerText = '已连接';
+                                }
+                            } else if (jsonData.type === "car_control_ack" || jsonData.type === "joystick_ack") {
+                                // 收到控制命令确认
+                                console.log('控制命令已确认:', jsonData.status);
+                                
+                                // 处理错误响应
+                                if (jsonData.status === "error" && jsonData.message) {
+                                    // 显示障碍物警告
+                                    showWarningAlert(jsonData.message);
+                                }
+                            } else if (jsonData.type === "camera_status") {
+                                // 处理摄像头状态消息
+                                console.log('收到摄像头状态:', jsonData);
+                                // 如果收到摄像头状态消息，可以更新UI
+                                if(jsonData.streaming === true) {
+                                    console.log('摄像头正在流式传输');
+                                    // 可以添加代码更新UI显示摄像头状态
+                                } else if(jsonData.streaming === false) {
+                                    console.log('摄像头停止流式传输');
+                                    // 可以添加代码更新UI显示摄像头状态
+                                }
+                            } else if (jsonData.type === "ultrasonic_data") {
+                                // 处理超声波数据
+                                updateUltrasonicDisplay(jsonData);
+                            } else if (jsonData.type === "servo_data") {
+                                // 处理舵机状态数据
+                                updateServoStatus(jsonData);
+                            } else if (jsonData.type === "status") {
+                                // 更新连接状态指示
+                                if (jsonData.status === 'connected' || jsonData.status === 'ap_only') {
+                                    document.getElementById('connection-status').classList.add('connected');
+                                    document.getElementById('connection-text').innerText = jsonData.status === 'connected' 
+                                        ? `已连接 (${jsonData.ip || ''}, RSSI: ${jsonData.rssi || ''}dBm)` 
+                                        : `AP模式 (${jsonData.ap_ip || ''})`;
+                                }
+                            } else {
+                                console.log('收到未知类型消息:', jsonData);
+                            }
+                        } catch (err) {
+                            // 如果不是JSON消息，简单处理
+                            if (data === 'pong') {
+                                lastPongTime = Date.now();
+                            } else {
+                                console.log('收到非JSON消息:', data);
+                            }
+                        }
+                    };
+
+                    wsConnection.onclose = function(event) {
+                        console.log('WebSocket连接已关闭', event.code, event.reason);
+
+                        // 清除心跳
+                        if (heartbeatInterval) {
+                            clearInterval(heartbeatInterval);
+                            heartbeatInterval = null;
+                        }
+
+                        // 更新UI状态
+                        document.getElementById('connection-status').classList.remove('connected');
+                        document.getElementById('connection-text').innerText = '已断开';
+
+                        // 尝试重连
+                        if (!reconnecting && reconnectAttempt < maxReconnectAttempts) {
+                            reconnecting = true;
+                            // 使用指数退避策略，但限制最大延迟为30秒
+                            const delay = Math.min(30000, reconnectInterval * Math.pow(1.5, reconnectAttempt));
+                            console.log(`尝试在 ${delay}ms 后重新连接... (尝试 ${reconnectAttempt + 1}/${maxReconnectAttempts})`);
+
+                            setTimeout(function() {
+                                reconnectAttempt++;
+                                connectWebSocket();
+                            }, delay);
+
+                            reconnectInterval = delay;
+                        } else if (reconnectAttempt >= maxReconnectAttempts) {
+                            console.error(`已达到最大重连次数 (${maxReconnectAttempts})，停止重连`);
+                            document.getElementById('connection-text').innerText = '连接失败';
+                        }
+                    };
+
+                    wsConnection.onerror = function(err) {
+                        console.error('WebSocket发生错误:', err);
+                        // 错误发生后不需要额外关闭，因为onerror之后通常会自动触发onclose
+                    };
+
+                    // 设置连接超时
+                    connectionTimeout = setTimeout(function() {
+                        if (wsConnection && wsConnection.readyState !== WebSocket.OPEN) {
+                            console.warn('WebSocket连接超时');
+                            wsConnection.close();
+                        }
+                    }, 10000);
+
+                } catch (e) {
+                    console.error('创建WebSocket连接失败:', e);
+
+                    // 更新UI状态
+                    document.getElementById('connection-status').classList.remove('connected');
+                    document.getElementById('connection-text').innerText = '连接错误';
+
+                    // 尝试重连
+                    if (!reconnecting && reconnectAttempt < maxReconnectAttempts) {
+                        reconnecting = true;
+                        setTimeout(function() {
+                            reconnectAttempt++;
+                            connectWebSocket();
+                        }, reconnectInterval);
+                    }
+                }
+            }
+
+            // 发送控制命令函数，增加错误处理和重试
+            function sendCommand(distance, dirX, dirY) {
+                if (!wsConnection || wsConnection.readyState !== WebSocket.OPEN) {
+                    console.warn('WebSocket未连接，无法发送命令');
+
+                    // 尝试重新连接
+                    if (!reconnecting) {
+                        connectWebSocket();
+                    }
+
+                    // 对于关键命令（例如停止），我们可以使用备用方法发送
+                    if (distance === 0 && dirX === 0 && dirY === 0) {
+                        // 尝试使用HTTP请求作为备用方式停止车辆
+                        try {
+                            const xhr = new XMLHttpRequest();
+                            xhr.open('GET', `/move?op=stop`, true);
+                            xhr.send();
+                            console.log('使用HTTP请求发送停止命令');
+                        } catch (e) {
+                            console.error('无法发送备用停止命令:', e);
+                        }
+                    }
+
+                    return;
+                }
+
+                try {
+                    // 限制参数范围
+                    distance = Math.max(0, Math.min(1, distance));
+                    dirX = Math.max(-100, Math.min(100, dirX));
+                    dirY = Math.max(-100, Math.min(100, dirY));
+
+                    // 创建JSON格式的命令，确保与后端API匹配
+                    const command = JSON.stringify({
+                        type: "car_control",
+                        speed: distance,
+                        dirX: dirX,
+                        dirY: dirY
+                    });
+                    
+                    console.log(`发送命令: ${command}`);
+                    wsConnection.send(command);
+
+                    // 更新最后活动时间
+                    lastPongTime = Date.now();
+
+                    // 更新调试信息
+                    document.getElementById('debug-info').textContent = `发送: ${command}`;
+                } catch (e) {
+                    console.error('发送命令失败:', e);
+                    document.getElementById('debug-info').textContent = `错误: ${e.message}`;
+
+                    // 如果发送失败，可能是连接已断开但状态尚未更新
+                    wsConnection.close();
+                }
+            }
+
+            // 节流功能：限制发送命令的频率
+            const throttleDelay = 50; // 50毫秒的节流延迟（约等于20Hz）
+            let lastSendTime = 0;
+            let lastCommand = {distance: 0, dirX: 0, dirY: 0};
+            let throttleTimer = null;
+            
+            // 添加警告提示功能
+            function showWarningAlert(message) {
+                const alertBox = document.createElement('div');
+                alertBox.className = 'warning-alert';
+                alertBox.innerText = message;
+                
+                // 添加到页面
+                document.body.appendChild(alertBox);
+                
+                // 动画效果
+                setTimeout(() => alertBox.classList.add('show'), 10);
+                
+                // 自动关闭
+                setTimeout(() => {
+                    alertBox.classList.remove('show');
+                    setTimeout(() => document.body.removeChild(alertBox), 500);
+                }, 2000);
+            }
+
+            function throttledSendCommand(distance, dirX, dirY) {
+                const now = Date.now();
+
+                // 保存最新命令
+                lastCommand = {distance, dirX, dirY};
+
+                // 如果是停止命令或距离上次发送已超过节流时间，则立即发送
+                if ((distance === 0 && dirX === 0 && dirY === 0) || now - lastSendTime >= throttleDelay) {
+                    sendCommand(distance, dirX, dirY);
+                    lastSendTime = now;
+
+                    // 清除任何待处理的节流定时器
+                    if (throttleTimer) {
+                        clearTimeout(throttleTimer);
+                        throttleTimer = null;
+                    }
+                } else if (!throttleTimer) {
+                    // 如果没有待处理的定时器，设置一个在节流延迟后发送最新命令
+                    throttleTimer = setTimeout(function() {
+                        sendCommand(lastCommand.distance, lastCommand.dirX, lastCommand.dirY);
+                        lastSendTime = Date.now();
+                        throttleTimer = null;
+                    }, throttleDelay - (now - lastSendTime));
+                }
+            }
+
+            // 页面加载后立即连接WebSocket
+            connectWebSocket();
+
+            // 摇杆控制代码
+            const button = document.getElementById('button');
+            const joystick = document.getElementById('joystick');
+            const indicator = document.getElementById('direction-indicator');
+            const directionText = document.getElementById('direction-text');
+            const directionTextStatus = document.getElementById('direction-text-status');
+            
+            // 获取摇杆中心位置和属性
+            function updateJoystickProperties() {
+                const joystickRect = joystick.getBoundingClientRect();
+                return {
+                    centerX: joystickRect.width / 2,
+                    centerY: joystickRect.height / 2,
+                    maxRadius: (joystickRect.width / 2) - (button.offsetWidth / 2)
+                };
+            }
+            
+            let joystickProps = updateJoystickProperties();
+            let isDragging = false;
+            let lastDirectionX = 0;
+            let lastDirectionY = 0;
+            
+            // 手指和鼠标按下事件 - 不仅监听按钮，也监听整个摇杆区域
+            button.addEventListener('mousedown', startDrag);
+            button.addEventListener('touchstart', function(e) {
+                e.preventDefault();
+                startDrag(e);
+            });
+            
+            // 也允许在整个摇杆区域内点击
+            joystick.addEventListener('mousedown', function(e) {
+                // 如果点击的是按钮，则不处理（因为按钮已经有事件处理器）
+                if (e.target === button) return;
+                moveButtonToPosition(e);
+                startDrag(e);
+            });
+            
+            joystick.addEventListener('touchstart', function(e) {
+                // 如果点击的是按钮，则不处理
+                if (e.target === button) return;
+                e.preventDefault();
+                moveButtonToPosition(e);
+                startDrag(e);
+            });
+            
+            function moveButtonToPosition(e) {
+                const joystickRect = joystick.getBoundingClientRect();
+                let clientX = e.clientX;
+                let clientY = e.clientY;
+                
+                if (e.type === 'touchstart' || e.type === 'touchmove') {
+                    clientX = e.touches[0].clientX;
+                    clientY = e.touches[0].clientY;
+                }
+                
+                const newX = clientX - joystickRect.left - (button.offsetWidth / 2);
+                const newY = clientY - joystickRect.top - (button.offsetHeight / 2);
+                
+                // 限制在摇杆范围内
+                const props = updateJoystickProperties();
+                const offsetX = (clientX - joystickRect.left) - props.centerX;
+                const offsetY = (clientY - joystickRect.top) - props.centerY;
+                let distance = Math.sqrt(offsetX * offsetX + offsetY * offsetY);
+                const angle = Math.atan2(offsetY, offsetX);
+                
+                if (distance > props.maxRadius) {
+                    distance = props.maxRadius;
+                    const limitedX = props.centerX + distance * Math.cos(angle) - (button.offsetWidth / 2);
+                    const limitedY = props.centerY + distance * Math.sin(angle) - (button.offsetHeight / 2);
+                    button.style.left = limitedX + 'px';
+                    button.style.top = limitedY + 'px';
+                } else {
+                    button.style.left = newX + 'px';
+                    button.style.top = newY + 'px';  
+                }
+            }
+            
+            function startDrag(e) {
+                if (isDragging) return;
+                
+                isDragging = true;
+                
+                // 如果是触摸事件，则移动按钮到触摸位置
+                if (e.type === 'touchstart' && e.target === joystick) {
+                    moveButtonToPosition(e);
+                }
+                
+                // 立即计算并发送当前位置
+                processJoystickPosition(e);
+                
+                document.addEventListener('mousemove', drag);
+                document.addEventListener('touchmove', drag, { passive: false });
+                document.addEventListener('mouseup', stopDrag);
+                document.addEventListener('touchend', stopDrag);
+            }
+            
+            function drag(e) {
+                if (!isDragging) return;
+                e.preventDefault();
+                processJoystickPosition(e);
+            }
+            
+            function processJoystickPosition(e) {
+                // 获取触摸或鼠标位置
+                let clientX = e.clientX;
+                let clientY = e.clientY;
+                
+                if (e.type === 'touchstart' || e.type === 'touchmove') {
+                    clientX = e.touches[0].clientX;
+                    clientY = e.touches[0].clientY;
+                }
+                
+                // 更新摇杆属性
+                joystickProps = updateJoystickProperties();
+                
+                // 计算摇杆位置
+                const joystickRect = joystick.getBoundingClientRect();
+                const offsetX = clientX - joystickRect.left - joystickProps.centerX;
+                const offsetY = clientY - joystickRect.top - joystickProps.centerY;
+                
+                // 计算方向和距离
+                let distance = Math.sqrt(offsetX * offsetX + offsetY * offsetY);
+                const angle = Math.atan2(offsetY, offsetX);
+                
+                // 限制摇杆移动范围
+                if (distance > joystickProps.maxRadius) {
+                    distance = joystickProps.maxRadius;
+                }
+                
+                // 计算距离百分比 (0-1之间)
+                const distancePercent = distance / joystickProps.maxRadius;
+                
+                // 新的摇杆位置
+                const newX = joystickProps.centerX + distance * Math.cos(angle) - (button.offsetWidth / 2);
+                const newY = joystickProps.centerY + distance * Math.sin(angle) - (button.offsetHeight / 2);
+                
+                // 更新摇杆位置
+                button.style.left = newX + 'px';
+                button.style.top = newY + 'px';
+                
+                // 显示方向指示器
+                indicator.style.opacity = 0.7;
+                indicator.style.left = joystickProps.centerX + (distance * 1.2) * Math.cos(angle) + 'px';
+                indicator.style.top = joystickProps.centerY + (distance * 1.2) * Math.sin(angle) + 'px';
+                
+                // 计算方向值（-100 到 100）
+                const directionX = Math.round((offsetX / joystickProps.maxRadius) * 100);
+                const directionY = Math.round((offsetY / joystickProps.maxRadius) * 100);
+                
+                // 更新方向文本
+                updateDirectionText(directionX, directionY);
+                
+                // 发送命令
+                lastDirectionX = directionX;
+                lastDirectionY = directionY;
+                throttledSendCommand(distancePercent, directionX, directionY);
+                
+                // 同时控制舵机 - 通过WebSocket发送舵机指令
+                sendServoCommand(directionX, directionY);
+            }
+            
+            function stopDrag() {
+                if (!isDragging) return;
+                isDragging = false;
+                
+                // 重置摇杆位置
+                button.style.left = (joystickProps.centerX - button.offsetWidth / 2) + 'px';
+                button.style.top = (joystickProps.centerY - button.offsetHeight / 2) + 'px';
+                
+                // 隐藏方向指示器
+                indicator.style.opacity = 0;
+                
+                // 停止小车
+                lastDirectionX = 0;
+                lastDirectionY = 0;
+                updateDirectionText(0, 0);
+                throttledSendCommand(0, 0, 0);
+                
+                // 移除事件监听器
+                document.removeEventListener('mousemove', drag);
+                document.removeEventListener('touchmove', drag);
+                document.removeEventListener('mouseup', stopDrag);
+                document.removeEventListener('touchend', stopDrag);
+            }
+            
+            function updateDirectionText(dirX, dirY) {
+                let direction = '停止';
+                
+                // 不使用容忍角度，直接根据方向值判断
+                if (dirX === 0 && dirY === 0) {
+                    direction = '停止';
+                } else {
+                    // 计算角度（弧度）
+                    const angle = Math.atan2(dirY, dirX);
+                    // 转换为角度
+                    const angleDegrees = angle * 180 / Math.PI;
+                    
+                    // 根据角度判断方向
+                    // 注意：Y轴正方向为下，负方向为上，所以需要反转前后方向
+                    // 前进区域（-135度到-45度之间）
+                    if (angleDegrees < -45 && angleDegrees > -135) {
+                        // 纯前进
+                        if (angleDegrees === -90) {
+                            direction = '前';
+                        }
+                        // 前偏右
+                        else if (angleDegrees > -90) {
+                            direction = `前偏右 ${Math.round(Math.abs(angleDegrees) - 90)}°`;
+                        }
+                        // 前偏左
+                        else {
+                            direction = `前偏左 ${Math.round(90 - Math.abs(angleDegrees))}°`;
+                        }
+                    }
+                    // 后退区域（45度到135度之间）
+                    else if (angleDegrees > 45 && angleDegrees < 135) {
+                        // 纯后退
+                        if (angleDegrees === 90) {
+                            direction = '后';
+                        }
+                        // 后偏右
+                        else if (angleDegrees < 90) {
+                            direction = `后偏右 ${Math.round(90 - angleDegrees)}°`;
+                        }
+                        // 后偏左
+                        else {
+                            direction = `后偏左 ${Math.round(angleDegrees - 90)}°`;
+                        }
+                    }
+                    // 左右转区域
+                    else if (angleDegrees >= -45 && angleDegrees <= 45) {
+                        direction = '右';
+                    } else {
+                        direction = '左';
+                    }
+                }
+                
+                directionText.innerText = direction;
+                directionTextStatus.innerText = direction;
+            }
+            
+            // 更新超声波显示
+            function updateUltrasonicDisplay(data) {
+                // 检查data对象是否有效
+                if (!data) {
+                    console.warn('收到无效的超声波数据');
+                    return;
+                }
+              
+                try {
+                    // 更新前置超声波数据
+                    const frontDistanceEl = document.getElementById('front-distance');
+                    const frontUltrasonicEl = document.getElementById('front-ultrasonic');
+                    
+                    // 更新后置超声波数据
+                    const rearDistanceEl = document.getElementById('rear-distance');
+                    const rearUltrasonicEl = document.getElementById('rear-ultrasonic');
+                    
+                    // 更新前方安全距离
+                    const frontSafeDistanceEl = document.getElementById('front-safe-distance');
+                    
+                    // 更新后方安全距离
+                    const rearSafeDistanceEl = document.getElementById('rear-safe-distance');
+                    
+                    if (frontDistanceEl && frontUltrasonicEl) {
+                        // 设置距离值，检查是否是有效的数字
+                        const frontDistance = typeof data.front_distance === 'number' ? data.front_distance : 0;
+                        frontDistanceEl.textContent = frontDistance + ' cm';
+                        
+                        // 更新前置超声波图标
+                        if (typeof data.front_obstacle_detected === 'boolean' && data.front_obstacle_detected) {
+                            frontUltrasonicEl.classList.add('alert');
+                        } else {
+                            frontUltrasonicEl.classList.remove('alert');
+                        }
+                    }
+                    
+                    if (rearDistanceEl && rearUltrasonicEl) {
+                        // 设置距离值，检查是否是有效的数字
+                        const rearDistance = typeof data.rear_distance === 'number' ? data.rear_distance : 0;
+                        rearDistanceEl.textContent = rearDistance + ' cm';
+                        
+                        // 更新后置超声波图标
+                        if (typeof data.rear_obstacle_detected === 'boolean' && data.rear_obstacle_detected) {
+                            rearUltrasonicEl.classList.add('alert');
+                        } else {
+                            rearUltrasonicEl.classList.remove('alert');
+                        }
+                    }
+                    
+                    // 更新前方安全距离
+                    if (frontSafeDistanceEl) {
+                        const frontSafeDistance = typeof data.front_safe_distance === 'number' ? data.front_safe_distance : 0;
+                        frontSafeDistanceEl.textContent = frontSafeDistance + ' cm';
+                    }
+                    
+                    // 更新后方安全距离
+                    if (rearSafeDistanceEl) {
+                        const rearSafeDistance = typeof data.rear_safe_distance === 'number' ? data.rear_safe_distance : 0;
+                        rearSafeDistanceEl.textContent = rearSafeDistance + ' cm';
+                    }
+                } catch (error) {
+                    console.error('更新超声波显示出错:', error);
+                }
+            }
+
+            // 更新舵机状态
+            function updateServoStatus(data) {
+                const horizontalValue = document.getElementById('servo-horizontal-value');
+                const verticalValue = document.getElementById('servo-vertical-value');
+                
+                if (data.horizontal_angle !== undefined) {
+                    horizontalValue.textContent = `${data.horizontal_angle}°`;
+                    document.getElementById('horizontalServo').value = data.horizontal_angle;
+                }
+                
+                if (data.vertical_angle !== undefined) {
+                    verticalValue.textContent = `${data.vertical_angle}°`;
+                    document.getElementById('verticalServo').value = data.vertical_angle;
+                }
+            }
+            
+            // 按钮控制功能
+            document.getElementById('btnForward').addEventListener('click', function() {
+                sendMoveCommand('forward');
+            });
+            
+            document.getElementById('btnBackward').addEventListener('click', function() {
+                sendMoveCommand('backward');
+            });
+            
+            document.getElementById('btnLeft').addEventListener('click', function() {
+                sendMoveCommand('left');
+            });
+            
+            document.getElementById('btnRight').addEventListener('click', function() {
+                sendMoveCommand('right');
+            });
+            
+            document.getElementById('btnStop').addEventListener('click', function() {
+                sendMoveCommand('stop');
+            });
+            
+            // 舵机控制设置
+            const horizontalServo = document.getElementById('horizontalServo');
+            const verticalServo = document.getElementById('verticalServo');
+            const horizontalValue = document.getElementById('servo-horizontal-value');
+            const verticalValue = document.getElementById('servo-vertical-value');
+            
+            horizontalServo.addEventListener('input', function() {
+                const angle = this.value;
+                horizontalValue.textContent = `${angle}°`;
+            });
+            
+            horizontalServo.addEventListener('change', function() {
+                const angle = this.value;
+                sendServoPositionCommand(0, angle);
+            });
+            
+            verticalServo.addEventListener('input', function() {
+                const angle = this.value;
+                verticalValue.textContent = `${angle}°`;
+            });
+            
+            verticalServo.addEventListener('change', function() {
+                const angle = this.value;
+                sendServoPositionCommand(1, angle);
+            });
+            
+            // 速度控制滑块
+            const speedControl = document.getElementById('speedControl');
+            const speedValue = document.getElementById('speedValue');
+            
+            speedControl.addEventListener('input', function() {
+                currentSpeed = this.value;
+                speedValue.textContent = currentSpeed;
+            });
+            
+            // 发送移动命令
+            function sendMoveCommand(operation) {
+                fetch(`/move?op=${operation}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        console.log('移动命令响应:', data);
+                        // 同时更新方向文本
+                        let direction = '停止';
+                        switch(operation) {
+                            case 'forward': direction = '前'; break;
+                            case 'backward': direction = '后'; break;
+                            case 'left': direction = '左'; break;
+                            case 'right': direction = '右'; break;
+                            case 'stop': direction = '停止'; break;
+                        }
+                        directionText.innerText = direction;
+                        directionTextStatus.innerText = direction;
+                    })
+                    .catch(error => {
+                        console.error('发送移动命令时出错:', error);
+                    });
+            }
+            
+            // 直接发送舵机位置命令
+            function sendServoPositionCommand(index, angle) {
+                // 通过HTTP API发送
+                fetch(`/servo?index=${index}&angle=${angle}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        console.log('舵机命令响应:', data);
+                    })
+                    .catch(error => {
+                        console.error('发送舵机命令时出错:', error);
+                    });
+                
+                // 同时通过WebSocket发送（如果已连接）
+                if (wsConnection && wsConnection.readyState === WebSocket.OPEN) {
+                    try {
+                        const servoCmd = JSON.stringify({
+                            type: "servo_control",
+                            index: index,
+                            angle: parseInt(angle)
+                        });
+                        wsConnection.send(servoCmd);
+                    } catch(e) {
+                        console.error('通过WebSocket发送舵机命令失败:', e);
+                    }
+                }
+            }
+            
+            // 从摇杆位置发送舵机控制命令
+            function sendServoCommand(dirX, dirY) {
+                // 将X方向映射到水平舵机角度 (-100,100) -> (0,180)
+                const horizontalAngle = Math.round(90 + dirX * 0.9); // 从中心点90°开始，最大偏移±90°
+                
+                // 获取当前速度设置
+                const currentSpeed = document.getElementById('speedControl').value;
+                // 计算垂直舵机位置 - 根据Y方向和速度
+                const verticalAngle = Math.round(90 - dirY * 0.9 * (currentSpeed / 255));
+                
+                // 更新滑块UI（不触发事件）
+                document.getElementById('servo-horizontal-value').textContent = `${horizontalAngle}°`;
+                document.getElementById('horizontalServo').value = horizontalAngle;
+                document.getElementById('servo-vertical-value').textContent = `${verticalAngle}°`;
+                document.getElementById('verticalServo').value = verticalAngle;
+                
+                // 只有通过WebSocket发送，避免HTTP请求过多
+                if (wsConnection && wsConnection.readyState === WebSocket.OPEN) {
+                    if (Math.abs(dirX) > 5) { // 只在方向变化明显时发送水平命令
+                        try {
+                            const horizontalCmd = JSON.stringify({
+                                type: "servo_control",
+                                index: 0,
+                                angle: horizontalAngle
+                            });
+                            wsConnection.send(horizontalCmd);
+                        } catch(e) {
+                            console.error('通过WebSocket发送水平舵机命令失败:', e);
+                        }
+                    }
+                    
+                    if (Math.abs(dirY) > 5) { // 只在纵向变化明显时发送垂直命令
+                        try {
+                            const verticalCmd = JSON.stringify({
+                                type: "servo_control",
+                                index: 1,
+                                angle: verticalAngle
+                            });
+                            wsConnection.send(verticalCmd);
+                        } catch(e) {
+                            console.error('通过WebSocket发送垂直舵机命令失败:', e);
+                        }
+                    }
+                }
+            }
+            
+            // 视频流控制
+            if (startStreamBtn) {
+                startStreamBtn.addEventListener('click', function() {
+                    if (!stream.src || stream.src.indexOf(streamUrl) === -1) {
+                        stream.src = streamUrl + '?t=' + new Date().getTime();
+                        streamActive = true;
+                    }
+                    
+                    // 通过WebSocket发送视频启动命令
+                    if (wsConnection && wsConnection.readyState === WebSocket.OPEN) {
+                        const videoCmd = JSON.stringify({
+                            type: "camera_control",
+                            cmd: "stream",
+                            enable: true
+                        });
+                        wsConnection.send(videoCmd);
+                    }
+                });
+            }
+            
+            if (stopStreamBtn) {
+                stopStreamBtn.addEventListener('click', function() {
+                    stream.removeAttribute('src');
+                    stream.load();
+                    streamActive = false;
+                    
+                    // 通过WebSocket发送视频停止命令
+                    if (wsConnection && wsConnection.readyState === WebSocket.OPEN) {
+                        const videoCmd = JSON.stringify({
+                            type: "camera_control",
+                            cmd: "stream",
+                            enable: false
+                        });
+                        wsConnection.send(videoCmd);
+                    }
+                });
+            }
+            
+            // 页面可见性变化处理
+            document.addEventListener('visibilitychange', function() {
+                if (document.visibilityState === 'visible') {
+                    // 页面变为可见时，重新连接WebSocket
+                    console.log('页面可见，检查WebSocket连接');
+                    if (!wsConnection || wsConnection.readyState !== WebSocket.OPEN) {
+                        connectWebSocket();
+                    }
+                } else {
+                    // 页面隐藏时，停止车辆
+                    console.log('页面隐藏，停止车辆');
+                    throttledSendCommand(0, 0, 0);
+                }
+            });
+            
+            // 页面卸载时停止车辆
+            window.addEventListener('beforeunload', function() {
+                throttledSendCommand(0, 0, 0);
+                
+                // 关闭WebSocket连接
+                if (wsConnection) {
+                    wsConnection.close();
+                }
+            });
+        });
+    </script>
+
+    <!-- 添加返回主页按钮 -->
+    <div class="button-container">
+        <a href="/" class="back-button">返回主页</a>
+    </div>
+</body>
+</html> 

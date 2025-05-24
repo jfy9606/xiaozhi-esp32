@@ -25,8 +25,8 @@
 extern const uint8_t index_html_start[] asm("_binary_index_html_start");
 extern const uint8_t index_html_end[] asm("_binary_index_html_end");
 
-extern const uint8_t motor_html_start[] asm("_binary_motor_html_start");
-extern const uint8_t motor_html_end[] asm("_binary_motor_html_end");
+extern const uint8_t move_html_start[] asm("_binary_move_html_start");
+extern const uint8_t move_html_end[] asm("_binary_move_html_end");
 
 extern const uint8_t ai_html_start[] asm("_binary_ai_html_start");
 extern const uint8_t ai_html_end[] asm("_binary_ai_html_end");
@@ -34,15 +34,18 @@ extern const uint8_t ai_html_end[] asm("_binary_ai_html_end");
 extern const uint8_t vision_html_start[] asm("_binary_vision_html_start");
 extern const uint8_t vision_html_end[] asm("_binary_vision_html_end");
 
+//extern const uint8_t motor_html_start[] asm("_binary_motor_html_start");
+//extern const uint8_t motor_html_end[] asm("_binary_motor_html_end");
+
 // PSRAM存储的HTML内容指针
 static char* index_html_psram = NULL;
-static char* motor_html_psram = NULL;
+static char* move_html_psram = NULL;
 static char* ai_html_psram = NULL;
 static char* vision_html_psram = NULL;
 
 // HTML内容大小
 static size_t index_html_size = 0;
-static size_t motor_html_size = 0;
+static size_t move_html_size = 0;
 static size_t ai_html_size = 0;
 static size_t vision_html_size = 0;
 
@@ -55,12 +58,12 @@ static void init_html_content() {
     
     // 计算大小
     index_html_size = index_html_end - index_html_start;
-    motor_html_size = motor_html_end - motor_html_start;
+    move_html_size = move_html_end - move_html_start;
     ai_html_size = ai_html_end - ai_html_start;
     vision_html_size = vision_html_end - vision_html_start;
     
-    ESP_LOGI(TAG, "HTML文件大小: index=%zu, motor=%zu, ai=%zu, vision=%zu",
-            index_html_size, motor_html_size, ai_html_size, vision_html_size);
+    ESP_LOGI(TAG, "HTML文件大小: index=%zu, move=%zu, ai=%zu, vision=%zu",
+            index_html_size, move_html_size, ai_html_size, vision_html_size);
     
     // 分配PSRAM内存并复制内容
     #if USING_PSRAM_FOR_HTML
@@ -75,13 +78,13 @@ static void init_html_content() {
         ESP_LOGW(TAG, "无法分配PSRAM用于index.html (%zu 字节), 将使用内部flash存储", index_html_size);
     }
     
-    motor_html_psram = (char*)HTML_MALLOC(motor_html_size + 1);
-    if (motor_html_psram) {
-        memcpy(motor_html_psram, motor_html_start, motor_html_size);
-        motor_html_psram[motor_html_size] = '\0';
-        ESP_LOGI(TAG, "motor.html 复制到PSRAM: %zu 字节", motor_html_size);
+    move_html_psram = (char*)HTML_MALLOC(move_html_size + 1);
+    if (move_html_psram) {
+        memcpy(move_html_psram, move_html_start, move_html_size);
+        move_html_psram[move_html_size] = '\0';
+        ESP_LOGI(TAG, "move.html 复制到PSRAM: %zu 字节", move_html_size);
     } else {
-        ESP_LOGW(TAG, "无法分配PSRAM用于motor.html (%zu 字节), 将使用内部flash存储", motor_html_size);
+        ESP_LOGW(TAG, "无法分配PSRAM用于move.html (%zu 字节), 将使用内部flash存储", move_html_size);
     }
     
     ai_html_psram = (char*)HTML_MALLOC(ai_html_size + 1);
@@ -105,7 +108,7 @@ static void init_html_content() {
     // 检查是否所有文件都成功复制到PSRAM
     int success_count = 0;
     if (index_html_psram) success_count++;
-    if (motor_html_psram) success_count++;
+    if (move_html_psram) success_count++;
     if (ai_html_psram) success_count++;
     if (vision_html_psram) success_count++;
     
@@ -120,7 +123,7 @@ static void init_html_content() {
 // 为保持向后兼容而提供的常量别名
 extern "C" {
     const char* INDEX_HTML = (const char*)index_html_start;
-    const char* MOTOR_HTML = (const char*)motor_html_start;
+    const char* MOVE_HTML = (const char*)move_html_start;
     const char* AI_HTML = (const char*)ai_html_start;
     const char* VISION_HTML = (const char*)vision_html_start;
     
@@ -130,9 +133,9 @@ extern "C" {
         return index_html_size;
     }
 
-    size_t get_motor_html_size() {
+    size_t get_move_html_size() {
         init_html_content();
-        return motor_html_size;
+        return move_html_size;
     }
 
     size_t get_ai_html_size() {
@@ -145,15 +148,21 @@ extern "C" {
         return vision_html_size;
     }
 
+    size_t get_motor_html_size() {
+        // 返回move.html大小，因为motor.html已被合并到move.html
+        init_html_content();
+        return move_html_size;
+    }
+
     // 获取HTML内容的函数 - 优先返回PSRAM中的内容
     const char* get_index_html_content() {
         init_html_content();
         return index_html_psram ? index_html_psram : (const char*)index_html_start;
     }
 
-    const char* get_motor_html_content() {
+    const char* get_move_html_content() {
         init_html_content();
-        return motor_html_psram ? motor_html_psram : (const char*)motor_html_start;
+        return move_html_psram ? move_html_psram : (const char*)move_html_start;
     }
 
     const char* get_ai_html_content() {

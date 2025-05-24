@@ -1,6 +1,15 @@
+/**
+ * @file servo.cc
+ * @brief 舵机控制器实现和舵机Thing类
+ */
+
+#include "iot/things/servo.h"
 #include "iot/thing.h"
+#include "iot/thing_manager.h"
 #include "board.h"
 #include "../boards/common/board_config.h"
+#include "ext/include/lu9685.h"
+#include "sdkconfig.h"
 
 #include <esp_log.h>
 #include <cmath>
@@ -10,7 +19,634 @@
 #include <driver/ledc.h>
 #include <algorithm>
 #include <vector>
-#include "sdkconfig.h"
+#include <string.h>
+
+// C语言实现部分，舵机控制器API
+extern "C" {
+
+#define TAG_CTRL "ServoCtrl"
+
+// 舵机配置参数
+#ifdef CONFIG_SERVO_MIN_PULSE_WIDTH
+#define SERVO_MIN_PULSE_WIDTH_US CONFIG_SERVO_MIN_PULSE_WIDTH    // 从Kconfig获取最小脉冲宽度
+#else
+#define SERVO_MIN_PULSE_WIDTH_US 500    // 最小脉冲宽度 (微秒)
+#endif
+
+#ifdef CONFIG_SERVO_MAX_PULSE_WIDTH
+#define SERVO_MAX_PULSE_WIDTH_US CONFIG_SERVO_MAX_PULSE_WIDTH    // 从Kconfig获取最大脉冲宽度
+#else
+#define SERVO_MAX_PULSE_WIDTH_US 2500   // 最大脉冲宽度 (微秒)
+#endif
+
+#define SERVO_FREQUENCY_HZ 50           // 舵机控制频率 (Hz)
+#define SERVO_TIMER_RESOLUTION_BITS 13  // LEDC计时器分辨率，13位(0-8191)
+#define SERVO_MIN_ANGLE 0               // 最小角度
+#define SERVO_MAX_ANGLE 180             // 最大角度
+#define SERVO_DEFAULT_ANGLE 90          // 默认角度
+
+// LEDC通道配置
+#define SERVO_LEDC_TIMER LEDC_TIMER_0
+#define SERVO_LEDC_MODE LEDC_LOW_SPEED_MODE
+#define SERVO_LEDC_CHANNEL_LEFT LEDC_CHANNEL_0
+#define SERVO_LEDC_CHANNEL_RIGHT LEDC_CHANNEL_1
+#define SERVO_LEDC_CHANNEL_UP LEDC_CHANNEL_2
+#define SERVO_LEDC_CHANNEL_DOWN LEDC_CHANNEL_3
+
+// 舵机控制器结构体
+typedef struct servo_controller_t {
+    servo_controller_type_t type;
+    bool is_initialized;
+    
+    // 直接GPIO控制时的配置
+    struct {
+        int left_pin;
+        int right_pin;
+        int up_pin;
+        int down_pin;
+        bool gpio_initialized;
+    } gpio;
+    
+    // LU9685控制时的配置
+    struct {
+        lu9685_handle_t handle;
+        uint8_t left_channel;
+        uint8_t right_channel;
+        uint8_t up_channel;
+        uint8_t down_channel;
+        bool lu9685_initialized;
+    } lu9685;
+    
+} servo_controller_t;
+
+// 全局单例
+static servo_controller_t *servo_ctrl = NULL;
+
+// 将角度转换为占空比
+static uint32_t angle_to_duty(int angle) {
+    // 限制角度范围
+    if (angle < SERVO_MIN_ANGLE) {
+        angle = SERVO_MIN_ANGLE;
+    } else if (angle > SERVO_MAX_ANGLE) {
+        angle = SERVO_MAX_ANGLE;
+    }
+    
+    // 计算脉冲宽度 (微秒)
+    uint32_t pulse_width_us = SERVO_MIN_PULSE_WIDTH_US + 
+        ((SERVO_MAX_PULSE_WIDTH_US - SERVO_MIN_PULSE_WIDTH_US) * angle) / (SERVO_MAX_ANGLE - SERVO_MIN_ANGLE);
+    
+    // 将脉冲宽度转换为LEDC占空比
+    // LEDC最大值 = (2^SERVO_TIMER_RESOLUTION_BITS) - 1
+    uint32_t max_duty = (1 << SERVO_TIMER_RESOLUTION_BITS) - 1;
+    
+    // 计算占空比: pulse_width / period
+    // period = 1000000 / SERVO_FREQUENCY_HZ (微秒)
+    uint32_t duty = (pulse_width_us * max_duty) / (1000000 / SERVO_FREQUENCY_HZ);
+    
+    return duty;
+}
+
+// 初始化直接GPIO控制的PWM配置
+static esp_err_t init_gpio_servo(servo_controller_t *controller) {
+    if (controller == NULL || controller->gpio.gpio_initialized) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    ESP_LOGI(TAG_CTRL, "Initializing GPIO servo controller");
+    
+    // 配置LEDC定时器
+    ledc_timer_config_t timer_conf = {
+        .speed_mode = SERVO_LEDC_MODE,
+        .duty_resolution = (ledc_timer_bit_t)SERVO_TIMER_RESOLUTION_BITS,
+        .timer_num = SERVO_LEDC_TIMER,
+        .freq_hz = SERVO_FREQUENCY_HZ,
+        .clk_cfg = LEDC_AUTO_CLK
+    };
+    
+    esp_err_t err = ledc_timer_config(&timer_conf);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG_CTRL, "LEDC timer config failed: %s", esp_err_to_name(err));
+        return err;
+    }
+    
+    // 配置左舵机通道
+    if (controller->gpio.left_pin >= 0) {
+        ledc_channel_config_t ledc_conf = {
+            .gpio_num = controller->gpio.left_pin,
+            .speed_mode = SERVO_LEDC_MODE,
+            .channel = SERVO_LEDC_CHANNEL_LEFT,
+            .intr_type = LEDC_INTR_DISABLE,
+            .timer_sel = SERVO_LEDC_TIMER,
+            .duty = angle_to_duty(SERVO_DEFAULT_ANGLE),
+            .hpoint = 0,
+            .flags = {
+                .output_invert = 0
+            }
+        };
+        
+        err = ledc_channel_config(&ledc_conf);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG_CTRL, "Left servo LEDC channel config failed: %s", esp_err_to_name(err));
+            return err;
+        }
+        ESP_LOGI(TAG_CTRL, "Left servo initialized on GPIO %d", controller->gpio.left_pin);
+    }
+    
+    // 配置右舵机通道
+    if (controller->gpio.right_pin >= 0) {
+        ledc_channel_config_t ledc_conf = {
+            .gpio_num = controller->gpio.right_pin,
+            .speed_mode = SERVO_LEDC_MODE,
+            .channel = SERVO_LEDC_CHANNEL_RIGHT,
+            .intr_type = LEDC_INTR_DISABLE,
+            .timer_sel = SERVO_LEDC_TIMER,
+            .duty = angle_to_duty(SERVO_DEFAULT_ANGLE),
+            .hpoint = 0,
+            .flags = {
+                .output_invert = 0
+            }
+        };
+        
+        err = ledc_channel_config(&ledc_conf);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG_CTRL, "Right servo LEDC channel config failed: %s", esp_err_to_name(err));
+            return err;
+        }
+        ESP_LOGI(TAG_CTRL, "Right servo initialized on GPIO %d", controller->gpio.right_pin);
+    }
+    
+    // 配置上舵机通道
+    if (controller->gpio.up_pin >= 0) {
+        ledc_channel_config_t ledc_conf = {
+            .gpio_num = controller->gpio.up_pin,
+            .speed_mode = SERVO_LEDC_MODE,
+            .channel = SERVO_LEDC_CHANNEL_UP,
+            .intr_type = LEDC_INTR_DISABLE,
+            .timer_sel = SERVO_LEDC_TIMER,
+            .duty = angle_to_duty(SERVO_DEFAULT_ANGLE),
+            .hpoint = 0,
+            .flags = {
+                .output_invert = 0
+            }
+        };
+        
+        err = ledc_channel_config(&ledc_conf);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG_CTRL, "Up servo LEDC channel config failed: %s", esp_err_to_name(err));
+            return err;
+        }
+        ESP_LOGI(TAG_CTRL, "Up servo initialized on GPIO %d", controller->gpio.up_pin);
+    }
+    
+    // 配置下舵机通道
+    if (controller->gpio.down_pin >= 0) {
+        ledc_channel_config_t ledc_conf = {
+            .gpio_num = controller->gpio.down_pin,
+            .speed_mode = SERVO_LEDC_MODE,
+            .channel = SERVO_LEDC_CHANNEL_DOWN,
+            .intr_type = LEDC_INTR_DISABLE,
+            .timer_sel = SERVO_LEDC_TIMER,
+            .duty = angle_to_duty(SERVO_DEFAULT_ANGLE),
+            .hpoint = 0,
+            .flags = {
+                .output_invert = 0
+            }
+        };
+        
+        err = ledc_channel_config(&ledc_conf);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG_CTRL, "Down servo LEDC channel config failed: %s", esp_err_to_name(err));
+            return err;
+        }
+        ESP_LOGI(TAG_CTRL, "Down servo initialized on GPIO %d", controller->gpio.down_pin);
+    }
+    
+    controller->gpio.gpio_initialized = true;
+    
+    // 将所有舵机重置到中心位置
+    servo_controller_reset((servo_controller_handle_t)controller);
+    
+    return ESP_OK;
+}
+
+// 初始化LU9685控制
+static esp_err_t init_lu9685_servo(servo_controller_t *controller) {
+    if (controller == NULL || controller->lu9685.lu9685_initialized) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    ESP_LOGI(TAG_CTRL, "Initializing LU9685 servo controller");
+    
+    // 初始化LU9685驱动
+    lu9685_config_t lu9685_config = {
+        .i2c_addr = CONFIG_LU9685_I2C_ADDR,
+        .pca9548a_channel = CONFIG_LU9685_PCA9548A_CHANNEL,
+        .use_pca9548a = true
+    };
+    
+    controller->lu9685.handle = lu9685_init(&lu9685_config);
+    if (controller->lu9685.handle == NULL) {
+        ESP_LOGE(TAG_CTRL, "LU9685 initialization failed");
+        return ESP_FAIL;
+    }
+    
+    controller->lu9685.lu9685_initialized = true;
+    
+    // 将所有舵机重置到中心位置
+    servo_controller_reset((servo_controller_handle_t)controller);
+    
+    return ESP_OK;
+}
+
+servo_controller_handle_t servo_controller_init(const servo_controller_config_t *config) {
+    if (servo_ctrl != NULL) {
+        ESP_LOGW(TAG_CTRL, "Servo controller already initialized");
+        return servo_ctrl;
+    }
+    
+    if (config == NULL) {
+        ESP_LOGE(TAG_CTRL, "Config is NULL");
+        return NULL;
+    }
+    
+    servo_ctrl = (servo_controller_t *)calloc(1, sizeof(servo_controller_t));
+    if (servo_ctrl == NULL) {
+        ESP_LOGE(TAG_CTRL, "Failed to allocate memory for servo controller");
+        return NULL;
+    }
+    
+    // 配置控制器
+    servo_ctrl->type = config->type;
+    
+    if (config->type == SERVO_CONTROLLER_TYPE_DIRECT) {
+        // 配置直接GPIO控制
+        servo_ctrl->gpio.left_pin = config->gpio.left_pin;
+        servo_ctrl->gpio.right_pin = config->gpio.right_pin;
+        servo_ctrl->gpio.up_pin = config->gpio.up_pin;
+        servo_ctrl->gpio.down_pin = config->gpio.down_pin;
+        
+        if (init_gpio_servo(servo_ctrl) != ESP_OK) {
+            ESP_LOGE(TAG_CTRL, "Failed to initialize GPIO servo controller");
+            free(servo_ctrl);
+            servo_ctrl = NULL;
+            return NULL;
+        }
+    } else if (config->type == SERVO_CONTROLLER_TYPE_LU9685) {
+        // 配置LU9685控制
+        servo_ctrl->lu9685.left_channel = config->lu9685.left_channel;
+        servo_ctrl->lu9685.right_channel = config->lu9685.right_channel;
+        servo_ctrl->lu9685.up_channel = config->lu9685.up_channel;
+        servo_ctrl->lu9685.down_channel = config->lu9685.down_channel;
+        
+        if (init_lu9685_servo(servo_ctrl) != ESP_OK) {
+            ESP_LOGE(TAG_CTRL, "Failed to initialize LU9685 servo controller");
+            free(servo_ctrl);
+            servo_ctrl = NULL;
+            return NULL;
+        }
+    } else {
+        ESP_LOGE(TAG_CTRL, "Invalid servo controller type: %d", config->type);
+        free(servo_ctrl);
+        servo_ctrl = NULL;
+        return NULL;
+    }
+    
+    servo_ctrl->is_initialized = true;
+    ESP_LOGI(TAG_CTRL, "Servo controller initialized successfully");
+    
+    return (servo_controller_handle_t)servo_ctrl;
+}
+
+esp_err_t servo_controller_deinit(servo_controller_handle_t handle) {
+    servo_controller_t *controller = (servo_controller_t *)handle;
+    if (controller == NULL || controller != servo_ctrl) {
+        ESP_LOGE(TAG_CTRL, "Invalid servo controller handle");
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    if (!controller->is_initialized) {
+        ESP_LOGW(TAG_CTRL, "Servo controller not initialized");
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    if (controller->type == SERVO_CONTROLLER_TYPE_DIRECT) {
+        // 停止直接GPIO控制
+        if (controller->gpio.left_pin >= 0) {
+            ledc_stop(SERVO_LEDC_MODE, SERVO_LEDC_CHANNEL_LEFT, 0);
+        }
+        if (controller->gpio.right_pin >= 0) {
+            ledc_stop(SERVO_LEDC_MODE, SERVO_LEDC_CHANNEL_RIGHT, 0);
+        }
+        if (controller->gpio.up_pin >= 0) {
+            ledc_stop(SERVO_LEDC_MODE, SERVO_LEDC_CHANNEL_UP, 0);
+        }
+        if (controller->gpio.down_pin >= 0) {
+            ledc_stop(SERVO_LEDC_MODE, SERVO_LEDC_CHANNEL_DOWN, 0);
+        }
+        
+        controller->gpio.gpio_initialized = false;
+    } else if (controller->type == SERVO_CONTROLLER_TYPE_LU9685) {
+        // 释放LU9685控制器
+        if (controller->lu9685.handle != NULL) {
+            lu9685_deinit(controller->lu9685.handle);
+            controller->lu9685.handle = NULL;
+        }
+        
+        controller->lu9685.lu9685_initialized = false;
+    }
+    
+    controller->is_initialized = false;
+    
+    free(servo_ctrl);
+    servo_ctrl = NULL;
+    
+    ESP_LOGI(TAG_CTRL, "Servo controller deinitialized");
+    return ESP_OK;
+}
+
+esp_err_t servo_controller_set_left_angle(servo_controller_handle_t handle, uint8_t angle) {
+    servo_controller_t *controller = (servo_controller_t *)handle;
+    if (controller == NULL || controller != servo_ctrl) {
+        ESP_LOGE(TAG_CTRL, "Invalid servo controller handle");
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    if (!controller->is_initialized) {
+        ESP_LOGW(TAG_CTRL, "Servo controller not initialized");
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    ESP_LOGD(TAG_CTRL, "Setting left servo to angle %d", angle);
+    
+    if (angle > SERVO_MAX_ANGLE) {
+        angle = SERVO_MAX_ANGLE;
+    }
+    
+    if (controller->type == SERVO_CONTROLLER_TYPE_DIRECT) {
+        // 直接GPIO控制
+        if (controller->gpio.left_pin >= 0) {
+            uint32_t duty = angle_to_duty(angle);
+            esp_err_t err = ledc_set_duty(SERVO_LEDC_MODE, SERVO_LEDC_CHANNEL_LEFT, duty);
+            if (err != ESP_OK) {
+                ESP_LOGE(TAG_CTRL, "Set left servo duty failed: %s", esp_err_to_name(err));
+                return err;
+            }
+            
+            err = ledc_update_duty(SERVO_LEDC_MODE, SERVO_LEDC_CHANNEL_LEFT);
+            if (err != ESP_OK) {
+                ESP_LOGE(TAG_CTRL, "Update left servo duty failed: %s", esp_err_to_name(err));
+                return err;
+            }
+        }
+    } else if (controller->type == SERVO_CONTROLLER_TYPE_LU9685) {
+        // LU9685控制
+        if (controller->lu9685.handle != NULL) {
+            esp_err_t err = lu9685_set_channel_angle(controller->lu9685.handle, 
+                                               controller->lu9685.left_channel, 
+                                               angle);
+            if (err != ESP_OK) {
+                ESP_LOGE(TAG_CTRL, "Set left servo angle through LU9685 failed: %s", esp_err_to_name(err));
+                return err;
+            }
+        }
+    }
+    
+    return ESP_OK;
+}
+
+esp_err_t servo_controller_set_right_angle(servo_controller_handle_t handle, uint8_t angle) {
+    servo_controller_t *controller = (servo_controller_t *)handle;
+    if (controller == NULL || controller != servo_ctrl) {
+        ESP_LOGE(TAG_CTRL, "Invalid servo controller handle");
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    if (!controller->is_initialized) {
+        ESP_LOGW(TAG_CTRL, "Servo controller not initialized");
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    ESP_LOGD(TAG_CTRL, "Setting right servo to angle %d", angle);
+    
+    if (angle > SERVO_MAX_ANGLE) {
+        angle = SERVO_MAX_ANGLE;
+    }
+    
+    if (controller->type == SERVO_CONTROLLER_TYPE_DIRECT) {
+        // 直接GPIO控制
+        if (controller->gpio.right_pin >= 0) {
+            uint32_t duty = angle_to_duty(angle);
+            esp_err_t err = ledc_set_duty(SERVO_LEDC_MODE, SERVO_LEDC_CHANNEL_RIGHT, duty);
+            if (err != ESP_OK) {
+                ESP_LOGE(TAG_CTRL, "Set right servo duty failed: %s", esp_err_to_name(err));
+                return err;
+            }
+            
+            err = ledc_update_duty(SERVO_LEDC_MODE, SERVO_LEDC_CHANNEL_RIGHT);
+            if (err != ESP_OK) {
+                ESP_LOGE(TAG_CTRL, "Update right servo duty failed: %s", esp_err_to_name(err));
+                return err;
+            }
+        }
+    } else if (controller->type == SERVO_CONTROLLER_TYPE_LU9685) {
+        // LU9685控制
+        if (controller->lu9685.handle != NULL) {
+            esp_err_t err = lu9685_set_channel_angle(controller->lu9685.handle, 
+                                               controller->lu9685.right_channel, 
+                                               angle);
+            if (err != ESP_OK) {
+                ESP_LOGE(TAG_CTRL, "Set right servo angle through LU9685 failed: %s", esp_err_to_name(err));
+                return err;
+            }
+        }
+    }
+    
+    return ESP_OK;
+}
+
+esp_err_t servo_controller_set_up_angle(servo_controller_handle_t handle, uint8_t angle) {
+    servo_controller_t *controller = (servo_controller_t *)handle;
+    if (controller == NULL || controller != servo_ctrl) {
+        ESP_LOGE(TAG_CTRL, "Invalid servo controller handle");
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    if (!controller->is_initialized) {
+        ESP_LOGW(TAG_CTRL, "Servo controller not initialized");
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    ESP_LOGD(TAG_CTRL, "Setting up servo to angle %d", angle);
+    
+    if (angle > SERVO_MAX_ANGLE) {
+        angle = SERVO_MAX_ANGLE;
+    }
+    
+    if (controller->type == SERVO_CONTROLLER_TYPE_DIRECT) {
+        // 直接GPIO控制
+        if (controller->gpio.up_pin >= 0) {
+            uint32_t duty = angle_to_duty(angle);
+            esp_err_t err = ledc_set_duty(SERVO_LEDC_MODE, SERVO_LEDC_CHANNEL_UP, duty);
+            if (err != ESP_OK) {
+                ESP_LOGE(TAG_CTRL, "Set up servo duty failed: %s", esp_err_to_name(err));
+                return err;
+            }
+            
+            err = ledc_update_duty(SERVO_LEDC_MODE, SERVO_LEDC_CHANNEL_UP);
+            if (err != ESP_OK) {
+                ESP_LOGE(TAG_CTRL, "Update up servo duty failed: %s", esp_err_to_name(err));
+                return err;
+            }
+        }
+    } else if (controller->type == SERVO_CONTROLLER_TYPE_LU9685) {
+        // LU9685控制
+        if (controller->lu9685.handle != NULL) {
+            esp_err_t err = lu9685_set_channel_angle(controller->lu9685.handle, 
+                                               controller->lu9685.up_channel, 
+                                               angle);
+            if (err != ESP_OK) {
+                ESP_LOGE(TAG_CTRL, "Set up servo angle through LU9685 failed: %s", esp_err_to_name(err));
+                return err;
+            }
+        }
+    }
+    
+    return ESP_OK;
+}
+
+esp_err_t servo_controller_set_down_angle(servo_controller_handle_t handle, uint8_t angle) {
+    servo_controller_t *controller = (servo_controller_t *)handle;
+    if (controller == NULL || controller != servo_ctrl) {
+        ESP_LOGE(TAG_CTRL, "Invalid servo controller handle");
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    if (!controller->is_initialized) {
+        ESP_LOGW(TAG_CTRL, "Servo controller not initialized");
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    ESP_LOGD(TAG_CTRL, "Setting down servo to angle %d", angle);
+    
+    if (angle > SERVO_MAX_ANGLE) {
+        angle = SERVO_MAX_ANGLE;
+    }
+    
+    if (controller->type == SERVO_CONTROLLER_TYPE_DIRECT) {
+        // 直接GPIO控制
+        if (controller->gpio.down_pin >= 0) {
+            uint32_t duty = angle_to_duty(angle);
+            esp_err_t err = ledc_set_duty(SERVO_LEDC_MODE, SERVO_LEDC_CHANNEL_DOWN, duty);
+            if (err != ESP_OK) {
+                ESP_LOGE(TAG_CTRL, "Set down servo duty failed: %s", esp_err_to_name(err));
+                return err;
+            }
+            
+            err = ledc_update_duty(SERVO_LEDC_MODE, SERVO_LEDC_CHANNEL_DOWN);
+            if (err != ESP_OK) {
+                ESP_LOGE(TAG_CTRL, "Update down servo duty failed: %s", esp_err_to_name(err));
+                return err;
+            }
+        }
+    } else if (controller->type == SERVO_CONTROLLER_TYPE_LU9685) {
+        // LU9685控制
+        if (controller->lu9685.handle != NULL) {
+            esp_err_t err = lu9685_set_channel_angle(controller->lu9685.handle, 
+                                               controller->lu9685.down_channel, 
+                                               angle);
+            if (err != ESP_OK) {
+                ESP_LOGE(TAG_CTRL, "Set down servo angle through LU9685 failed: %s", esp_err_to_name(err));
+                return err;
+            }
+        }
+    }
+    
+    return ESP_OK;
+}
+
+esp_err_t servo_controller_set_horizontal_angle(servo_controller_handle_t handle, uint8_t angle) {
+    esp_err_t err;
+    
+    // 同时设置左右舵机角度
+    err = servo_controller_set_left_angle(handle, angle);
+    if (err != ESP_OK) {
+        return err;
+    }
+    
+    err = servo_controller_set_right_angle(handle, angle);
+    if (err != ESP_OK) {
+        return err;
+    }
+    
+    return ESP_OK;
+}
+
+esp_err_t servo_controller_set_vertical_angle(servo_controller_handle_t handle, uint8_t angle) {
+    esp_err_t err;
+    
+    // 同时设置上下舵机角度
+    err = servo_controller_set_up_angle(handle, angle);
+    if (err != ESP_OK) {
+        return err;
+    }
+    
+    err = servo_controller_set_down_angle(handle, angle);
+    if (err != ESP_OK) {
+        return err;
+    }
+    
+    return ESP_OK;
+}
+
+esp_err_t servo_controller_reset(servo_controller_handle_t handle) {
+    servo_controller_t *controller = (servo_controller_t *)handle;
+    if (controller == NULL || controller != servo_ctrl) {
+        ESP_LOGE(TAG_CTRL, "Invalid servo controller handle");
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    if (!controller->is_initialized) {
+        ESP_LOGW(TAG_CTRL, "Servo controller not initialized");
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    ESP_LOGI(TAG_CTRL, "Resetting all servos to center position");
+    
+    // 将所有舵机设置为90度（中间位置）
+    esp_err_t err;
+    
+    err = servo_controller_set_left_angle(handle, SERVO_DEFAULT_ANGLE);
+    if (err != ESP_OK) {
+        return err;
+    }
+    
+    err = servo_controller_set_right_angle(handle, SERVO_DEFAULT_ANGLE);
+    if (err != ESP_OK) {
+        return err;
+    }
+    
+    err = servo_controller_set_up_angle(handle, SERVO_DEFAULT_ANGLE);
+    if (err != ESP_OK) {
+        return err;
+    }
+    
+    err = servo_controller_set_down_angle(handle, SERVO_DEFAULT_ANGLE);
+    if (err != ESP_OK) {
+        return err;
+    }
+    
+    return ESP_OK;
+}
+
+bool servo_controller_is_initialized(void) {
+    return (servo_ctrl != NULL && servo_ctrl->is_initialized);
+}
+
+servo_controller_handle_t servo_controller_get_handle(void) {
+    return (servo_controller_handle_t)servo_ctrl;
+} 
+
+} // extern "C"
 
 #define TAG "ServoThing"
 
@@ -403,6 +1039,7 @@ class ServoThing : public Thing {
 private:
     std::vector<Servo> servos_;      // 舵机实例列表
     std::vector<int> servo_pins_;    // 舵机引脚列表
+    servo_controller_handle_t servo_ctrl_;
     
     // 初始化舵机
     void InitServos() {
@@ -432,10 +1069,53 @@ private:
         }
     }
 
+    // 初始化舵机控制器
+    void InitServoController() {
+        ESP_LOGI(TAG, "Initializing servo controller");
+        
+        servo_controller_config_t config = {};
+        
+#ifdef CONFIG_SERVO_CONNECTION_DIRECT
+        // 直接GPIO控制方式
+        config.type = SERVO_CONTROLLER_TYPE_DIRECT;
+        config.gpio.left_pin = CONFIG_SERVO_LEFT_PIN;
+        config.gpio.right_pin = CONFIG_SERVO_RIGHT_PIN;
+        config.gpio.up_pin = CONFIG_SERVO_UP_PIN;
+        config.gpio.down_pin = CONFIG_SERVO_DOWN_PIN;
+        ESP_LOGI(TAG, "Using direct GPIO servo control: left=%d, right=%d, up=%d, down=%d",
+                 config.gpio.left_pin, config.gpio.right_pin, 
+                 config.gpio.up_pin, config.gpio.down_pin);
+#elif defined(CONFIG_SERVO_CONNECTION_LU9685)
+        // LU9685控制方式
+        config.type = SERVO_CONTROLLER_TYPE_LU9685;
+        config.lu9685.left_channel = CONFIG_SERVO_LU9685_LEFT_CHANNEL;
+        config.lu9685.right_channel = CONFIG_SERVO_LU9685_RIGHT_CHANNEL;
+        config.lu9685.up_channel = CONFIG_SERVO_LU9685_UP_CHANNEL;
+        config.lu9685.down_channel = CONFIG_SERVO_LU9685_DOWN_CHANNEL;
+        ESP_LOGI(TAG, "Using LU9685 servo control: left=%d, right=%d, up=%d, down=%d", 
+                 config.lu9685.left_channel, config.lu9685.right_channel,
+                 config.lu9685.up_channel, config.lu9685.down_channel);
+#else
+        ESP_LOGE(TAG, "No servo connection type defined");
+        return;
+#endif
+        
+        // 初始化舵机控制器
+        servo_ctrl_ = servo_controller_init(&config);
+        if (servo_ctrl_ == nullptr) {
+            ESP_LOGE(TAG, "Failed to initialize servo controller");
+        } else {
+            ESP_LOGI(TAG, "Servo controller initialized successfully");
+        }
+    }
+
 public:
-    ServoThing() : Thing("Servo", "舵机控制器") {
+    ServoThing() : Thing("Servo", "舵机控制器"), servo_ctrl_(nullptr) {
         // 初始化舵机
         InitServos();
+        
+        // 初始化舵机控制器
+        InitServoController();
         
         // 添加舵机数量属性
         properties_.AddNumberProperty("servoCount", "舵机数量", [this]() -> int {
@@ -578,12 +1258,148 @@ public:
             servos_[servo_id].stop();
             ESP_LOGI(TAG, "Stopped servo %d", servo_id);
         });
+        
+        // 添加设置水平角度方法
+        ParameterList horizontalParams;
+        horizontalParams.AddParameter(Parameter("angle", "水平角度 (0-180度)", kValueTypeNumber));
+        
+        methods_.AddMethod("SetHorizontalAngle", "设置水平方向(左右)舵机角度", horizontalParams, [this](const ParameterList& parameters) {
+            if (servo_ctrl_ == nullptr) {
+                ESP_LOGW(TAG, "Servo controller not initialized");
+                return;
+            }
+            
+            int angle = parameters["angle"].number();
+            ESP_LOGI(TAG, "Setting horizontal servo angle to %d", angle);
+            
+            esp_err_t err = servo_controller_set_horizontal_angle(servo_ctrl_, angle);
+            if (err != ESP_OK) {
+                ESP_LOGE(TAG, "Failed to set horizontal angle: %s", esp_err_to_name(err));
+            }
+        });
+        
+        // 添加设置垂直角度方法
+        ParameterList verticalParams;
+        verticalParams.AddParameter(Parameter("angle", "垂直角度 (0-180度)", kValueTypeNumber));
+        
+        methods_.AddMethod("SetVerticalAngle", "设置垂直方向(上下)舵机角度", verticalParams, [this](const ParameterList& parameters) {
+            if (servo_ctrl_ == nullptr) {
+                ESP_LOGW(TAG, "Servo controller not initialized");
+                return;
+            }
+            
+            int angle = parameters["angle"].number();
+            ESP_LOGI(TAG, "Setting vertical servo angle to %d", angle);
+            
+            esp_err_t err = servo_controller_set_vertical_angle(servo_ctrl_, angle);
+            if (err != ESP_OK) {
+                ESP_LOGE(TAG, "Failed to set vertical angle: %s", esp_err_to_name(err));
+            }
+        });
+        
+        // 添加设置左舵机角度方法
+        ParameterList leftParams;
+        leftParams.AddParameter(Parameter("angle", "左舵机角度 (0-180度)", kValueTypeNumber));
+        
+        methods_.AddMethod("SetLeftAngle", "设置左舵机角度", leftParams, [this](const ParameterList& parameters) {
+            if (servo_ctrl_ == nullptr) {
+                ESP_LOGW(TAG, "Servo controller not initialized");
+                return;
+            }
+            
+            int angle = parameters["angle"].number();
+            ESP_LOGI(TAG, "Setting left servo angle to %d", angle);
+            
+            esp_err_t err = servo_controller_set_left_angle(servo_ctrl_, angle);
+            if (err != ESP_OK) {
+                ESP_LOGE(TAG, "Failed to set left angle: %s", esp_err_to_name(err));
+            }
+        });
+        
+        // 添加设置右舵机角度方法
+        ParameterList rightParams;
+        rightParams.AddParameter(Parameter("angle", "右舵机角度 (0-180度)", kValueTypeNumber));
+        
+        methods_.AddMethod("SetRightAngle", "设置右舵机角度", rightParams, [this](const ParameterList& parameters) {
+            if (servo_ctrl_ == nullptr) {
+                ESP_LOGW(TAG, "Servo controller not initialized");
+                return;
+            }
+            
+            int angle = parameters["angle"].number();
+            ESP_LOGI(TAG, "Setting right servo angle to %d", angle);
+            
+            esp_err_t err = servo_controller_set_right_angle(servo_ctrl_, angle);
+            if (err != ESP_OK) {
+                ESP_LOGE(TAG, "Failed to set right angle: %s", esp_err_to_name(err));
+            }
+        });
+        
+        // 添加设置上舵机角度方法
+        ParameterList upParams;
+        upParams.AddParameter(Parameter("angle", "上舵机角度 (0-180度)", kValueTypeNumber));
+        
+        methods_.AddMethod("SetUpAngle", "设置上舵机角度", upParams, [this](const ParameterList& parameters) {
+            if (servo_ctrl_ == nullptr) {
+                ESP_LOGW(TAG, "Servo controller not initialized");
+                return;
+            }
+            
+            int angle = parameters["angle"].number();
+            ESP_LOGI(TAG, "Setting up servo angle to %d", angle);
+            
+            esp_err_t err = servo_controller_set_up_angle(servo_ctrl_, angle);
+            if (err != ESP_OK) {
+                ESP_LOGE(TAG, "Failed to set up angle: %s", esp_err_to_name(err));
+            }
+        });
+        
+        // 添加设置下舵机角度方法
+        ParameterList downParams;
+        downParams.AddParameter(Parameter("angle", "下舵机角度 (0-180度)", kValueTypeNumber));
+        
+        methods_.AddMethod("SetDownAngle", "设置下舵机角度", downParams, [this](const ParameterList& parameters) {
+            if (servo_ctrl_ == nullptr) {
+                ESP_LOGW(TAG, "Servo controller not initialized");
+                return;
+            }
+            
+            int angle = parameters["angle"].number();
+            ESP_LOGI(TAG, "Setting down servo angle to %d", angle);
+            
+            esp_err_t err = servo_controller_set_down_angle(servo_ctrl_, angle);
+            if (err != ESP_OK) {
+                ESP_LOGE(TAG, "Failed to set down angle: %s", esp_err_to_name(err));
+            }
+        });
+        
+        // 添加重置舵机位置方法
+        ParameterList resetParams;
+        methods_.AddMethod("Reset", "重置所有舵机到中间位置", resetParams, [this](const ParameterList& parameters) {
+            if (servo_ctrl_ == nullptr) {
+                ESP_LOGW(TAG, "Servo controller not initialized");
+                return;
+            }
+            
+            ESP_LOGI(TAG, "Resetting all servos to center position");
+            
+            esp_err_t err = servo_controller_reset(servo_ctrl_);
+            if (err != ESP_OK) {
+                ESP_LOGE(TAG, "Failed to reset servos: %s", esp_err_to_name(err));
+            }
+        });
     }
     
     ~ServoThing() {
         // 停止所有舵机
         for (auto& servo : servos_) {
             servo.deinitialize();
+        }
+        
+        if (servo_ctrl_ != nullptr) {
+            servo_controller_deinit(servo_ctrl_);
+            servo_ctrl_ = nullptr;
+            ESP_LOGI(TAG, "Servo controller deinitialized");
         }
     }
 };

@@ -24,7 +24,7 @@
 #include "board_config.h"
 #include "../thing.h"
 #include "ext/include/multiplexer.h"
-#include "ext/include/pca9548a.h"
+#include "ext/include/pcf8575.h"
 
 static constexpr char TAG[] = "Ultrasonic";
 
@@ -35,18 +35,24 @@ static constexpr char TAG[] = "Ultrasonic";
 #define DEFAULT_MEASUREMENT_INTERVAL_MS  200                 // Interval between measurements in ms
 #define SOUND_SPEED_CM_US                0.0343              // Speed of sound in cm/μs
 
-#define US_TIMEOUT_MS                     25       // Maximum time to wait for echo
-#define US_NO_OBSTACLE_DISTANCE_CM        400      // Default distance when no obstacle detected
+#define US_TIMEOUT_MS                    25       // Maximum time to wait for echo
+#define US_NO_OBSTACLE_DISTANCE_CM       400      // Default distance when no obstacle detected
 
-// Ultrasonic sensor GPIO pins
-#define US_FRONT_TRIG_PIN                 21  // Default trigger pin for front sensor
-#define US_FRONT_ECHO_PIN                 22  // Default echo pin for front sensor
-#define US_REAR_TRIG_PIN                  23  // Default trigger pin for rear sensor 
-#define US_REAR_ECHO_PIN                  24  // Default echo pin for rear sensor
+// Ultrasonic sensor GPIO pins for direct connection
+#ifdef CONFIG_US_CONNECTION_DIRECT
+#define US_FRONT_TRIG_PIN                CONFIG_US_FRONT_TRIG_PIN
+#define US_FRONT_ECHO_PIN                CONFIG_US_FRONT_ECHO_PIN
+#define US_REAR_TRIG_PIN                 CONFIG_US_REAR_TRIG_PIN
+#define US_REAR_ECHO_PIN                 CONFIG_US_REAR_ECHO_PIN
+#endif
 
-// Multiplexer channels
-#define FRONT_CHANNEL PCA9548A_CHANNEL_0  // 前超声波传感器使用通道0
-#define REAR_CHANNEL  PCA9548A_CHANNEL_1  // 后超声波传感器使用通道1
+// PCF8575 pins for ultrasonic sensors
+#ifdef CONFIG_US_CONNECTION_PCF8575
+#define US_PCF8575_FRONT_TRIG_PIN        CONFIG_US_PCF8575_FRONT_TRIG_PIN
+#define US_PCF8575_FRONT_ECHO_PIN        CONFIG_US_PCF8575_FRONT_ECHO_PIN
+#define US_PCF8575_REAR_TRIG_PIN         CONFIG_US_PCF8575_REAR_TRIG_PIN
+#define US_PCF8575_REAR_ECHO_PIN         CONFIG_US_PCF8575_REAR_ECHO_PIN
+#endif
 
 namespace iot {
 
@@ -123,32 +129,57 @@ public:
     void Init() {
         ESP_LOGI(TAG, "Initializing US ultrasonic sensors");
         
-#ifdef CONFIG_US_CONNECTION_PCA9548A
-        // 检查PCA9548A多路复用器是否已初始化
-        if (!pca9548a_is_initialized()) {
-            ESP_LOGE(TAG, "PCA9548A multiplexer is not enabled, but ultrasonic sensors are configured to use it");
-            ESP_LOGE(TAG, "Please enable PCA9548A in menuconfig or change ultrasonic sensor connection type");
+#ifdef CONFIG_US_CONNECTION_PCF8575
+        // 检查PCF8575 GPIO扩展器是否已初始化
+        if (!pcf8575_is_initialized()) {
+            // 检查PCA9548A是否已初始化，因为PCF8575连接在PCA9548A上
+            if (!pca9548a_is_initialized()) {
+                ESP_LOGE(TAG, "PCA9548A multiplexer is not enabled, but ultrasonic sensors are configured to use PCF8575");
+                ESP_LOGE(TAG, "Please enable PCA9548A and PCF8575 in menuconfig or change ultrasonic sensor connection type");
+                return;
+            }
+            
+            // 如果PCA9548A已初始化但PCF8575未初始化，尝试初始化PCF8575
+            ESP_LOGI(TAG, "Initializing PCF8575 for ultrasonic sensors");
+            esp_err_t ret = pcf8575_init();
+            if (ret != ESP_OK) {
+                ESP_LOGE(TAG, "Failed to initialize PCF8575: %s", esp_err_to_name(ret));
+                return;
+            }
+        }
+        
+        ESP_LOGI(TAG, "Using PCF8575 GPIO expander for ultrasonic sensors");
+        
+        // 获取PCF8575句柄
+        pcf8575_handle_t pcf_handle = pcf8575_get_handle();
+        if (pcf_handle == NULL) {
+            ESP_LOGE(TAG, "Failed to get PCF8575 handle");
             return;
         }
-        ESP_LOGI(TAG, "Using PCA9548A multiplexer for ultrasonic sensors");
         
-        // 初始化时先选择一个默认的通道，避免通道冲突
-        esp_err_t ret = pca9548a_select_channel(PCA9548A_CHANNEL_NONE);
-        if (ret != ESP_OK) {
-            ESP_LOGW(TAG, "Failed to clear PCA9548A channels: %s", esp_err_to_name(ret));
-            // 继续执行，不阻断程序
-        }
+        // 配置PCF8575上的超声波引脚
+        ESP_LOGI(TAG, "Configuring PCF8575 pins for ultrasonic sensors");
+        ESP_LOGI(TAG, "Front sensor - Trig: P%02d, Echo: P%02d", 
+                US_PCF8575_FRONT_TRIG_PIN, US_PCF8575_FRONT_ECHO_PIN);
+        ESP_LOGI(TAG, "Rear sensor - Trig: P%02d, Echo: P%02d", 
+                US_PCF8575_REAR_TRIG_PIN, US_PCF8575_REAR_ECHO_PIN);
+        
+        // 配置触发引脚为输出模式，回响引脚为输入模式
+        pcf8575_set_gpio_mode(pcf_handle, (pcf8575_gpio_t)US_PCF8575_FRONT_TRIG_PIN, PCF8575_GPIO_MODE_OUTPUT);
+        pcf8575_set_gpio_mode(pcf_handle, (pcf8575_gpio_t)US_PCF8575_FRONT_ECHO_PIN, PCF8575_GPIO_MODE_INPUT);
+        pcf8575_set_gpio_mode(pcf_handle, (pcf8575_gpio_t)US_PCF8575_REAR_TRIG_PIN, PCF8575_GPIO_MODE_OUTPUT);
+        pcf8575_set_gpio_mode(pcf_handle, (pcf8575_gpio_t)US_PCF8575_REAR_ECHO_PIN, PCF8575_GPIO_MODE_INPUT);
+        
+        // 设置触发引脚的初始电平为低
+        pcf8575_set_gpio_level(pcf_handle, (pcf8575_gpio_t)US_PCF8575_FRONT_TRIG_PIN, 0);
+        pcf8575_set_gpio_level(pcf_handle, (pcf8575_gpio_t)US_PCF8575_REAR_TRIG_PIN, 0);
 #else
         ESP_LOGI(TAG, "Using direct GPIO connection for ultrasonic sensors");
-#endif
         
-        // Apply default values if needed
-        if (front_safe_distance_ <= 0) front_safe_distance_ = DEFAULT_SAFE_DISTANCE_CM;
-        if (rear_safe_distance_ <= 0) rear_safe_distance_ = DEFAULT_SAFE_DISTANCE_CM;
-        if (max_distance_ <= 0) max_distance_ = DEFAULT_MAX_DISTANCE_CM;
-        
-        ESP_LOGI(TAG, "Using front_safe_distance: %.2f, rear_safe_distance: %.2f, max_distance: %.2f", 
-                 front_safe_distance_, rear_safe_distance_, max_distance_);
+        // 检查超声波引脚配置
+        ESP_LOGI(TAG, "Ultrasonic sensor pins configuration:");
+        ESP_LOGI(TAG, "Front sensor - Trig: %d, Echo: %d", US_FRONT_TRIG_PIN, US_FRONT_ECHO_PIN);
+        ESP_LOGI(TAG, "Rear sensor - Trig: %d, Echo: %d", US_REAR_TRIG_PIN, US_REAR_ECHO_PIN);
         
         // Configure GPIO pins for front sensor
         gpio_config_t io_conf = {};
@@ -188,6 +219,15 @@ public:
         // Set initial pin states
         gpio_set_level((gpio_num_t)US_FRONT_TRIG_PIN, 0);
         gpio_set_level((gpio_num_t)US_REAR_TRIG_PIN, 0);
+#endif
+        
+        // Apply default values if needed
+        if (front_safe_distance_ <= 0) front_safe_distance_ = DEFAULT_SAFE_DISTANCE_CM;
+        if (rear_safe_distance_ <= 0) rear_safe_distance_ = DEFAULT_SAFE_DISTANCE_CM;
+        if (max_distance_ <= 0) max_distance_ = DEFAULT_MAX_DISTANCE_CM;
+        
+        ESP_LOGI(TAG, "Using front_safe_distance: %.2f, rear_safe_distance: %.2f, max_distance: %.2f", 
+                 front_safe_distance_, rear_safe_distance_, max_distance_);
         
         // Create task for periodic measurements
         xTaskCreate(
@@ -219,7 +259,11 @@ private:
         while (1) {
             // Measure front distance
             float front_dist = 0;
-            bool front_success = us->MeasureDistance(FRONT_CHANNEL, US_FRONT_TRIG_PIN, US_FRONT_ECHO_PIN, &front_dist);
+#ifdef CONFIG_US_CONNECTION_PCF8575
+            bool front_success = us->MeasurePCF8575Distance(US_PCF8575_FRONT_TRIG_PIN, US_PCF8575_FRONT_ECHO_PIN, &front_dist);
+#else
+            bool front_success = us->MeasureDirectDistance(US_FRONT_TRIG_PIN, US_FRONT_ECHO_PIN, &front_dist);
+#endif
             
             if (front_success) {
                 us->front_distance_ = front_dist;
@@ -231,11 +275,15 @@ private:
             }
             
             // Small delay between measurements
-            vTaskDelay(pdMS_TO_TICKS(10));
+            vTaskDelay(pdMS_TO_TICKS(30));
             
             // Measure rear distance
             float rear_dist = 0;
-            bool rear_success = us->MeasureDistance(REAR_CHANNEL, US_REAR_TRIG_PIN, US_REAR_ECHO_PIN, &rear_dist);
+#ifdef CONFIG_US_CONNECTION_PCF8575
+            bool rear_success = us->MeasurePCF8575Distance(US_PCF8575_REAR_TRIG_PIN, US_PCF8575_REAR_ECHO_PIN, &rear_dist);
+#else
+            bool rear_success = us->MeasureDirectDistance(US_REAR_TRIG_PIN, US_REAR_ECHO_PIN, &rear_dist);
+#endif
             
             if (rear_success) {
                 us->rear_distance_ = rear_dist;
@@ -247,99 +295,107 @@ private:
             }
             
             // Wait for the next measurement period
-            vTaskDelay(pdMS_TO_TICKS(180));  // 5Hz measurement rate per sensor (200ms total cycle)
+            vTaskDelay(pdMS_TO_TICKS(170));  // 5Hz measurement rate per sensor (200ms total cycle)
         }
     }
     
-    bool MeasureDistance(uint8_t mux_channel, int trig_pin, int echo_pin, float* distance) {
+#ifdef CONFIG_US_CONNECTION_PCF8575
+    bool MeasurePCF8575Distance(int trig_pin, int echo_pin, float* distance) {
         if (distance == nullptr) {
             return false;
         }
         
-#ifdef CONFIG_US_CONNECTION_PCA9548A
-        // 切换到超声波传感器对应的通道
-        ESP_LOGD(TAG, "Switching to PCA9548A channel: 0x%02X for echo/trig pins: %d/%d", 
-                mux_channel, echo_pin, trig_pin);
-                
-        // 获取PCA9548A句柄进行直接通道读取
-        pca9548a_handle_t pca_handle = pca9548a_get_handle();
-        if (pca_handle == NULL) {
-            ESP_LOGE(TAG, "PCA9548A handle is NULL, cannot switch channel");
+        pcf8575_handle_t pcf_handle = pcf8575_get_handle();
+        if (pcf_handle == NULL) {
+            ESP_LOGE(TAG, "PCF8575 handle is NULL");
             return false;
         }
         
-        // 先关闭所有通道，避免冲突
-        esp_err_t ret_clear = pca9548a_select_channel(PCA9548A_CHANNEL_NONE);
-        if (ret_clear != ESP_OK) {
-            ESP_LOGW(TAG, "Failed to clear PCA9548A channels before selection: %s", 
-                    esp_err_to_name(ret_clear));
-            // 继续尝试，不阻断
-        }
-        
-        // 短暂延时以确保通道清除
-        vTaskDelay(pdMS_TO_TICKS(5));
-        
-        // 现在选择所需通道
-        esp_err_t ret = pca9548a_select_channel(mux_channel);
-        if (ret != ESP_OK) {
-            ESP_LOGE(TAG, "Failed to select PCA9548A channel %d: %s", 
-                    mux_channel, esp_err_to_name(ret));
-            
-            // 重试一次
-            vTaskDelay(pdMS_TO_TICKS(10)); // 等待更长时间
-            ret = pca9548a_select_channel(mux_channel);
-            if (ret != ESP_OK) {
-                ESP_LOGE(TAG, "Failed again to select PCA9548A channel %d: %s", 
-                        mux_channel, esp_err_to_name(ret));
-                return false;
-            }
-        }
-        
-        // 等待通道切换生效 - 增加延时
-        vTaskDelay(pdMS_TO_TICKS(10));
-        
-        // 读取当前通道确认已选择
-        uint8_t current_channel = 0;
-        esp_err_t ret_read = pca9548a_get_selected_channels(pca_handle, &current_channel);
-        if (ret_read == ESP_OK) {
-            if (current_channel != mux_channel) {
-                ESP_LOGW(TAG, "Channel mismatch: requested=0x%02X, actual=0x%02X", 
-                        mux_channel, current_channel);
-                // 尝试再次切换
-                pca9548a_select_channel(mux_channel);
-                vTaskDelay(pdMS_TO_TICKS(10));
-            }
-        }
-#endif
-        
-        // Trigger pulse
-        gpio_set_level((gpio_num_t)trig_pin, 0);
-        // Short delay - busy wait for few microseconds
+        // 触发超声波
+        pcf8575_set_gpio_level(pcf_handle, (pcf8575_gpio_t)trig_pin, 0);
+        // 短暂延时
         int64_t start_us = esp_timer_get_time();
-        while ((esp_timer_get_time() - start_us) < 2) { }
+        while ((esp_timer_get_time() - start_us) < 5) { }  // 5us稳定延时
+        
+        pcf8575_set_gpio_level(pcf_handle, (pcf8575_gpio_t)trig_pin, 1);
+        // 短暂延时
+        start_us = esp_timer_get_time();
+        while ((esp_timer_get_time() - start_us) < 15) { }  // 15us触发脉冲
+        
+        pcf8575_set_gpio_level(pcf_handle, (pcf8575_gpio_t)trig_pin, 0);
+        
+        // 等待回响开始
+        uint8_t echo_level = 0;
+        int64_t start_time = esp_timer_get_time();
+        do {
+            if ((esp_timer_get_time() - start_time) > US_TIMEOUT_MS * 1000) {
+                ESP_LOGW(TAG, "Echo start timeout on pin P%d", echo_pin);
+                return false;  // 等待回响超时
+            }
+            pcf8575_get_gpio_level(pcf_handle, (pcf8575_gpio_t)echo_pin, &echo_level);
+        } while (echo_level == 0);
+        
+        // 测量回响持续时间
+        start_time = esp_timer_get_time();
+        do {
+            if ((esp_timer_get_time() - start_time) > US_TIMEOUT_MS * 1000) {
+                *distance = max_distance_;  // 如果超时则设为最大距离
+                ESP_LOGD(TAG, "Echo end timeout on pin P%d, setting max distance", echo_pin);
+                return true;
+            }
+            pcf8575_get_gpio_level(pcf_handle, (pcf8575_gpio_t)echo_pin, &echo_level);
+        } while (echo_level == 1);
+        
+        int64_t end_time = esp_timer_get_time();
+        int64_t duration_us = end_time - start_time;
+        
+        // 计算距离
+        *distance = duration_us * 0.017150f;
+        
+        // 限制最大可测量距离
+        if (*distance > max_distance_) {
+            *distance = max_distance_;
+        }
+        
+        ESP_LOGI(TAG, "PCF8575 pin P%d measured distance: %.2f cm", echo_pin, *distance);
+        return true;
+    }
+#endif
+
+#ifdef CONFIG_US_CONNECTION_DIRECT
+    bool MeasureDirectDistance(int trig_pin, int echo_pin, float* distance) {
+        if (distance == nullptr) {
+            return false;
+        }
+        
+        // 触发超声波
+        gpio_set_level((gpio_num_t)trig_pin, 0);
+        // 短暂延时
+        int64_t start_us = esp_timer_get_time();
+        while ((esp_timer_get_time() - start_us) < 5) { }  // 5us稳定延时
         
         gpio_set_level((gpio_num_t)trig_pin, 1);
-        // Short delay - busy wait for 10 microseconds
+        // 短暂延时
         start_us = esp_timer_get_time();
-        while ((esp_timer_get_time() - start_us) < 10) { }
+        while ((esp_timer_get_time() - start_us) < 15) { }  // 15us触发脉冲
         
         gpio_set_level((gpio_num_t)trig_pin, 0);
         
-        // Wait for echo start
+        // 等待回响开始
         int64_t start_time = esp_timer_get_time();
         while (gpio_get_level((gpio_num_t)echo_pin) == 0) {
             if ((esp_timer_get_time() - start_time) > US_TIMEOUT_MS * 1000) {
-                ESP_LOGD(TAG, "Echo start timeout on channel %d", mux_channel);
-                return false;  // Timeout waiting for echo
+                ESP_LOGW(TAG, "Echo start timeout on pin %d", echo_pin);
+                return false;  // 等待回响超时
             }
         }
         
-        // Measure echo duration
+        // 测量回响持续时间
         start_time = esp_timer_get_time();
         while (gpio_get_level((gpio_num_t)echo_pin) == 1) {
             if ((esp_timer_get_time() - start_time) > US_TIMEOUT_MS * 1000) {
-                *distance = max_distance_;  // Maximum distance if timeout
-                ESP_LOGD(TAG, "Echo end timeout on channel %d, setting max distance", mux_channel);
+                *distance = max_distance_;  // 如果超时则设为最大距离
+                ESP_LOGD(TAG, "Echo end timeout on pin %d, setting max distance", echo_pin);
                 return true;
             }
         }
@@ -347,19 +403,18 @@ private:
         int64_t end_time = esp_timer_get_time();
         int64_t duration_us = end_time - start_time;
         
-        // Calculate distance (speed of sound = 343m/s = 34300cm/s)
-        // distance = (time * speed) / 2 (round trip)
-        // 34300 / 2 = 17150cm/s
-        // distance(cm) = duration_us * 0.017150
+        // 计算距离
         *distance = duration_us * 0.017150f;
         
-        // Limit to maximum measurable distance
+        // 限制最大可测量距离
         if (*distance > max_distance_) {
             *distance = max_distance_;
         }
         
+        ESP_LOGI(TAG, "Direct GPIO pin %d measured distance: %.2f cm", echo_pin, *distance);
         return true;
     }
+#endif
     
     // Configuration
     float front_safe_distance_ = DEFAULT_SAFE_DISTANCE_CM;

@@ -7,7 +7,7 @@ namespace iot {
  * 
  * 用于控制小车电机的Thing类，提供前进、后退、转向和停止功能。
  */
-class MotorThing;
+class Motor;
 
 /**
  * @brief 注册电机控制Thing

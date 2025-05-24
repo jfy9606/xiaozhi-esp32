@@ -10,6 +10,10 @@
 #include "iot/thing_manager.h"
 #include "assets/lang_config.h"
 #include "mcp_server.h"
+#include "ext/include/multiplexer.h"
+#include "ext/include/pca9548a.h"
+#include "ext/include/pcf8575.h"
+#include "iot/things/servo.h"
 
 #if CONFIG_USE_AUDIO_PROCESSOR
 #include "afe_audio_processor.h"
@@ -370,13 +374,6 @@ void Application::Start() {
     /* Wait for the network to be ready */
     board.StartNetwork();
 
-    // 初始化Web组件 - must be after network is ready
-#if defined(CONFIG_ENABLE_WEB_SERVER)
-    ESP_LOGI(TAG, "Initializing web components");
-    WebServer::InitWebComponents();
-    ESP_LOGI(TAG, "Web components registered (will start after device enters idle state)");
-#endif
-
     // Check for new firmware version or get the MQTT broker address
     CheckNewVersion();
 
@@ -606,14 +603,6 @@ void Application::Start() {
     wake_word_detect_.StartDetection();
 #endif
 
-    // 在Protocol初始化之后再初始化其他组件
-    // Initialize all components before starting tasks
-    InitializeComponents();
-    
-    // Start components but not web components yet
-    // Web components will be started after network is ready
-    StartComponents();
-    
     // Now start the background audio loop task
 #if CONFIG_USE_AUDIO_PROCESSOR
     xTaskCreatePinnedToCore([](void* arg) {
@@ -631,6 +620,67 @@ void Application::Start() {
 
     // Wait for the new version check to finish
     xEventGroupWaitBits(event_group_, CHECK_NEW_VERSION_DONE_EVENT, pdTRUE, pdFALSE, portMAX_DELAY);
+    
+    // 确保在这一步完成所有基础设施初始化
+    ESP_LOGI(TAG, "Core infrastructure initialization completed");
+
+    // 初始化多路复用器
+#ifdef CONFIG_ENABLE_MULTIPLEXER
+    ESP_LOGI(TAG, "Initializing multiplexers");
+    esp_err_t mux_ret = multiplexer_init();
+    if (mux_ret == ESP_OK) {
+        ESP_LOGI(TAG, "Multiplexers initialized successfully");
+
+#ifdef CONFIG_ENABLE_PCF8575
+        ESP_LOGI(TAG, "Initializing PCF8575 GPIO expander");
+        esp_err_t pcf_ret = pcf8575_init();
+        if (pcf_ret == ESP_OK) {
+            ESP_LOGI(TAG, "PCF8575 GPIO expander initialized successfully");
+        } else {
+            ESP_LOGW(TAG, "PCF8575 GPIO expander initialization failed: %s", esp_err_to_name(pcf_ret));
+        }
+#endif // CONFIG_ENABLE_PCF8575
+
+    } else {
+        ESP_LOGW(TAG, "Failed to initialize multiplexers: %s", esp_err_to_name(mux_ret));
+    }
+#endif // CONFIG_ENABLE_MULTIPLEXER
+
+    // 如果配置了PCF8575，则初始化
+    // Initialize PCF8575 if configured
+#ifdef CONFIG_ENABLE_PCF8575
+    if (pca9548a_is_initialized()) {
+        ESP_LOGI(TAG, "Initializing PCF8575...");
+    }
+#endif
+
+    // 如果配置了LU9685，则初始化
+    // Initialize LU9685 if configured
+#ifdef CONFIG_ENABLE_LU9685
+    if (pca9548a_is_initialized()) {
+        ESP_LOGI(TAG, "Initializing LU9685 servo controller...");
+    }
+#endif
+
+    // 首先完成所有组件的注册
+    ESP_LOGI(TAG, "Now registering all components");
+    InitComponents();
+    
+#if defined(CONFIG_ENABLE_WEB_SERVER)
+    // 现在再初始化Web组件
+    ESP_LOGI(TAG, "Initializing web components");
+    WebServer::InitWebComponents();
+    ESP_LOGI(TAG, "Web components registered");
+#endif
+
+    // 然后初始化所有组件
+    ESP_LOGI(TAG, "Now initializing all registered components");
+    InitializeComponents();
+    
+    // 最后启动组件
+    ESP_LOGI(TAG, "Now starting all components");
+    StartComponents();
+    
     SetDeviceState(kDeviceStateIdle);
 
     if (protocol_) {
@@ -1005,6 +1055,24 @@ void Application::InitializeComponents() {
     ESP_LOGI(TAG, "Initializing all components");
     try {
 #if defined(CONFIG_IOT_PROTOCOL_XIAOZHI) || defined(CONFIG_IOT_PROTOCOL_MCP)
+        // ===== 步骤1: 首先初始化所有IoT Thing =====
+        ESP_LOGI(TAG, "Initializing IoT Things (优先级最高)");
+        
+#ifdef CONFIG_ENABLE_MOTOR_CONTROLLER
+        // Initialize move controller (包含电机和舵机控制)
+        ESP_LOGI(TAG, "Initializing move controller (高优先级)");
+        // 注册Motor Thing
+        ESP_LOGI(TAG, "调用iot::RegisterThing('Motor', nullptr)注册");
+        iot::RegisterThing("Motor", nullptr);
+        // 注册Servo Thing
+        ESP_LOGI(TAG, "调用iot::RegisterThing('Servo', nullptr)注册");
+        iot::RegisterThing("Servo", nullptr);
+        // 给Thing初始化一点时间
+        vTaskDelay(pdMS_TO_TICKS(100));
+#endif
+
+        // ===== 步骤2: 然后初始化其他非关键的IoT Things =====
+        
 #ifdef CONFIG_ENABLE_US_SENSOR
         // Initialize ultrasonic sensors
         ESP_LOGI(TAG, "Initializing ultrasonic sensors");
@@ -1015,33 +1083,34 @@ void Application::InitializeComponents() {
 #ifdef CONFIG_ENABLE_CAM
         // Initialize camera sensor
         ESP_LOGI(TAG, "Initializing camera");
-        iot::RegisterCAM();  // 恢复使用原始函数
+        // 使用通用的RegisterThing
+        iot::RegisterThing("CAM", nullptr);
 #endif
 
 #ifdef CONFIG_ENABLE_IMU
         // Initialize IMU sensor
         ESP_LOGI(TAG, "Initializing IMU sensor");
-        iot::RegisterIMU();  // 恢复使用原始函数
+        // 使用通用的RegisterThing
+        iot::RegisterThing("IMU", nullptr);
 #endif
 
 #ifdef CONFIG_ENABLE_LIGHT
         // Initialize light sensor/controller
         ESP_LOGI(TAG, "Initializing light controller");
-        iot::RegisterLight();  // 恢复使用原始函数
+        // 使用通用的RegisterThing
+        iot::RegisterThing("Light", nullptr);
 #endif
 
-#ifdef CONFIG_ENABLE_MOTOR_CONTROLLER
-        // Initialize motor controller
-        ESP_LOGI(TAG, "Initializing motor controller");
-        // 直接使用RegisterThing，传递类型名称和nullptr（DECLARE_THING宏会处理创建函数）
-        iot::RegisterThing("MotorThing", nullptr);
-#endif
-
-#ifdef CONFIG_ENABLE_SERVO
+#ifdef CONFIG_ENABLE_SERVO_CONTROLLER
         // Initialize servo controller
         ESP_LOGI(TAG, "Initializing servo controller");
-        iot::RegisterServo();  // 恢复使用原始函数
+        // 使用通用的RegisterThing
+        iot::RegisterThing("Servo", nullptr);
 #endif
+
+        // 等待所有IoT组件初始化完成
+        ESP_LOGI(TAG, "等待100ms让IoT组件初始化完成");
+        vTaskDelay(pdMS_TO_TICKS(100));
 #endif // IOT协议启用
 
         // Initialize vision components
@@ -1100,8 +1169,33 @@ void Application::StartComponents() {
                 component->IsRunning() ? "yes" : "no");
     }
     
-    // Start all components
+    // 步骤1：优先启动IOT类型组件，因为其他组件可能依赖它们
+    ESP_LOGI(TAG, "步骤1: 优先启动IOT组件");
+    for (auto* component : manager.GetComponents()) {
+        if (!component || !component->GetName()) continue;
+        
+        if (component->GetType() == COMPONENT_TYPE_IOT && !component->IsRunning()) {
+            try {
+                ESP_LOGI(TAG, "启动IOT组件: %s", component->GetName());
+                bool started = component->Start();
+                if (!started) {
+                    ESP_LOGE(TAG, "Failed to start IOT component: %s", component->GetName());
+                } else {
+                    ESP_LOGI(TAG, "IOT component %s started successfully", component->GetName());
+                }
+            } catch (const std::exception& e) {
+                ESP_LOGE(TAG, "Exception while starting IOT component: %s", e.what());
+            }
+        }
+    }
+    
+    // 等待一小段时间，确保IoT组件完全启动
+    ESP_LOGI(TAG, "等待100ms让IOT组件完全初始化");
+    vTaskDelay(pdMS_TO_TICKS(100));
+    
+    // Start all remaining components
     // Use try/catch to prevent crashes from propagating
+    ESP_LOGI(TAG, "步骤2: 启动所有其他组件");
     for (auto* component : manager.GetComponents()) {
         if (!component) {
             ESP_LOGW(TAG, "Found null component in manager, skipping start");
@@ -1111,6 +1205,11 @@ void Application::StartComponents() {
         // Skip any null component Name to prevent crashes
         if (!component->GetName()) {
             ESP_LOGW(TAG, "Component has null name, skipping start");
+            continue;
+        }
+        
+        // 跳过已经启动的IOT组件
+        if (component->GetType() == COMPONENT_TYPE_IOT && component->IsRunning()) {
             continue;
         }
         
@@ -1283,16 +1382,22 @@ bool Application::InitComponents() {
     manager.RegisterComponent(vision_controller);
 #endif
 
-    // 注册Web服务器组件
-#if defined(CONFIG_ENABLE_WEB_SERVER)
-    ESP_LOGI(TAG, "Registering WebServer");
-    WebServer::InitWebComponents();
-#endif
-
     // 注册位置控制器组件
 #ifdef CONFIG_ENABLE_LOCATION_CONTROLLER
     ESP_LOGI(TAG, "Registering LocationController");
     manager.RegisterComponent(LocationController::GetInstance());
+#endif
+
+    // 初始化网页组件
+#if defined(CONFIG_ENABLE_WEB_SERVER) && defined(CONFIG_ENABLE_WEB_CONTENT)
+    ESP_LOGI(TAG, "Registering WebServer");
+    WebServer::InitWebComponents();
+#endif
+
+#ifdef CONFIG_ENABLE_MOTOR_CONTROLLER
+    // 注册电机控制器Thing
+    ESP_LOGI(TAG, "Registering Motor Thing");
+    iot::ThingManager::GetInstance().AddThing(new iot::Thing("Motor", "电机控制器"));
 #endif
 
     return true;

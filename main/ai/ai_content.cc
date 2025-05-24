@@ -403,6 +403,23 @@ void AIContent::HandleWebSocketMessage(int client_index, const PSRAMString& mess
         cJSON_Delete(statusDoc);
         free(response);
     }
+    else if (strcmp(type, "test_tts") == 0) {
+        // 测试TTS功能，用于网页端的语音合成
+        cJSON *text_obj = cJSON_GetObjectItem(doc, "text");
+        if (text_obj && text_obj->valuestring) {
+            ai_controller_->SpeakText(text_obj->valuestring);
+        }
+    }
+    else if (strcmp(type, "enable_wake_word") == 0 || 
+             strcmp(type, "disable_wake_word") == 0 ||
+             strcmp(type, "start_listening") == 0 ||
+             strcmp(type, "stop_listening") == 0) {
+        // 处理网页端的语音控制命令
+        // 注意：这些命令只影响网页端JavaScript中的状态，不会影响ESP32S3设备端的语音唤醒和识别功能
+        ESP_LOGI(TAG, "Processing web client voice command: %s (does not affect device voice functions)", type);
+        
+        // 这里可以添加实际处理逻辑，但要确保只影响网页端，不干扰设备端功能
+    }
     
     cJSON_Delete(doc);
 }

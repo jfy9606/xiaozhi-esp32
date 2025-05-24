@@ -20,15 +20,15 @@ board_config_t* board_get_config(void) {
         // 尝试根据板子的配置头文件和Kconfig初始化引脚
         // 电机引脚配置 - 从Kconfig中读取
 #ifdef CONFIG_ENABLE_MOTOR_CONTROLLER
-        // 直接使用Kconfig中定义的电机引脚
-        config.ena_pin = CONFIG_MOTOR_ENA_PIN;
-        config.enb_pin = CONFIG_MOTOR_ENB_PIN;
-        config.in1_pin = CONFIG_MOTOR_IN1_PIN;
-        config.in2_pin = CONFIG_MOTOR_IN2_PIN;
-        config.in3_pin = CONFIG_MOTOR_IN3_PIN;
-        config.in4_pin = CONFIG_MOTOR_IN4_PIN;
+        // 使用定义的电机引脚常量
+        config.ena_pin = MOTOR_ENA_PIN;
+        config.enb_pin = MOTOR_ENB_PIN;
+        config.in1_pin = MOTOR_IN1_PIN;
+        config.in2_pin = MOTOR_IN2_PIN;
+        config.in3_pin = MOTOR_IN3_PIN;
+        config.in4_pin = MOTOR_IN4_PIN;
         
-        ESP_LOGI(TAG, "Motor pins from Kconfig: ENA=%d, ENB=%d, IN1=%d, IN2=%d, IN3=%d, IN4=%d", 
+        ESP_LOGI(TAG, "Motor pins: ENA=%d, ENB=%d, IN1=%d, IN2=%d, IN3=%d, IN4=%d", 
                  config.ena_pin, config.enb_pin, config.in1_pin, config.in2_pin, 
                  config.in3_pin, config.in4_pin);
 #else
@@ -44,7 +44,7 @@ board_config_t* board_get_config(void) {
         
         // 舵机引脚配置 - 从Kconfig中读取
 #ifdef CONFIG_ENABLE_SERVO_CONTROLLER
-        config.servo_count = CONFIG_SERVO_COUNT > 8 ? 8 : CONFIG_SERVO_COUNT; // 限制最多8个舵机
+        config.servo_count = SERVO_COUNT > 8 ? 8 : SERVO_COUNT; // 限制最多8个舵机
         
 #ifdef CONFIG_SERVO_PIN_1
         servo_pins_array[0] = CONFIG_SERVO_PIN_1;
