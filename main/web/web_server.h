@@ -157,7 +157,7 @@ public:
     static esp_err_t WebSocketHandler(httpd_req_t *req);
     static esp_err_t ApiHandler(httpd_req_t *req);
     static esp_err_t VisionHandler(httpd_req_t *req);
-    static esp_err_t MotorHandler(httpd_req_t *req);
+    static esp_err_t CarHandler(httpd_req_t *req);
     static esp_err_t AIHandler(httpd_req_t *req);
     static esp_err_t LocationHandler(httpd_req_t *req);
     static esp_err_t CarControlHandler(httpd_req_t *req);

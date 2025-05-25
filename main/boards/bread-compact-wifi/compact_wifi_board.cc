@@ -214,6 +214,10 @@ public:
     virtual Display* GetDisplay() override {
         return display_;
     }
+
+    virtual i2c_master_bus_handle_t GetDisplayI2CBusHandle() override {
+        return display_i2c_bus_;
+    }
 };
 
 } // namespace iot

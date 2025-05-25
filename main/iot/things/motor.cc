@@ -532,14 +532,14 @@ public:
         ledc_initialized_(false),
         init_retry_count_(0),
         motor_speed_(DEFAULT_SPEED),
-        direction_x_(0),
-        direction_y_(0),
-        distance_percent_(0),
+              direction_x_(0),
+              direction_y_(0),
+              distance_percent_(0),
         running_(false),
         use_pcf8575_(false),
-        last_dir_x_(0),
-        last_dir_y_(0),
-        cached_angle_degrees_(0) {
+              last_dir_x_(0),
+              last_dir_y_(0),
+              cached_angle_degrees_(0) {
         
         // 初始化GPIO
         InitGPIO();

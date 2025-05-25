@@ -13,7 +13,7 @@ size_t get_index_html_size();
 size_t get_move_html_size();
 size_t get_ai_html_size();
 size_t get_vision_html_size();
-size_t get_motor_html_size(); // 为向后兼容而保留
+size_t get_motor_html_size(); // 为向后兼容而保留，现在使用 /car 替代 /motor
 
 // 获取HTML内容的函数
 const char* get_index_html_content();

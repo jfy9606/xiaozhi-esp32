@@ -25,24 +25,29 @@
       font-size: 2.5rem;
     }
     .menu {
-      display: flex;
-      flex-direction: column;
-      gap: 20px;
-      margin-top: 40px;
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      grid-gap: 15px;
+      margin-top: 30px;
+      width: 100%;
+      max-width: 600px;
+      margin-left: auto;
+      margin-right: auto;
     }
     .menu-item {
       background: linear-gradient(145deg, #6200ea, #3700b3);
       color: white;
-      padding: 20px;
+      padding: 15px 10px;
       border-radius: 10px;
       text-decoration: none;
-      font-size: 1.5rem;
+      font-size: 1.3rem;
       font-weight: 500;
       box-shadow: 0 4px 8px rgba(0,0,0,0.2);
       transition: transform 0.3s, box-shadow 0.3s;
       display: flex;
       align-items: center;
       justify-content: center;
+      min-height: 60px;
     }
     .menu-item:hover {
       transform: translateY(-5px);
@@ -50,7 +55,7 @@
     }
     .menu-item i {
       margin-right: 10px;
-      font-size: 1.8rem;
+      font-size: 1.5rem;
     }
     .footer {
       margin-top: 50px;
@@ -157,13 +162,27 @@
     }
     @media (min-width: 600px) {
       .menu {
-        flex-direction: row;
-        flex-wrap: wrap;
-        justify-content: center;
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+    
+    @media (max-width: 599px) {
+      .menu {
+        grid-template-columns: 1fr;
+        grid-gap: 10px;
       }
       .menu-item {
-        flex: 0 0 calc(50% - 20px);
-        max-width: 300px;
+        font-size: 1.3rem;
+      }
+      .nav-settings-button {
+        font-size: 1.1rem;
+        padding: 12px 25px;
+      }
+    }
+    
+    @media (min-width: 960px) {
+      .container {
+        max-width: 900px;
       }
     }
     .message {
@@ -334,12 +353,54 @@
       color: #666;
       width: 40%;
     }
+    /* 修改设置按钮样式 */
+    .nav-settings-button {
+      background: linear-gradient(145deg, #4caf50, #388e3c);
+      color: white;
+      padding: 15px 30px;
+      border-radius: 10px;
+      text-decoration: none;
+      font-size: 1.3rem;
+      font-weight: 500;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+      transition: transform 0.3s, box-shadow 0.3s;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      margin-top: 25px;
+      border: none;
+      cursor: pointer;
+    }
+    .nav-settings-button:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 6px 12px rgba(0,0,0,0.3);
+      background: linear-gradient(145deg, #388e3c, #2e7d32);
+    }
+    .nav-settings-button i {
+      margin-right: 10px;
+      font-size: 1.5rem;
+    }
+    /* 确保图标正确显示 */
+    .menu-item i, .nav-settings-button i {
+      display: inline-block;
+      margin-right: 12px;
+      vertical-align: middle;
+    }
+    /* 修改菜单项的布局，确保图标正确显示 */
+    .menu-item {
+      text-align: center;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
   </style>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css">
+  <!-- 添加备用图标加载 -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/js/all.min.js" defer></script>
 </head>
 <body>
   <div class="container">
-    <h1>ESP32S3智能小车</h1>
+    <h1>智慧小车</h1>
     
     <!-- 设备信息部分 -->
     <div class="device-info">
@@ -361,7 +422,7 @@
     </div>
     
     <div class="menu">
-      <a href="/motor" class="menu-item">
+      <a href="/car" class="menu-item">
         <i class="fas fa-car"></i> 小车控制
       </a>
       <a href="/vision" class="menu-item">
@@ -370,10 +431,14 @@
       <a href="/ai" class="menu-item">
         <i class="fas fa-brain"></i> AI对话
       </a>
-      <a href="#" class="menu-item" id="settings-button">
-        <i class="fas fa-cog"></i> 设置
+      <a href="/location" class="menu-item">
+        <i class="fas fa-map-marker-alt"></i> 定位
       </a>
     </div>
+
+    <a href="#" class="nav-settings-button" id="settings-button" style="margin-top: 20px; display: inline-block;">
+      <i class="fas fa-cog"></i> 设置
+    </a>
 
     <!-- 摄像头配置面板 -->
     <div class="camera-config">
@@ -388,7 +453,7 @@
     </div>
     
     <div class="footer">
-      <p>ESP32S3 智能小车 &copy; 2025</p>
+      <p>智慧小车 &copy; 2025</p>
     </div>
 
     <!-- 设置模态框 -->
@@ -485,38 +550,69 @@
 
     // 获取系统状态
     function getSystemStatus() {
-      fetch('/api/status')
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000); // 8秒超时
+
+      fetch('/api/status', { signal: controller.signal })
         .then(response => {
+          clearTimeout(timeoutId);
           if (response.ok) {
             return response.json();
           }
-          throw new Error('Network response was not ok');
+          throw new Error(`网络响应错误: ${response.status} ${response.statusText}`);
         })
         .then(data => {
-          console.log('收到状态数据:', data);
+          console.log('主页收到状态数据:', JSON.stringify(data, null, 2));
           
-          // 更新系统运行时间
-          if (data.uptime) {
-            const hours = Math.floor(data.uptime / 3600);
-            const minutes = Math.floor((data.uptime % 3600) / 60);
-            const seconds = data.uptime % 60;
-            document.getElementById('uptime').textContent = 
-              `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+          const uptimeEl = document.getElementById('uptime');
+          const freeHeapEl = document.getElementById('free-heap');
+          const versionEl = document.getElementById('version');
+
+          // 统一处理数据源
+          const systemData = (data.type === 'status_response' && data.system) ? data.system : data;
+
+          if (uptimeEl) {
+            if (systemData.uptime !== undefined) {
+              const uptimeInSeconds = parseInt(systemData.uptime);
+              const hours = Math.floor(uptimeInSeconds / 3600);
+              const minutes = Math.floor((uptimeInSeconds % 3600) / 60);
+              const seconds = uptimeInSeconds % 60;
+              uptimeEl.textContent = 
+                `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            } else {
+              uptimeEl.textContent = '未知';
+            }
           }
-          
-          // 更新可用内存
-          if (data.free_heap) {
-            document.getElementById('free-heap').textContent = 
-              `${Math.round(data.free_heap / 1024)} KB`;
+            
+          if (freeHeapEl) {
+            if (systemData.free_heap !== undefined) {
+              freeHeapEl.textContent = `${Math.round(parseInt(systemData.free_heap) / 1024)} KB`;
+            } else {
+              freeHeapEl.textContent = '未知';
+            }
           }
-          
-          // 更新版本信息
-          if (data.version) {
-            document.getElementById('version').textContent = data.version;
+            
+          if (versionEl) {
+            if (systemData.esp_idf_version) {
+              versionEl.textContent = systemData.esp_idf_version;
+            } else if (systemData.version) {
+              versionEl.textContent = systemData.version;
+            } else if (systemData.chip) {
+              versionEl.textContent = systemData.chip;
+            } else {
+              versionEl.textContent = '未知';
+            }
           }
         })
         .catch(error => {
-          console.error('获取状态失败:', error);
+          clearTimeout(timeoutId);
+          console.error('主页获取状态失败:', error.message);
+          const uptimeEl = document.getElementById('uptime');
+          if (uptimeEl) uptimeEl.textContent = '加载失败';
+          const freeHeapEl = document.getElementById('free-heap');
+          if (freeHeapEl) freeHeapEl.textContent = '加载失败';
+          const versionEl = document.getElementById('version');
+          if (versionEl) versionEl.textContent = '加载失败';
         });
     }
     
@@ -527,11 +623,17 @@
       const settingsModal = document.getElementById('settings-modal');
       const closeButton = document.querySelector('.close');
       
-      settingsButton.addEventListener('click', function() {
-        settingsModal.style.display = 'block';
-        // 加载AI设置
-        loadAISettings();
-      });
+      // 确保找到设置按钮
+      if (settingsButton) {
+        settingsButton.addEventListener('click', function(e) {
+          e.preventDefault();
+          settingsModal.style.display = 'block';
+          // 加载AI设置
+          loadAISettings();
+        });
+      } else {
+        console.error('设置按钮未找到');
+      }
       
       closeButton.addEventListener('click', function() {
         settingsModal.style.display = 'none';

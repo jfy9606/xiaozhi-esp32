@@ -1153,41 +1153,53 @@
                     return response.json();
                 })
                 .then(state => {
-                    console.log("已获取摄像头状态:", state);
+                    console.log("已获取摄像头状态:", JSON.stringify(state, null, 2)); // 详细打印状态对象
                     
                     // 更新所有控件值
                     document.querySelectorAll('.default-action').forEach(el => {
-                        if (!el || !state[el.id]) return;
-                        updateValue(el, state[el.id], false);
+                        // 首先检查el和el.id是否存在
+                        if (!el || typeof el.id === 'undefined') {
+                            console.warn("发现一个没有ID的.default-action元素:", el);
+                            return;
+                        }
+
+                        if (state.hasOwnProperty(el.id)) { // 确保状态对象中有该ID的键
+                            updateValue(el, state[el.id], false);
+                        } else {
+                            console.warn(`状态对象中缺少键: ${el.id}，控件不会被初始化。`);
+                        }
                     });
                     
                     // 特殊处理某些依赖关系
                     // 自动曝光控制
                     const aec = document.getElementById('aec');
-                    const aecValue = document.getElementById('aec_value-group');
-                    if (aec && aecValue) {
-                        aec.checked ? hide(aecValue) : show(aecValue);
+                    const aecValueGroup = document.getElementById('aec_value-group');
+                    if (aec && aecValueGroup) { // 重命名aecValue为aecValueGroup以避免与循环变量冲突
+                        updateValue(aec, state.aec, false); // 确保aec本身也被正确初始化
+                        state.aec ? hide(aecValueGroup) : show(aecValueGroup);
                     }
                     
                     // 自动增益控制
                     const agc = document.getElementById('agc');
-                    const gainCeiling = document.getElementById('gainceiling-group');
-                    const agcGain = document.getElementById('agc_gain-group');
-                    if (agc && gainCeiling && agcGain) {
-                        if (agc.checked) {
-                            show(gainCeiling);
-                            hide(agcGain);
+                    const gainCeilingGroup = document.getElementById('gainceiling-group');
+                    const agcGainGroup = document.getElementById('agc_gain-group');
+                    if (agc && gainCeilingGroup && agcGainGroup) {
+                        updateValue(agc, state.agc, false); // 确保agc本身也被正确初始化
+                        if (state.agc) {
+                            show(gainCeilingGroup);
+                            hide(agcGainGroup);
                         } else {
-                            hide(gainCeiling);
-                            show(agcGain);
+                            hide(gainCeilingGroup);
+                            show(agcGainGroup);
                         }
                     }
                     
                     // 白平衡增益
                     const awbGain = document.getElementById('awb_gain');
-                    const wbMode = document.getElementById('wb_mode-group');
-                    if (awbGain && wbMode) {
-                        awbGain.checked ? show(wbMode) : hide(wbMode);
+                    const wbModeGroup = document.getElementById('wb_mode-group');
+                    if (awbGain && wbModeGroup) {
+                        updateValue(awbGain, state.awb_gain, false); // 确保awb_gain本身也被正确初始化
+                        state.awb_gain ? show(wbModeGroup) : hide(wbModeGroup);
                     }
                     
                     console.log("摄像头控件已更新");

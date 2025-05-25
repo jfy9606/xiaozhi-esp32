@@ -111,4 +111,7 @@ private:
     void ControlMotor(int in1, int in2, int in3, int in4);
     void ControlSteeringServo(int angle);
     void ControlThrottleServo(int position);
+    
+    // 通用舵机控制方法 - 使用LU9685
+    bool ControlServoWithLU9685(int channel, int angle);
 }; 

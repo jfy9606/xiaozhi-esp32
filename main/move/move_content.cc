@@ -83,7 +83,7 @@ void MoveContent::HandleWebSocketMessage(int client_index, const PSRAMString& me
     if (strcmp(type->valuestring, "car_control") == 0 || 
         strcmp(type->valuestring, "joystick") == 0) {
         auto& thing_manager = iot::ThingManager::GetInstance();
-        // 移动控制消息可以同时控制电机和舵机
+        // 摇杆控制消息只控制电机，不控制舵机
         
         // 提取参数
         cJSON* speed = cJSON_GetObjectItem(root, "speed");
@@ -108,49 +108,6 @@ void MoveContent::HandleWebSocketMessage(int client_index, const PSRAMString& me
             // 调用Motor Thing
             thing_manager.Invoke(motor_cmd);
             cJSON_Delete(motor_cmd);
-            
-            // 考虑舵机控制
-            // 如果存在Servo Thing，可以同时用方向控制舵机
-            iot::Thing* servo_thing = thing_manager.FindThingByName("Servo");
-            if (servo_thing) {
-                // 使用dirX控制转向舵机(index 0)
-                int steeringAngle = 90 + (int)(dirX->valuedouble * 0.9); // -100~100 映射到 0~180
-                if (steeringAngle < 0) steeringAngle = 0;
-                if (steeringAngle > 180) steeringAngle = 180;
-                
-                cJSON* steering_cmd = cJSON_CreateObject();
-                cJSON_AddStringToObject(steering_cmd, "name", "Servo");
-                cJSON_AddStringToObject(steering_cmd, "method", "SetAngle");
-                
-                cJSON* steering_params = cJSON_CreateObject();
-                cJSON_AddNumberToObject(steering_params, "index", 0);
-                cJSON_AddNumberToObject(steering_params, "angle", steeringAngle);
-                
-                cJSON_AddItemToObject(steering_cmd, "parameters", steering_params);
-                
-                thing_manager.Invoke(steering_cmd);
-                cJSON_Delete(steering_cmd);
-                
-                // 如果需要控制第二个舵机(油门舵机)，可以使用dirY
-                if (dirY->valuedouble != 0) {
-                    int throttlePosition = 90 + (int)(dirY->valuedouble * 0.9); // -100~100 映射到 0~180
-                    if (throttlePosition < 0) throttlePosition = 0;
-                    if (throttlePosition > 180) throttlePosition = 180;
-                    
-                    cJSON* throttle_cmd = cJSON_CreateObject();
-                    cJSON_AddStringToObject(throttle_cmd, "name", "Servo");
-                    cJSON_AddStringToObject(throttle_cmd, "method", "SetAngle");
-                    
-                    cJSON* throttle_params = cJSON_CreateObject();
-                    cJSON_AddNumberToObject(throttle_params, "index", 1);
-                    cJSON_AddNumberToObject(throttle_params, "angle", throttlePosition);
-                    
-                    cJSON_AddItemToObject(throttle_cmd, "parameters", throttle_params);
-                    
-                    thing_manager.Invoke(throttle_cmd);
-                    cJSON_Delete(throttle_cmd);
-                }
-            }
             
             // 发送成功响应
             if (server_) {

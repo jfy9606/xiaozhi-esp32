@@ -330,8 +330,8 @@ void WebServer::RegisterDefaultHandlers() {
     RegisterHttpHandler("/vision", HTTP_GET, VisionHandler);
     ESP_LOGI(TAG, "注册视觉页面处理器: /vision");
     
-    RegisterHttpHandler("/motor", HTTP_GET, MotorHandler);
-    ESP_LOGI(TAG, "注册电机页面处理器: /motor");
+    RegisterHttpHandler("/car", HTTP_GET, CarHandler);
+    ESP_LOGI(TAG, "注册小车控制页面处理器: /car");
     
     RegisterHttpHandler("/ai", HTTP_GET, AIHandler);  // 添加AI页面路由
     ESP_LOGI(TAG, "注册AI页面处理器: /ai");
@@ -484,23 +484,23 @@ esp_err_t WebServer::VisionHandler(httpd_req_t *req) {
 #endif
 }
 
-// 电机控制页面处理器
-esp_err_t WebServer::MotorHandler(httpd_req_t *req) {
+// 小车控制页面处理器
+esp_err_t WebServer::CarHandler(httpd_req_t *req) {
 #if defined(CONFIG_ENABLE_MOTOR_CONTROLLER)
     // 获取电机控制相关的HTML内容
             const char* html_content = get_move_html_content();
         size_t len = get_move_html_size();
     
-        ESP_LOGI(TAG, "Serving move.html, size: %d bytes", len);
+        ESP_LOGI(TAG, "Serving car.html, size: %d bytes", len);
     return SendHttpResponse(req, "text/html", html_content, len);
 #else
-    // 当电机内容未启用时，返回一个简单的消息
-    const char* message = "<html><body><h1>Motor Control Disabled</h1>"
-        "<p>The motor control web interface is not enabled in this build.</p>"
-        "<p>Motor API endpoints are still available at /api/motor/*</p>"
-        "<p>WebSocket commands for motor control are supported.</p>"
+    // 当小车控制内容未启用时，返回一个简单的消息
+    const char* message = "<html><body><h1>Car Control Disabled</h1>"
+        "<p>The car control web interface is not enabled in this build.</p>"
+        "<p>Car API endpoints are still available at /api/car/*</p>"
+        "<p>WebSocket commands for car control are supported.</p>"
         "</body></html>";
-    ESP_LOGI(TAG, "Motor content disabled, serving simple message");
+    ESP_LOGI(TAG, "Car content disabled, serving simple message");
     return SendHttpResponse(req, "text/html", message, strlen(message));
 #endif
 }
@@ -554,7 +554,7 @@ esp_err_t WebServer::ApiHandler(httpd_req_t* req) {
     std::string uri(req->uri);
     ESP_LOGI(TAG, "收到API请求: %s, 方法: %d", uri.c_str(), req->method);
     
-    // 解析API路径 - 示例: /api/motor/speed -> "motor" 和 "speed" 
+    // 解析API路径 - 示例: /api/car/speed -> "car" 和 "speed" 
     std::string path = uri.substr(5); // 去除 "/api/" 前缀
     size_t pos = path.find('/');
     
@@ -564,14 +564,14 @@ esp_err_t WebServer::ApiHandler(httpd_req_t* req) {
     ESP_LOGI(TAG, "API解析: 资源=%s, 动作=%s", resource.c_str(), action.c_str());
     
     // 处理各种API请求
-    if (resource == "motor") {
-        // 处理电机控制API
+    if (resource == "car") {
+        // 处理小车控制API
         if (req->method == HTTP_GET) {
-            // 获取电机状态
+            // 获取小车状态
             cJSON* response = cJSON_CreateObject();
             cJSON_AddStringToObject(response, "status", "ok");
-            cJSON_AddStringToObject(response, "resource", "motor");
-            // 这里添加电机状态信息
+            cJSON_AddStringToObject(response, "resource", "car");
+            // 这里添加小车状态信息
             
             char* json_str = cJSON_PrintUnformatted(response);
             esp_err_t ret = SendHttpResponse(req, "application/json", json_str, strlen(json_str));
@@ -593,15 +593,15 @@ esp_err_t WebServer::ApiHandler(httpd_req_t* req) {
             // 解析JSON
             cJSON* json = cJSON_Parse(buf);
             if (json) {
-                // 处理电机控制命令
-                // 这里添加电机控制逻辑
+                // 处理小车控制命令
+                // 这里添加小车控制逻辑
                 
                 cJSON_Delete(json);
                 
                 // 发送成功响应
                 cJSON* response = cJSON_CreateObject();
                 cJSON_AddStringToObject(response, "status", "ok");
-                cJSON_AddStringToObject(response, "message", "Motor command processed");
+                cJSON_AddStringToObject(response, "message", "Car command processed");
                 
                 char* json_str = cJSON_PrintUnformatted(response);
                 esp_err_t ret = SendHttpResponse(req, "application/json", json_str, strlen(json_str));
@@ -1748,18 +1748,18 @@ esp_err_t WebServer::CarControlHandler(httpd_req_t *req) {
     cJSON_AddStringToObject(response, "action", action.c_str());
     
 #if defined(CONFIG_ENABLE_MOTOR_CONTROLLER)
-    // Get motor controller component
+    // 获取小车控制组件
     auto& manager = ComponentManager::GetInstance();
-    Component* motor_comp = manager.GetComponent("MotorController");
+    Component* car_comp = manager.GetComponent("MotorController");
     
-    if (motor_comp) {
+    if (car_comp) {
         ESP_LOGI(TAG, "Processing car control action: %s", action.c_str());
         
-        // Actual implementation of motor control
+        // 实现小车控制的实际逻辑
         bool success = false;
         
-        // Try to call the MotorController methods if they exist
-        // These method names are based on common motor controller interfaces
+        // 尝试调用控制方法（如果存在）
+        // 这些方法名基于通用的小车控制接口
         if (action == "stop") {
             // Try to dynamically call the Stop method
             try {
@@ -2036,15 +2036,15 @@ esp_err_t WebServer::CarControlHandler(httpd_req_t *req) {
         
         if (!success) {
             cJSON_AddStringToObject(response, "status", "error");
-            cJSON_AddStringToObject(response, "message", "Failed to execute motor command");
+            cJSON_AddStringToObject(response, "message", "Failed to execute car command");
         }
     } else {
         cJSON_AddStringToObject(response, "status", "error");
-        cJSON_AddStringToObject(response, "message", "Motor controller not available");
+        cJSON_AddStringToObject(response, "message", "Car controller not available");
     }
 #else
     cJSON_AddStringToObject(response, "status", "error");
-    cJSON_AddStringToObject(response, "message", "Motor control not enabled in this build");
+    cJSON_AddStringToObject(response, "message", "Car control not enabled in this build");
 #endif
 
     char* json_str = cJSON_PrintUnformatted(response);
@@ -2824,3 +2824,4 @@ bool WebServer::TestLocationHandlers() {
     return all_tests_passed;
 }
 #endif // CONFIG_WEB_SERVER_ENABLE_SELF_TEST
+

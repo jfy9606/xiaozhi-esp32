@@ -412,7 +412,7 @@ menu "组件管理器"
 
         config HW178_S0_PIN
             int "HW-178 S0控制引脚"
-            default 3
+            default 1
             range -1 48
             depends on ENABLE_HW178
             help
@@ -420,7 +420,7 @@ menu "组件管理器"
 
         config HW178_S1_PIN
             int "HW-178 S1控制引脚"
-            default 14
+            default 2
             range -1 48
             depends on ENABLE_HW178
             help
@@ -428,7 +428,7 @@ menu "组件管理器"
 
         config HW178_S2_PIN
             int "HW-178 S2控制引脚"
-            default -1
+            default 3
             range -1 48
             depends on ENABLE_HW178
             help
@@ -442,29 +442,15 @@ menu "组件管理器"
             help
                 HW-178多路复用器的S3控制引脚。与S0-S2一起决定选择哪个通道。
 
-        config HW178_EN_PIN
-            int "HW-178使能引脚"
-            default -1
-            range -1 48
+        config HW178_SIG_PIN
+            int "HW-178 SIG输出引脚"
+            default 14
+            range 0 48
             depends on ENABLE_HW178
             help
-                HW-178多路复用器的使能引脚。如果不使用，设置为-1。
-
-        config HW178_EN_ACTIVE_HIGH
-            bool "HW-178使能引脚高电平有效"
-            default n
-            depends on ENABLE_HW178 && HW178_EN_PIN != -1
-            help
-                如果HW-178的使能引脚是高电平有效，选择此项。
-                如果是低电平有效，取消选择。
-
-        config HW178_ADC_CHANNEL
-            int "HW-178输出ADC通道"
-            default 4
-            range 0 9
-            depends on ENABLE_HW178
-            help
-                连接HW-178输出的ADC通道号。
+                HW-178多路复用器的信号输出引脚(SIG)。此引脚连接到ESP32的ADC引脚，
+                用于接收从选定通道传来的模拟信号。
+                该引脚必须支持ADC功能。
 
         config ENABLE_PCF8575
             bool "启用PCF8575 I2C GPIO扩展器"
@@ -533,7 +519,7 @@ menu "组件管理器"
                 
         config MOTOR_ENA_PIN
             int "电机A使能引脚"
-            default 2
+            default 47
             range 0 48
             depends on ENABLE_MOTOR_CONTROLLER
             help
@@ -541,7 +527,7 @@ menu "组件管理器"
                 
         config MOTOR_ENB_PIN
             int "电机B使能引脚"
-            default 1
+            default 21
             range 0 48
             depends on ENABLE_MOTOR_CONTROLLER
             help

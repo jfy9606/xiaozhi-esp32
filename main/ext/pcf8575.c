@@ -62,27 +62,10 @@ static esp_err_t select_pcf8575_channel(void)
         return ret;
     }
 
-    // 等待通道切换完成
-    vTaskDelay(pdMS_TO_TICKS(10));
+    // 等待通道切换完成，减少等待时间
+    vTaskDelay(pdMS_TO_TICKS(5));
     
-    // 验证通道选择
-    uint8_t current_channel = 0;
-    pca_handle = pca9548a_get_handle();
-    if (pca_handle) {
-        ret = pca9548a_get_selected_channels(pca_handle, &current_channel);
-        if (ret == ESP_OK) {
-            if (current_channel != PCF8575_PCA9548A_CHANNEL) {
-                ESP_LOGW(TAG, "PCA9548A channel mismatch: expected=0x%02X, actual=0x%02X", 
-                       PCF8575_PCA9548A_CHANNEL, current_channel);
-                
-                // 再次尝试切换通道
-                ret = pca9548a_select_channels(pca_handle, (1 << PCF8575_PCA9548A_CHANNEL));
-                vTaskDelay(pdMS_TO_TICKS(10));
-            }
-        }
-    }
-    
-    return ret;
+    return ESP_OK;
 }
 
 // 读取PCF8575的所有端口
@@ -299,10 +282,27 @@ esp_err_t pcf8575_init(void)
         pcf8575_handle = NULL;
     }
     
-    // 创建PCF8575设备
+    // 首先尝试选择通道，这是一个快速操作，如果失败则立即返回
+    esp_err_t ret = select_pcf8575_channel();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to select channel for PCF8575: %s", esp_err_to_name(ret));
+        ESP_LOGW(TAG, "PCF8575 may not be physically connected or PCA9548A not working");
+        return ret;
+    }
+    
+    // 尝试快速读取数据来检测设备是否存在，使用更短的超时时间
+    uint8_t test_data[2];
+    ret = i2c_master_receive(i2c_dev_handle, test_data, 2, 50);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to communicate with PCF8575: %s", esp_err_to_name(ret));
+        ESP_LOGW(TAG, "PCF8575 device may not be present or has a different I2C address");
+        return ESP_ERR_TIMEOUT;
+    }
+    
+    // 创建PCF8575设备，使用更低的超时值
     pcf8575_config_t config = {
         .i2c_addr = PCF8575_I2C_ADDR,
-        .i2c_timeout_ms = PCF8575_I2C_TIMEOUT_MS
+        .i2c_timeout_ms = 50  // 使用更低的超时值，避免长时间等待
     };
     
     pcf8575_handle = pcf8575_create(&config);

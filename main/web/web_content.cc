@@ -232,9 +232,9 @@ void WebContent::HandleControlMessage(int client_id, const PSRAMString& message,
     PSRAMString target = target_obj->valuestring;
     
     // 根据不同的控制目标转发消息
-    if (target == "motor") {
+    if (target == "car") {
         // 转发给电机处理系统
-        server_->BroadcastWebSocketMessage(message, "motor");
+        server_->BroadcastWebSocketMessage(message, "car");
     }
     else if (target == "vision") {
         // 转发给视觉系统

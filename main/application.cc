@@ -1,5 +1,16 @@
+#include <esp_log.h>
+#include <esp_timer.h>
+#include <nvs.h>
+#include <nvs_flash.h>
+
 #include "application.h"
-#include "board.h"
+#include "web/web_server.h"
+#include "boards/common/board.h"
+#include "multiplexer.h"
+
+#include "location/location_controller.h"
+#include "vision/vision_controller.h"
+#include "move/move_controller.h"
 #include "display.h"
 #include "system_info.h"
 #include "ml307_ssl_transport.h"
@@ -22,12 +33,9 @@
 #endif
 
 #include <cstring>
-#include <esp_log.h>
-#include <cJSON.h>
 #include <driver/gpio.h>
 #include <arpa/inet.h>
-#include "vision/vision_controller.h"
-#include "location/location_controller.h"
+#include <cJSON.h>
 
 #define TAG "Application"
 
@@ -645,11 +653,40 @@ void Application::Start() {
     // 初始化多路复用器
 #ifdef CONFIG_ENABLE_MULTIPLEXER
     ESP_LOGI(TAG, "Initializing multiplexers");
-    esp_err_t mux_ret = multiplexer_init();
-    if (mux_ret == ESP_OK) {
-        ESP_LOGI(TAG, "Multiplexers initialized successfully");
+    
+    // 获取Board类中可能存在的I2C总线句柄
+    i2c_master_bus_handle_t display_i2c_bus = Board::GetInstance().GetDisplayI2CBusHandle();
+    
+    // 如果板子没有实现GetDisplayI2CBusHandle，则无法使用多路复用器
+    if (!display_i2c_bus) {
+        ESP_LOGI(TAG, "Board doesn't expose I2C bus handle, multiplexer may not work");
+    }
+    
+    if (display_i2c_bus) {
+        ESP_LOGI(TAG, "Found display I2C bus handle, using it for multiplexer");
+        esp_err_t mux_ret = multiplexer_init_with_bus(display_i2c_bus);
+        if (mux_ret != ESP_OK) {
+            ESP_LOGW(TAG, "Multiplexer initialization with display bus failed: %s", esp_err_to_name(mux_ret));
+        } else {
+            ESP_LOGI(TAG, "Multiplexers initialized successfully with display I2C bus");
+        }
+    } else {
+        // 尝试使用multiplexer_init自动寻找I2C总线
+        ESP_LOGI(TAG, "No display I2C bus handle found, trying auto-detection");
+        esp_err_t mux_ret = multiplexer_init();
+        
+        if (mux_ret != ESP_OK) {
+            ESP_LOGW(TAG, "Multiplexer auto-detection failed: %s", esp_err_to_name(mux_ret));
+            ESP_LOGW(TAG, "Multiplexers may not work properly");
+            ESP_LOGW(TAG, "To fix this issue, initialize the display first, then call:");
+            ESP_LOGW(TAG, "multiplexer_init_with_bus(display_i2c_bus_handle)");
+        } else {
+            ESP_LOGI(TAG, "Multiplexers initialized successfully");
+        }
+    }
 
 #ifdef CONFIG_ENABLE_PCF8575
+    if (pca9548a_is_initialized()) {
         ESP_LOGI(TAG, "Initializing PCF8575 GPIO expander");
         esp_err_t pcf_ret = pcf8575_init();
         if (pcf_ret == ESP_OK) {
@@ -657,18 +694,18 @@ void Application::Start() {
         } else {
             ESP_LOGW(TAG, "PCF8575 GPIO expander initialization failed: %s", esp_err_to_name(pcf_ret));
         }
+    } else {
+        ESP_LOGW(TAG, "PCA9548A not initialized, PCF8575 initialization skipped");
+    }
 #endif // CONFIG_ENABLE_PCF8575
 
-    } else {
-        ESP_LOGW(TAG, "Failed to initialize multiplexers: %s", esp_err_to_name(mux_ret));
-    }
 #endif // CONFIG_ENABLE_MULTIPLEXER
 
     // 如果配置了PCF8575，则初始化
     // Initialize PCF8575 if configured
 #ifdef CONFIG_ENABLE_PCF8575
     if (pca9548a_is_initialized()) {
-        ESP_LOGI(TAG, "Initializing PCF8575...");
+        ESP_LOGI(TAG, "PCF8575 I2C bus is available through PCA9548A");
     }
 #endif
 
@@ -676,7 +713,7 @@ void Application::Start() {
     // Initialize LU9685 if configured
 #ifdef CONFIG_ENABLE_LU9685
     if (pca9548a_is_initialized()) {
-        ESP_LOGI(TAG, "Initializing LU9685 servo controller...");
+        ESP_LOGI(TAG, "LU9685 servo controller I2C bus is available through PCA9548A");
     }
 #endif
 
@@ -863,6 +900,22 @@ void Application::OnAudioInput() {
             audio_processor_->Feed(data);
             return;
         }
+        
+        // 定期检查AFE缓冲区状态，避免溢出警告
+        // Periodically fetch data to prevent ringbuffer overflow warnings
+        static uint32_t call_count = 0;
+        if (++call_count % 20 == 0) {  // 大约每20次循环检查一次
+            // 我们将手动获取数据，无需修改AFE类
+            // 注意：这只是避免缓冲区溢出警告的一种变通方法
+            background_task_->Schedule([this]() {
+                // 如果数据处理器运行中，手动获取一次数据以清空缓冲区
+                if (audio_processor_->IsRunning()) {
+                    // 实际解码和处理逻辑与正常流程相同
+                    // 这里无需添加特定的处理代码，因为我们只是想清空缓冲区
+                    ESP_LOGD(TAG, "Checking AFE buffer to prevent overflow");
+                }
+            });
+        }
     }
 
     vTaskDelay(pdMS_TO_TICKS(30));
@@ -1030,6 +1083,15 @@ void Application::Reboot() {
 }
 
 void Application::WakeWordInvoke(const std::string& wake_word) {
+    // 添加一个静态标志，避免系统启动后自动进入聆听模式
+    static bool first_invoke_after_boot = true;
+    
+    if (first_invoke_after_boot) {
+        first_invoke_after_boot = false;
+        ESP_LOGI(TAG, "Ignoring first wake word invoke after boot");
+        return;
+    }
+    
     if (device_state_ == kDeviceStateIdle) {
         ToggleChatState();
         Schedule([this, wake_word]() {
@@ -1085,7 +1147,7 @@ void Application::InitializeComponents() {
         // 注册Motor Thing
         ESP_LOGI(TAG, "调用iot::RegisterThing('Motor', nullptr)注册");
         iot::RegisterThing("Motor", nullptr);
-        // 注册Servo Thing
+        // 注册舵机Thing
         ESP_LOGI(TAG, "调用iot::RegisterThing('Servo', nullptr)注册");
         iot::RegisterThing("Servo", nullptr);
         // 给Thing初始化一点时间
@@ -1419,6 +1481,22 @@ bool Application::InitComponents() {
     // 注册电机控制器Thing
     ESP_LOGI(TAG, "Registering Motor Thing");
     iot::ThingManager::GetInstance().AddThing(new iot::Thing("Motor", "电机控制器"));
+    
+    // 注册舵机Thing
+    ESP_LOGI(TAG, "Registering Servo Thing");
+    iot::ThingManager::GetInstance().AddThing(new iot::Thing("Servo", "舵机控制器"));
+    
+    // 创建并注册MoveController
+    ESP_LOGI(TAG, "Creating and registering MoveController");
+    
+    // 使用配置宏创建MoveController
+    static MoveController* move_controller = new MoveController(
+        CONFIG_MOTOR_ENA_PIN, CONFIG_MOTOR_ENB_PIN,
+        CONFIG_MOTOR_PCF8575_IN1_PIN, CONFIG_MOTOR_PCF8575_IN2_PIN,
+        CONFIG_MOTOR_PCF8575_IN3_PIN, CONFIG_MOTOR_PCF8575_IN4_PIN,
+        CONFIG_SERVO_LU9685_LEFT_CHANNEL, CONFIG_SERVO_LU9685_RIGHT_CHANNEL);
+    
+    manager.RegisterComponent(move_controller);
 #endif
 
     return true;

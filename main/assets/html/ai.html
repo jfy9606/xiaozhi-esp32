@@ -456,6 +456,8 @@
       let isWakeWordEnabled = true;
       let recognition = null;
       let chatHistory = [];
+      let heartbeatInterval = null;
+      let lastPongTime = 0;
       
       // 连接WebSocket
       function connectWebSocket() {
@@ -480,26 +482,54 @@
         } else {
           // 实际WebSocket连接
           try {
-            ws = new WebSocket(`ws://${window.location.hostname}/ws`);
+            const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${wsProtocol}//${window.location.host}/ws`;
+            console.log(`AI页面连接到WebSocket: ${wsUrl}`);
+            ws = new WebSocket(wsUrl);
             
             ws.onopen = function() {
               isConnected = true;
               connectionStatus.classList.add('connected');
               connectionText.textContent = '已连接';
-              console.log('WebSocket连接已建立');
+              console.log('AI WebSocket连接已建立');
+              lastPongTime = Date.now();
+
+              // 发送客户端类型
+              ws.send(JSON.stringify({ type: 'register_client', client_type: 'ai_chat' }));
+
+              // 设置定期心跳
+              if (heartbeatInterval) clearInterval(heartbeatInterval);
+              heartbeatInterval = setInterval(function() {
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                  try {
+                    ws.send(JSON.stringify({type: "ping"}));
+                    if (Date.now() - lastPongTime > 10000) { // 10秒没有收到pong
+                      console.warn('AI WebSocket心跳超时，尝试重连');
+                      ws.close(); 
+                    }
+                  } catch (e) {
+                    console.error('AI发送心跳失败:', e);
+                    ws.close();
+                  }
+                }
+              }, 5000); // 每5秒发送一次心跳
             };
             
             ws.onmessage = function(event) {
-              console.log('收到消息:', event.data);
+              console.log('AI收到消息:', event.data);
+              lastPongTime = Date.now(); // 任何消息都视为活跃
               
               // 尝试解析消息为JSON
               try {
                 const data = JSON.parse(event.data);
                 
                 // 处理不同类型的消息
-                if (data.type === 'voice_state') {
+                if (data.type === 'pong') {
+                  // 心跳响应
+                  lastPongTime = Date.now();
+                } else if (data.type === 'voice_state') {
                   // 更新语音状态
-                  voiceStateElement.textContent = data.state;
+                  voiceStateElement.textContent = data.state || '未知';
                   
                   // 如果是语音识别结果
                   if (data.recognition_result) {
@@ -513,15 +543,22 @@
                       wakeWordStatusText.textContent = '检测到唤醒词!';
                     } else {
                       wakeWordIndicator.classList.remove('wake-word-active');
-                      wakeWordStatusText.textContent = '唤醒词检测已启用';
+                      wakeWordStatusText.textContent = isWakeWordEnabled ? '唤醒词检测已启用' : '唤醒词检测已禁用';
                     }
                   }
-                  
-                  return;
+                } else if (data.type === 'chat_response' || data.type === 'ai_response') {
+                    addMessage(data.message || 'AI回复为空', 'ai');
+                } else if (data.type === 'tts_control_ack') {
+                    console.log('TTS控制确认:', data.status);
+                } else if (data.type === 'wake_word_ack') {
+                    console.log('唤醒词控制确认:', data.status);
+                    isWakeWordEnabled = data.enabled;
+                    wakeWordStatusText.textContent = isWakeWordEnabled ? '唤醒词检测已启用' : '唤醒词检测已禁用';
+                    wakeWordIndicator.classList.toggle('wake-word-active', isWakeWordEnabled && data.detected_recently);
+                } else {
+                    // 如果是普通文本消息，添加到聊天界面
+                    addMessage(data.message || event.data, 'ai');
                 }
-                
-                // 如果是普通文本消息，添加到聊天界面
-                addMessage(data.message || event.data, 'ai');
               } catch (e) {
                 // 如果不是JSON，作为普通文本处理
                 addMessage(event.data, 'ai');
@@ -532,18 +569,21 @@
               isConnected = false;
               connectionStatus.classList.remove('connected');
               connectionText.textContent = '连接已断开';
-              console.log('WebSocket连接已关闭');
+              console.log('AI WebSocket连接已关闭');
+              if (heartbeatInterval) clearInterval(heartbeatInterval);
               // 尝试重新连接
-              setTimeout(connectWebSocket, 2000);
+              setTimeout(connectWebSocket, 3000); // 3秒后重连
             };
             
             ws.onerror = function(error) {
-              console.error('WebSocket错误:', error);
+              console.error('AI WebSocket错误:', error);
               connectionText.textContent = '连接错误';
+              if (heartbeatInterval) clearInterval(heartbeatInterval);
             };
           } catch (error) {
-            console.error('创建WebSocket时出错:', error);
+            console.error('创建AI WebSocket时出错:', error);
             connectionText.textContent = '连接失败';
+            if (heartbeatInterval) clearInterval(heartbeatInterval);
           }
         }
       }

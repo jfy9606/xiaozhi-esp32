@@ -27,8 +27,7 @@ struct hw178_dev_t {
     gpio_num_t s1_pin;           // Select pin S1
     gpio_num_t s2_pin;           // Select pin S2
     gpio_num_t s3_pin;           // Select pin S3
-    gpio_num_t en_pin;           // Enable pin
-    bool en_active_high;         // Enable pin logic
+    gpio_num_t sig_pin;          // Signal output pin (connects to ADC)
     hw178_channel_t channel;     // Current channel
 };
 
@@ -48,6 +47,12 @@ hw178_handle_t hw178_create(const hw178_config_t *config)
         return NULL;
     }
 
+    // 验证SIG引脚已配置
+    if (config->sig_pin == GPIO_NUM_NC) {
+        ESP_LOGE(TAG, "SIG pin must be configured");
+        return NULL;
+    }
+
     // 分配并初始化设备结构
     hw178_handle_t handle = calloc(1, sizeof(struct hw178_dev_t));
     if (handle == NULL) {
@@ -60,8 +65,7 @@ hw178_handle_t hw178_create(const hw178_config_t *config)
     handle->s1_pin = config->s1_pin;
     handle->s2_pin = config->s2_pin;
     handle->s3_pin = config->s3_pin;
-    handle->en_pin = config->en_pin;
-    handle->en_active_high = config->en_active_high;
+    handle->sig_pin = config->sig_pin;
     handle->channel = HW178_CHANNEL_C0;  // 默认通道
 
     // 配置GPIO引脚
@@ -91,24 +95,6 @@ hw178_handle_t hw178_create(const hw178_config_t *config)
         io_conf.pin_bit_mask = pin_bit_mask;
     if (gpio_config(&io_conf) != ESP_OK) {
         ESP_LOGE(TAG, "Failed to configure select pins");
-        free(handle);
-        return NULL;
-        }
-    }
-
-    // 配置使能引脚（如果指定）
-    if (handle->en_pin != GPIO_NUM_NC) {
-        io_conf.pin_bit_mask = (1ULL << handle->en_pin);
-        if (gpio_config(&io_conf) != ESP_OK) {
-            ESP_LOGE(TAG, "Failed to configure enable pin");
-            free(handle);
-            return NULL;
-        }
-        
-        // 设置默认状态 - 禁用
-        int en_level = handle->en_active_high ? 0 : 1;
-        if (gpio_set_level(handle->en_pin, en_level) != ESP_OK) {
-            ESP_LOGE(TAG, "Failed to set enable pin level");
             free(handle);
             return NULL;
         }
@@ -121,9 +107,8 @@ hw178_handle_t hw178_create(const hw178_config_t *config)
         return NULL;
     }
 
-    ESP_LOGI(TAG, "HW-178 initialized (S0:%d, S1:%d, S2:%d, S3:%d, EN:%d)",
-             handle->s0_pin, handle->s1_pin, handle->s2_pin, handle->s3_pin,
-             handle->en_pin);
+    ESP_LOGI(TAG, "HW-178 initialized (S0:%d, S1:%d, S2:%d, S3:%d)",
+             handle->s0_pin, handle->s1_pin, handle->s2_pin, handle->s3_pin);
     return handle;
 }
 
@@ -131,12 +116,6 @@ esp_err_t hw178_delete(hw178_handle_t handle)
 {
     if (handle == NULL) {
         return ESP_ERR_INVALID_ARG;
-    }
-
-    // Disable the multiplexer if enable pin is configured
-    if (handle->en_pin != GPIO_NUM_NC) {
-        int en_level = handle->en_active_high ? 0 : 1;
-        gpio_set_level(handle->en_pin, en_level);
     }
 
     // Free memory
@@ -193,50 +172,4 @@ esp_err_t hw178_get_selected_channel(hw178_handle_t handle, hw178_channel_t *cha
 
     *channel = handle->channel;
     return ESP_OK;
-}
-
-esp_err_t hw178_enable(hw178_handle_t handle)
-{
-    if (handle == NULL) {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    if (handle->en_pin == GPIO_NUM_NC) {
-        ESP_LOGW(TAG, "Enable pin not configured");
-        return ESP_ERR_NOT_SUPPORTED;
-    }
-
-    int en_level = handle->en_active_high ? 1 : 0;
-    esp_err_t ret = gpio_set_level(handle->en_pin, en_level);
-    
-    if (ret == ESP_OK) {
-        ESP_LOGD(TAG, "Multiplexer enabled");
-    } else {
-        ESP_LOGE(TAG, "Failed to enable multiplexer: %s", esp_err_to_name(ret));
-    }
-    
-    return ret;
-}
-
-esp_err_t hw178_disable(hw178_handle_t handle)
-{
-    if (handle == NULL) {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    if (handle->en_pin == GPIO_NUM_NC) {
-        ESP_LOGW(TAG, "Enable pin not configured");
-        return ESP_ERR_NOT_SUPPORTED;
-    }
-
-    int en_level = handle->en_active_high ? 0 : 1;
-    esp_err_t ret = gpio_set_level(handle->en_pin, en_level);
-    
-    if (ret == ESP_OK) {
-        ESP_LOGD(TAG, "Multiplexer disabled");
-    } else {
-        ESP_LOGE(TAG, "Failed to disable multiplexer: %s", esp_err_to_name(ret));
-    }
-    
-    return ret;
 } 

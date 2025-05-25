@@ -63,8 +63,7 @@ typedef struct {
     gpio_num_t s1_pin;             /*!< S1 select pin */
     gpio_num_t s2_pin;             /*!< S2 select pin */
     gpio_num_t s3_pin;             /*!< S3 select pin */
-    gpio_num_t en_pin;             /*!< Optional enable pin (GPIO_NUM_NC if not used) */
-    bool en_active_high;           /*!< Enable pin logic (true for active high, false for active low) */
+    gpio_num_t sig_pin;            /*!< SIG output pin (connects to ADC) */
 } hw178_config_t;
 
 /**
@@ -100,22 +99,6 @@ esp_err_t hw178_select_channel(hw178_handle_t handle, hw178_channel_t channel);
  * @return ESP_OK on success
  */
 esp_err_t hw178_get_selected_channel(hw178_handle_t handle, hw178_channel_t *channel);
-
-/**
- * @brief Enable the HW-178 multiplexer
- * 
- * @param handle Multiplexer handle
- * @return ESP_OK on success, ESP_ERR_NOT_SUPPORTED if enable pin not configured
- */
-esp_err_t hw178_enable(hw178_handle_t handle);
-
-/**
- * @brief Disable the HW-178 multiplexer
- * 
- * @param handle Multiplexer handle
- * @return ESP_OK on success, ESP_ERR_NOT_SUPPORTED if enable pin not configured
- */
-esp_err_t hw178_disable(hw178_handle_t handle);
 
 #ifdef __cplusplus
 }

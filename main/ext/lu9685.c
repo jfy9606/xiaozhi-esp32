@@ -5,13 +5,16 @@
 
 #include "ext/include/lu9685.h"
 #include "ext/include/pca9548a.h"
-#include <driver/i2c.h>
+#include <driver/i2c_master.h>
 #include <esp_log.h>
 #include <string.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
 #define TAG "LU9685"
+
+// 引用来自multiplexer.c的I2C设备句柄
+extern i2c_master_dev_handle_t i2c_dev_handle;
 
 // LU9685-20CU默认I2C地址
 #define LU9685_DEFAULT_ADDR    0x80
@@ -130,29 +133,32 @@ esp_err_t lu9685_set_channel_angle(lu9685_handle_t handle, uint8_t channel, uint
             ESP_LOGE(TAG, "Failed to get PCA9548A handle");
             return ESP_FAIL;
         }
-        if (pca9548a_select_channels(pca_handle, (1 << handle->pca9548a_channel)) != ESP_OK) {
-            ESP_LOGE(TAG, "Failed to select PCA9548A channel %d", handle->pca9548a_channel);
-            return ESP_FAIL;
+        esp_err_t ret = pca9548a_select_channels(pca_handle, (1 << handle->pca9548a_channel));
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to select PCA9548A channel %d: %s", 
+                     handle->pca9548a_channel, esp_err_to_name(ret));
+            return ret;
         }
+        
+        // 减少通道切换等待时间
+        vTaskDelay(pdMS_TO_TICKS(5));
     }
 
     // 准备要发送的数据
     // 对于LU9685-20CU: 发送 [通道号, 角度值]
     uint8_t data[2] = {channel, angle};
     
-    // 发送数据到LU9685
+    // 发送数据到LU9685，使用较短的超时时间
     esp_err_t ret;
-    i2c_cmd_handle_t cmd = i2c_cmd_link_create();
-    i2c_master_start(cmd);
-    i2c_master_write_byte(cmd, (handle->i2c_addr << 1) | I2C_MASTER_WRITE, true);
-    i2c_master_write(cmd, data, sizeof(data), true);
-    i2c_master_stop(cmd);
-    
-    ret = i2c_master_cmd_begin(I2C_NUM_0, cmd, pdMS_TO_TICKS(100));
-    i2c_cmd_link_delete(cmd);
+    ret = i2c_master_transmit(i2c_dev_handle, data, sizeof(data), 100);
     
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to set channel %d to angle %d: %s", channel, angle, esp_err_to_name(ret));
+        // 如果是通信超时，可能是设备不存在
+        if (ret == ESP_ERR_TIMEOUT) {
+            ESP_LOGW(TAG, "LU9685 communication timeout, device may not be connected");
+        } else {
+            ESP_LOGE(TAG, "Failed to set channel %d to angle %d: %s", channel, angle, esp_err_to_name(ret));
+        }
         return ret;
     }
     

@@ -379,88 +379,127 @@
       let mapHeight = 10; // 地图高度（米）
       let socket;
       let socketConnected = false;
-      let statusCheckInterval;
+      let locationUpdateInterval; // 修改变量名以更清晰
       let reconnectAttempts = 0;
-      const MAX_RECONNECT_ATTEMPTS = 5;
+      const MAX_RECONNECT_ATTEMPTS = 10; // 增加重连次数
+      let lastMessageTime = 0;
+      const MESSAGE_TIMEOUT = 15000; // 15秒无消息则认为超时
       
       // 连接WebSocket
       function connectWebSocket() {
         // 确保之前的WebSocket已关闭
-        if (socket) {
+        if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
           socket.close();
-          clearInterval(statusCheckInterval);
+        }
+        if (locationUpdateInterval) {
+            clearInterval(locationUpdateInterval);
+            locationUpdateInterval = null;
         }
         
-        console.log('连接到WebSocket:', wsUrl);
+        console.log('Location页面连接到WebSocket:', wsUrl);
+        try {
         socket = new WebSocket(wsUrl);
+        } catch (e) {
+            console.error("创建Location WebSocket失败:", e);
+            statusText.innerText = '创建连接失败';
+            attemptReconnect();
+            return;
+        }
         
         // 连接打开时
         socket.onopen = function() {
-          console.log('WebSocket连接已建立');
+          console.log('Location WebSocket连接已建立');
           socketConnected = true;
           connectionStatus.classList.add('connected');
           statusText.innerText = '已连接';
           reconnectAttempts = 0;
+          lastMessageTime = Date.now();
           
           // 发送客户端类型
+          try {
           socket.send(JSON.stringify({
             type: 'register_client',
-            client_type: 'location'
-          }));
+              client_type: 'location_page' // 更具体的客户端类型
+            }));
+          } catch (e) {
+            console.error("发送注册消息失败:", e);
+          }
           
-          // 定期请求定位状态
+          // 定期请求定位状态，并在超时时尝试重连
+          if (locationUpdateInterval) clearInterval(locationUpdateInterval);
+          locationUpdateInterval = setInterval(() => {
+            if (Date.now() - lastMessageTime > MESSAGE_TIMEOUT) {
+                console.warn('Location WebSocket消息超时，尝试重连。');
+                socket.close(); // 会触发onclose中的重连
+                // clearInterval(locationUpdateInterval); // onclose中会清除
+                return;
+            }
           requestLocationUpdate();
-          statusCheckInterval = setInterval(requestLocationUpdate, 1000);
+          }, 2000); // 每2秒请求一次状态和发送心跳
         };
         
         // 接收消息时
         socket.onmessage = function(event) {
+          lastMessageTime = Date.now(); // 更新最后收到消息的时间
           try {
             const data = JSON.parse(event.data);
+            console.log("Location页面收到消息:", data);
             handleWebSocketMessage(data);
           } catch (e) {
-            console.error('解析WebSocket消息出错:', e, event.data);
+            console.error('解析Location WebSocket消息出错:', e, event.data);
           }
         };
         
         // 发生错误时
         socket.onerror = function(error) {
-          console.error('WebSocket错误:', error);
+          console.error('Location WebSocket错误:', error);
           socketConnected = false;
           connectionStatus.classList.remove('connected');
           statusText.innerText = '连接错误';
+          // onerror 通常会紧跟 onclose，所以重连逻辑放在onclose中
         };
         
         // 连接关闭时
-        socket.onclose = function() {
-          console.log('WebSocket连接已关闭');
+        socket.onclose = function(event) {
+          console.log('Location WebSocket连接已关闭. Code:', event.code, 'Reason:', event.reason);
           socketConnected = false;
           connectionStatus.classList.remove('connected');
-          statusText.innerText = '断开连接';
+          statusText.innerText = '已断开';
           
           // 清除状态检查定时器
-          clearInterval(statusCheckInterval);
-          
-          // 重新连接逻辑
-          if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
-            reconnectAttempts++;
-            const delay = Math.min(1000 * reconnectAttempts, 5000);
-            console.log(`${delay}ms后尝试重新连接 (尝试 ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})...`);
-            setTimeout(connectWebSocket, delay);
-          } else {
-            console.log('达到最大重连次数，停止重连');
-            statusText.innerText = '重连失败，请刷新页面';
+          if (locationUpdateInterval) {
+            clearInterval(locationUpdateInterval);
+            locationUpdateInterval = null;
           }
+          attemptReconnect();
         };
       }
+
+      function attemptReconnect() {
+          if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+            reconnectAttempts++;
+            const delay = Math.min(1000 * Math.pow(1.5, reconnectAttempts), 10000); // 指数退避，最大10秒
+            console.log(`${delay}ms后尝试重新连接Location WebSocket (尝试 ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})...`);
+            setTimeout(connectWebSocket, delay);
+          } else {
+            console.log('达到最大重连次数，停止Location WebSocket重连');
+            statusText.innerText = '重连失败，请刷新页面';
+          }
+      }
       
-      // 请求位置更新
+      // 请求位置更新 (并作为心跳)
       function requestLocationUpdate() {
         if (socket && socket.readyState === WebSocket.OPEN) {
+          try {
           socket.send(JSON.stringify({
-            type: 'get_location',
+              type: 'get_location_status', // 更明确的请求类型，也可以作为心跳
             mode: currentMode
           }));
+          } catch (e) {
+            console.error("发送位置更新请求失败:", e);
+          }
+        } else {
+            console.warn("请求位置更新时WebSocket未连接或未打开");
         }
       }
       
@@ -468,30 +507,48 @@
       function handleWebSocketMessage(data) {
         if (data.type === 'location_update') {
           updateLocationInfo(data);
-        } else if (data.type === 'status_response') {
-          updateSystemStatus(data);
-        } else if (data.type === 'heartbeat_response') {
-          // 收到心跳响应，可以不做任何事情
+        } else if (data.type === 'status_response') { // 和index.html及move.html保持一致
+          updateSystemStatus(data); // 已有函数
+          // 如果status_response也包含位置信息，可以调用updateLocationInfo
+          if (data.sensors && data.sensors.location) {
+            updateLocationInfo({ position: data.sensors.location, mode: data.sensors.location.current_mode || currentMode });
+          }
+        } else if (data.type === 'pong' || data.type === 'heartbeat_ack' || data.type === 'get_location_status_ack') { 
+          // 心跳或请求确认响应，主要用于更新lastMessageTime，已在onmessage开头处理
+          console.log(`收到确认/心跳类消息: ${data.type}`);
         } else if (data.type === 'location_calibration_result') {
           handleCalibrationResult(data);
-        } else if (data.type === 'map_saved') {
-          // 显示地图保存成功的消息
-          debugInfo.textContent = `地图保存成功: ${data.path}`;
+        } else if (data.type === 'map_saved_ack') { // 确认地图已保存
+          debugInfo.textContent = `地图保存成功: ${data.path || '未知路径'}`;
+          alert(`地图已保存到: ${data.path || '设备上'}`);
+        } else if (data.type === 'set_location_mode_ack') {
+          console.log(`设置定位模式为 ${data.mode} ${data.success ? '成功' : '失败'}`);
+          if (data.success) {
+            currentMode = data.mode;
+            modeText.textContent = `当前模式: ${getModeName(currentMode)}`;
+          } else {
+            alert(`切换模式失败: ${data.error || '未知错误'}`);
+            // 恢复UI到之前的模式，或重新请求当前模式
+            requestLocationUpdate(); 
+          }
         } else {
-          console.log('收到未知类型消息:', data.type);
+          console.log('Location页面收到未知或未处理类型消息:', data.type, data);
         }
       }
       
       // 更新位置信息
       function updateLocationInfo(data) {
-        if (!data.position) return;
+        if (!data || !data.position) {
+            console.warn("updateLocationInfo收到无效数据:", data);
+            return;
+        }
         
         // 更新当前位置数据
         currentPosition = {
-          x: data.position.x || 0,
-          y: data.position.y || 0,
-          orientation: data.position.orientation || 0,
-          accuracy: data.position.accuracy || 0
+          x: parseFloat(data.position.x) || 0,
+          y: parseFloat(data.position.y) || 0,
+          orientation: parseFloat(data.position.orientation) || 0,
+          accuracy: parseFloat(data.position.accuracy) || 0
         };
         
         // 更新UI显示
@@ -503,23 +560,24 @@
         // 更新地图上的标记位置
         updateMarkerPosition(currentPosition.x, currentPosition.y, currentPosition.orientation);
         
-        // 更新定位模式文本
-        modeText.textContent = `当前模式: ${getModeName(data.mode || currentMode)}`;
+        // 更新定位模式文本 (如果提供了模式信息)
+        if (data.mode) {
+            currentMode = data.mode;
+            modeText.textContent = `当前模式: ${getModeName(data.mode)}`;
+             // 更新按钮状态
+            modeGpsBtn.classList.toggle('active', currentMode === 'gps');
+            modeUwbBtn.classList.toggle('active', currentMode === 'uwb');
+            modeFusionBtn.classList.toggle('active', currentMode === 'fusion');
+        }
       }
       
-      // 更新系统状态
+      // 更新系统状态 (主要用于连接状态和调试信息)
       function updateSystemStatus(data) {
         if (data.system) {
-          // 更新连接状态
           connectionStatus.classList.add('connected');
-          statusText.innerText = '系统正常';
+          statusText.innerText = '系统正常'; // 或者更详细的系统状态
         }
-        
-        // 如果有位置传感器数据，也可以在这里更新
-        if (data.sensors && data.sensors.location) {
-          // 更新额外的位置传感器信息
-          debugInfo.textContent = `更新时间: ${new Date().toLocaleTimeString()}`;
-        }
+        debugInfo.textContent = `最后更新: ${new Date().toLocaleTimeString()}`;
       }
       
       // 处理校准结果

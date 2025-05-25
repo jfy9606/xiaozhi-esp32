@@ -10,6 +10,7 @@
 #include "../iot/things/motor.h"
 #include "../iot/things/servo.h"
 #include <cJSON.h>
+#include "../ext/include/lu9685.h"
 
 // 定义GPIO电平
 #define HIGH 1
@@ -516,6 +517,24 @@ void MoveController::InitServos() {
     
     ESP_LOGI(TAG, "Initializing servo motors");
     
+#ifdef CONFIG_ENABLE_LU9685
+    // 检查是否需要使用LU9685舵机控制器
+    if (lu9685_is_initialized()) {
+        ESP_LOGI(TAG, "Using LU9685 servo controller");
+        
+        // 初始化成功后，将舵机归中位
+        if (steering_servo_pin_ >= 0) {
+            SetSteeringAngle(DEFAULT_SERVO_ANGLE);
+        }
+        
+        if (throttle_servo_pin_ >= 0) {
+            SetThrottlePosition(DEFAULT_SERVO_ANGLE);
+        }
+        
+        return;  // 使用LU9685控制器，不需要继续LEDC初始化
+    }
+#endif
+    
     // 配置LEDC定时器
     ledc_timer_config_t ledc_timer = {
         .speed_mode = SERVO_LEDC_MODE,
@@ -591,8 +610,36 @@ void MoveController::ControlMotor(int in1, int in2, int in3, int in4) {
     gpio_set_level((gpio_num_t)in4_pin_, in4);
 }
 
+// 添加一个私有的通用舵机控制方法
+bool MoveController::ControlServoWithLU9685(int channel, int angle) {
+#ifdef CONFIG_ENABLE_LU9685
+    // 优先使用LU9685控制器
+    if (lu9685_is_initialized()) {
+        lu9685_handle_t handle = lu9685_get_handle();
+        if (handle) {
+            // 使用实际通道号控制舵机
+            esp_err_t ret = lu9685_set_channel_angle(handle, channel, angle);
+            if (ret == ESP_OK) {
+                ESP_LOGD(TAG, "LU9685: Set servo channel %d to angle %d",
+                        channel, angle);
+                return true;
+            } else {
+                ESP_LOGW(TAG, "LU9685: Failed to set servo angle for channel %d: %s",
+                        channel, esp_err_to_name(ret));
+            }
+        }
+    }
+#endif
+    return false;
+}
+
 void MoveController::ControlSteeringServo(int angle) {
     if (steering_servo_pin_ < 0) {
+        return;
+    }
+    
+    // 尝试使用LU9685控制器
+    if (ControlServoWithLU9685(steering_servo_pin_, angle)) {
         return;
     }
     
@@ -622,6 +669,11 @@ void MoveController::ControlSteeringServo(int angle) {
 
 void MoveController::ControlThrottleServo(int position) {
     if (throttle_servo_pin_ < 0) {
+        return;
+    }
+    
+    // 尝试使用LU9685控制器
+    if (ControlServoWithLU9685(throttle_servo_pin_, position)) {
         return;
     }
     
