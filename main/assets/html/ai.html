@@ -556,8 +556,8 @@
                     wakeWordStatusText.textContent = isWakeWordEnabled ? '唤醒词检测已启用' : '唤醒词检测已禁用';
                     wakeWordIndicator.classList.toggle('wake-word-active', isWakeWordEnabled && data.detected_recently);
                 } else {
-                    // 如果是普通文本消息，添加到聊天界面
-                    addMessage(data.message || event.data, 'ai');
+                // 如果是普通文本消息，添加到聊天界面
+                addMessage(data.message || event.data, 'ai');
                 }
               } catch (e) {
                 // 如果不是JSON，作为普通文本处理

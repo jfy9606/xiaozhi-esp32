@@ -120,22 +120,22 @@ esp_err_t pca9548a_init(i2c_master_bus_handle_t external_bus_handle)
     ESP_LOGI(TAG, "Initializing PCA9548A multiplexer with external bus handle");
 
     if (external_bus_handle == NULL) {
-        ESP_LOGE(TAG, "External I2C bus handle is NULL");
+        ESP_LOGI(TAG, "External I2C bus handle is NULL, skipping PCA9548A initialization");
         return ESP_ERR_INVALID_ARG;
     }
 
     esp_err_t ret = ESP_OK;
-    
-    // 配置PCA9548A I2C设备
+
+        // 配置PCA9548A I2C设备
     ret = pca9548a_config_device_with_handles(external_bus_handle);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to configure PCA9548A device: %s", esp_err_to_name(ret));
+        ESP_LOGI(TAG, "Failed to configure PCA9548A device: %s (this is normal if device is not connected)", esp_err_to_name(ret));
         return ret;
-    }
+        }
 
     // 只有在成功获取到设备句柄的情况下才继续
     if (i2c_dev_handle == NULL) {
-        ESP_LOGE(TAG, "No I2C device handle available");
+        ESP_LOGI(TAG, "No I2C device handle available, skipping PCA9548A initialization");
         return ESP_ERR_INVALID_STATE;
     }
 
@@ -143,28 +143,27 @@ esp_err_t pca9548a_init(i2c_master_bus_handle_t external_bus_handle)
     pca9548a_config_t pca_config = {
         .i2c_port = default_i2c_port,
         .i2c_addr = PCA9548A_I2C_ADDR,
-        .i2c_timeout_ms = 30,  // 降低超时时间到30ms，避免长时间等待
+        .i2c_timeout_ms = 20,  // 进一步降低超时时间到20ms，减少等待时间
         .reset_pin = PCA9548A_RESET_PIN,
     };
     
     pca9548a_handle = pca9548a_create(&pca_config);
     if (pca9548a_handle == NULL) {
-        ESP_LOGE(TAG, "Failed to create PCA9548A device");
-        // 清理已创建的资源
+        ESP_LOGI(TAG, "Failed to create PCA9548A device, device may not be connected");
+        // 清理已创建的资源，但保持显示功能正常
         if (i2c_dev_handle != NULL) {
             i2c_master_bus_rm_device(i2c_dev_handle);
             i2c_dev_handle = NULL;
         }
         i2c_bus_handle = NULL; // 不删除总线，只清空句柄
-        return ESP_FAIL;
+        return ESP_OK; // 返回OK允许程序继续运行
     }
 
-    // 进行快速检测，如果设备不响应，则直接退出
+    // 进行快速检测，如果设备不响应，则记录信息并退出
     uint8_t test_channel = 0;
     ret = pca9548a_get_selected_channels(pca9548a_handle, &test_channel);
     if (ret != ESP_OK) {
-        ESP_LOGI(TAG, "PCA9548A communication test failed: %s", esp_err_to_name(ret));
-        ESP_LOGI(TAG, "Device may not be physically connected or is in wrong I2C address");
+        ESP_LOGI(TAG, "PCA9548A communication test failed: %s (device likely not present)", esp_err_to_name(ret));
         // 清理已创建的资源
         pca9548a_delete(pca9548a_handle);
         pca9548a_handle = NULL;
@@ -174,15 +173,15 @@ esp_err_t pca9548a_init(i2c_master_bus_handle_t external_bus_handle)
             i2c_dev_handle = NULL;
         }
         i2c_bus_handle = NULL; // 不删除总线，只清空句柄
-        return ESP_ERR_TIMEOUT;
+        return ESP_OK; // 返回OK允许程序继续运行
     }
 
     // 简化重置过程，不进行长时间等待
-    ESP_LOGI(TAG, "PCA9548A device detected, attempting reset");
+    ESP_LOGI(TAG, "PCA9548A device detected, performing quick reset");
     if (pca9548a_reset(pca9548a_handle) == ESP_OK) {
         ESP_LOGI(TAG, "PCA9548A reset successful");
     } else {
-        ESP_LOGW(TAG, "PCA9548A reset failed, continuing anyway");
+        ESP_LOGI(TAG, "PCA9548A reset failed, continuing anyway");
     }
 
     ESP_LOGI(TAG, "PCA9548A initialized successfully");
@@ -194,31 +193,82 @@ esp_err_t pca9548a_init(i2c_master_bus_handle_t external_bus_handle)
 // Initialize ADC
 static adc_oneshot_unit_handle_t adc_init(void)
 {
-    adc_oneshot_unit_handle_t adc_handle;
+    adc_oneshot_unit_handle_t adc_handle = NULL;
     
-    // 尝试初始化ADC2而不是ADC1，因为GPIO14是ADC2通道
+    // 尝试从配置文件获取优先ADC单元
+#ifdef PREFER_ADC_UNIT
+    // 优先使用配置文件中指定的ADC单元
+    adc_oneshot_unit_init_cfg_t init_config = {
+        .unit_id = PREFER_ADC_UNIT,
+    };
+    
+    ESP_LOGI(TAG, "尝试初始化首选ADC单元: %d", PREFER_ADC_UNIT);
+#else
+    // 如果没有配置，则默认尝试ADC2
     adc_oneshot_unit_init_cfg_t init_config = {
         .unit_id = ADC_UNIT_2,
     };
     
-    // 使用普通错误处理而不是ESP_ERROR_CHECK，这样我们可以处理错误情况
-    esp_err_t ret = adc_oneshot_new_unit(&init_config, &adc_handle);
-    if (ret != ESP_OK) {
-        if (ret == ESP_ERR_NOT_FOUND) {
-            ESP_LOGW(TAG, "ADC2 is already in use, trying to continue without ADC initialization");
-            return NULL;
-        } else {
-            ESP_LOGE(TAG, "Failed to initialize ADC unit: %s", esp_err_to_name(ret));
-            return NULL;
+    ESP_LOGI(TAG, "尝试初始化ADC2单元");
+#endif
+    
+    int retry_count = 0;
+    const int max_retries = 3; // 尝试多次获取ADC资源
+    esp_err_t ret = ESP_FAIL;
+    
+    while (retry_count < max_retries) {
+        ret = adc_oneshot_new_unit(&init_config, &adc_handle);
+        if (ret == ESP_OK) {
+            ESP_LOGI(TAG, "成功初始化ADC单元 %d", init_config.unit_id);
+            break;
         }
+        
+        ESP_LOGI(TAG, "ADC单元 %d 初始化失败: %s (尝试 %d/%d)", 
+                 init_config.unit_id, esp_err_to_name(ret), retry_count+1, max_retries);
+        
+        // 等待短暂时间后重试
+        vTaskDelay(pdMS_TO_TICKS(10));
+        retry_count++;
     }
     
-    // 使用GPIO14对应的ADC2通道
+    // 如果首选ADC单元初始化失败，尝试备用单元
+    if (ret != ESP_OK) {
+#ifdef FALLBACK_ADC_UNIT
+        ESP_LOGI(TAG, "尝试使用备用ADC单元: %d", FALLBACK_ADC_UNIT);
+        init_config.unit_id = FALLBACK_ADC_UNIT;
+        
+        // 重置重试计数
+        retry_count = 0;
+        
+        while (retry_count < max_retries) {
+            ret = adc_oneshot_new_unit(&init_config, &adc_handle);
+            if (ret == ESP_OK) {
+                ESP_LOGI(TAG, "成功初始化备用ADC单元 %d", init_config.unit_id);
+                break;
+    }
+    
+            ESP_LOGI(TAG, "备用ADC单元 %d 初始化失败: %s (尝试 %d/%d)", 
+                     init_config.unit_id, esp_err_to_name(ret), retry_count+1, max_retries);
+            
+            // 等待短暂时间后重试
+            vTaskDelay(pdMS_TO_TICKS(10));
+            retry_count++;
+        }
+#endif
+    }
+    
+    // 如果仍然失败，记录错误并返回NULL
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "所有ADC单元初始化失败");
+        return NULL;
+    }
+    
+    // 使用GPIO14对应的ADC通道
     int adc_channel = gpio_to_adc_channel(HW178_SIG_PIN);
     
     // Check if the channel is valid
     if (adc_channel < 0) {
-        ESP_LOGE(TAG, "Invalid ADC channel for GPIO %d", HW178_SIG_PIN);
+        ESP_LOGW(TAG, "HW178_SIG_PIN (GPIO %d) 没有对应的有效ADC通道", HW178_SIG_PIN);
         // 释放已分配的资源
         adc_oneshot_del_unit(adc_handle);
         return NULL;
@@ -229,14 +279,14 @@ static adc_oneshot_unit_handle_t adc_init(void)
         .atten = ADC_ATTEN_DB_12,
     };
     
-    // 使用普通错误处理而不是ESP_ERROR_CHECK
     ret = adc_oneshot_config_channel(adc_handle, adc_channel, &config);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to configure ADC channel: %s", esp_err_to_name(ret));
+        ESP_LOGW(TAG, "ADC通道配置失败: %s", esp_err_to_name(ret));
         adc_oneshot_del_unit(adc_handle);
         return NULL;
     }
     
+    ESP_LOGI(TAG, "ADC初始化成功，使用单元ID=%d, 通道=%d", init_config.unit_id, adc_channel);
     return adc_handle;
 }
 
@@ -284,23 +334,23 @@ static int gpio_to_adc_channel(gpio_num_t gpio_num)
 // Initialize HW178
 esp_err_t hw178_init(void)
 {
-    ESP_LOGI(TAG, "Initializing HW-178 multiplexer");
+    ESP_LOGI(TAG, "正在初始化HW-178多路复用器");
 
     // 验证SIG引脚是否为有效的ADC引脚
     int adc_channel = gpio_to_adc_channel(HW178_SIG_PIN);
     if (adc_channel < 0) {
-        ESP_LOGE(TAG, "HW178_SIG_PIN (GPIO %d) is not a valid ADC pin", HW178_SIG_PIN);
+        ESP_LOGW(TAG, "HW178_SIG_PIN (GPIO %d) 不是有效的ADC引脚", HW178_SIG_PIN);
         return ESP_ERR_INVALID_ARG;
     }
     
     // 记录SIG引脚对应的ADC通道
-    ESP_LOGI(TAG, "HW-178 SIG pin (GPIO %d) maps to ADC2 channel %d", HW178_SIG_PIN, adc_channel);
+    ESP_LOGI(TAG, "HW-178 SIG引脚(GPIO %d)映射到ADC通道 %d", HW178_SIG_PIN, adc_channel);
 
     // Initialize ADC
     adc_handle = adc_init();
     if (adc_handle == NULL) {
-        ESP_LOGI(TAG, "ADC not available, HW-178 will operate without ADC functionality");
-        // 继续初始化其他部分，而不是直接返回失败
+        ESP_LOGW(TAG, "无法初始化ADC，HW-178将在无ADC功能的情况下运行");
+        // 继续初始化GPIO部分，以便支持通道选择功能
     }
 
     // Create HW-178 device (无使能引脚)
@@ -314,24 +364,28 @@ esp_err_t hw178_init(void)
     
     hw178_handle = hw178_create(&hw178_config);
     if (hw178_handle == NULL) {
-        ESP_LOGE(TAG, "Failed to create HW-178 device");
+        ESP_LOGW(TAG, "无法创建HW-178设备，GPIO配置可能不正确");
         // 如果ADC初始化成功但GPIO初始化失败，需要释放ADC资源
         if (adc_handle != NULL) {
             adc_oneshot_del_unit(adc_handle);
             adc_handle = NULL;
         }
-        return ESP_FAIL;
+        return ESP_ERR_INVALID_STATE;
     }
     
-    ESP_LOGI(TAG, "HW-178 initialized successfully");
-    return ESP_OK;
+    // 初始化成功
+    ESP_LOGI(TAG, "HW-178初始化成功%s", 
+             adc_handle == NULL ? "，但ADC不可用" : "");
+    
+    // 如果ADC可用，初始化完全成功
+    return adc_handle != NULL ? ESP_OK : ESP_ERR_NOT_FOUND;
 }
 
 // Function to read analog value from a specific channel
 esp_err_t hw178_read_channel(hw178_channel_t channel, int *value)
 {
     if (!g_hw178_initialized || hw178_handle == NULL) {
-        ESP_LOGE(TAG, "HW-178 not initialized");
+        ESP_LOGW(TAG, "HW-178未初始化");
         return ESP_ERR_INVALID_STATE;
     }
     
@@ -341,40 +395,40 @@ esp_err_t hw178_read_channel(hw178_channel_t channel, int *value)
     
     // Check if ADC is initialized
     if (adc_handle == NULL) {
-        ESP_LOGW(TAG, "ADC not initialized, cannot read analog value");
+        ESP_LOGW(TAG, "ADC未初始化，无法读取模拟值");
         *value = -1; // 设置一个无效值
         return ESP_ERR_NOT_FOUND;
     }
     
     // Select channel
     esp_err_t ret = hw178_select_channel(hw178_handle, channel);
-        if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to select channel: %s", esp_err_to_name(ret));
-            return ret;
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "无法选择HW-178通道: %s", esp_err_to_name(ret));
+        return ret;
     }
-
+    
     // Wait for channel switching to stabilize
     vTaskDelay(pdMS_TO_TICKS(2));
     
     // 根据SIG引脚获取对应的ADC通道
     int adc_channel = gpio_to_adc_channel(HW178_SIG_PIN);
     if (adc_channel < 0) {
-        ESP_LOGE(TAG, "Invalid ADC channel for SIG pin GPIO %d", HW178_SIG_PIN);
+        ESP_LOGW(TAG, "SIG引脚(GPIO %d)没有有效的ADC通道", HW178_SIG_PIN);
         *value = -1;
         return ESP_ERR_INVALID_ARG;
     }
     
     // 显式记录使用的ADC通道
-    ESP_LOGD(TAG, "Reading from GPIO %d using ADC2 channel %d", HW178_SIG_PIN, adc_channel);
+    ESP_LOGD(TAG, "从GPIO %d使用ADC通道 %d读取模拟值", HW178_SIG_PIN, adc_channel);
     
     // Read ADC value
     ret = adc_oneshot_read(adc_handle, adc_channel, value);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to read ADC: %s", esp_err_to_name(ret));
+        ESP_LOGW(TAG, "ADC读取失败: %s", esp_err_to_name(ret));
         return ret;
-        }
+    }
     
-    ESP_LOGD(TAG, "HW-178 Channel C%d, ADC Value: %d", channel, *value);
+    ESP_LOGD(TAG, "HW-178通道 C%d, ADC值: %d", channel, *value);
     return ESP_OK;
 }
 
@@ -431,26 +485,25 @@ esp_err_t multiplexer_init_with_bus(i2c_master_bus_handle_t external_bus_handle)
     bool any_device_initialized = false;
 
     if (g_multiplexer_initialized) {
-        ESP_LOGI(TAG, "Multiplexers already initialized, reinitializing...");
+        ESP_LOGI(TAG, "多路复用器已初始化，正在重新初始化...");
         multiplexer_deinit();
     }
 
     if (external_bus_handle == NULL) {
-        ESP_LOGE(TAG, "External bus handle is NULL");
-        return ESP_ERR_INVALID_ARG;
+        ESP_LOGI(TAG, "外部总线句柄为NULL，跳过多路复用器初始化");
+        return ESP_OK; // 返回OK让程序继续运行
     }
 
-    ESP_LOGI(TAG, "Initializing multiplexers with external I2C bus");
+    ESP_LOGI(TAG, "正在使用外部I2C总线初始化多路复用器");
 
 #ifdef CONFIG_ENABLE_PCA9548A
     ret = pca9548a_init(external_bus_handle);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to configure PCA9548A device on external bus: %s", 
-                esp_err_to_name(ret));
+        ESP_LOGI(TAG, "PCA9548A初始化已跳过，继续运行但不使用PCA9548A");
     } else {
         g_pca9548a_initialized = true;
         any_device_initialized = true;
-        ESP_LOGI(TAG, "PCA9548A initialized successfully with shared I2C bus");
+        ESP_LOGI(TAG, "PCA9548A使用共享I2C总线初始化成功");
     }
 #endif
 
@@ -458,22 +511,28 @@ esp_err_t multiplexer_init_with_bus(i2c_master_bus_handle_t external_bus_handle)
     // HW178不依赖I2C总线，正常初始化
     ret = hw178_init();
     if (ret != ESP_OK) {
-        ESP_LOGW(TAG, "Failed to initialize HW-178: %s", esp_err_to_name(ret));
-        // 继续执行，即使HW-178初始化失败
+        // 区分不同的错误类型
+        if (ret == ESP_ERR_NOT_FOUND) {
+            ESP_LOGW(TAG, "HW-178初始化部分成功，但ADC不可用");
+            g_hw178_initialized = true;  // GPIO部分已初始化
+            any_device_initialized = true;
+        } else {
+            ESP_LOGW(TAG, "HW-178初始化失败: %s", esp_err_to_name(ret));
+        }
     } else {
         g_hw178_initialized = true;
         any_device_initialized = true;
-        ESP_LOGI(TAG, "HW-178 initialized successfully");
+        ESP_LOGI(TAG, "HW-178初始化成功");
     }
 #endif
 
     g_multiplexer_initialized = any_device_initialized;
-    ESP_LOGI(TAG, "Multiplexer initialization completed. Status: PCA9548A=%s, HW178=%s", 
-             g_pca9548a_initialized ? "OK" : "FAIL",
-             g_hw178_initialized ? "OK" : "FAIL");
+    ESP_LOGI(TAG, "多路复用器初始化完成。状态: PCA9548A=%s, HW178=%s", 
+             g_pca9548a_initialized ? "OK" : "SKIP",
+             g_hw178_initialized ? "OK" : "SKIP");
              
     return ESP_OK; // 总是返回成功，让程序继续运行
-    }
+}
 
 // Initialize multiplexer components
 esp_err_t multiplexer_init(void)
@@ -518,7 +577,7 @@ esp_err_t multiplexer_init_with_i2c_port(int i2c_port)
     if (display_i2c_handle != NULL) {
         ESP_LOGI(TAG, "Found existing I2C bus handle from display, using it for multiplexer");
         ret = pca9548a_init(display_i2c_handle);
-        if (ret != ESP_OK) {
+    if (ret != ESP_OK) {
             ESP_LOGE(TAG, "Failed to initialize PCA9548A with display I2C bus: %s", esp_err_to_name(ret));
             // 继续执行，不要中断整个初始化过程
         } else {
@@ -566,7 +625,7 @@ void multiplexer_deinit(void)
         pca9548a_delete(pca9548a_handle);
         pca9548a_handle = NULL;
         ESP_LOGI(TAG, "PCA9548A handle deleted");
-            }
+    }
     
     // 释放I2C驱动，确保在使用外部总线时不会删除总线句柄
     if (i2c_dev_handle != NULL) {
@@ -623,16 +682,16 @@ pca9548a_handle_t pca9548a_get_handle(void)
 esp_err_t pca9548a_select_channel(uint8_t channel)
 {
     if (!g_pca9548a_initialized || pca9548a_handle == NULL) {
-        ESP_LOGE(TAG, "PCA9548A not initialized");
-        return ESP_ERR_INVALID_STATE;
+        ESP_LOGI(TAG, "PCA9548A not initialized, cannot select channel");
+        return ESP_OK; // 返回OK让应用继续运行，而不是报错
     }
     
     ESP_LOGD(TAG, "Selecting PCA9548A channel: 0x%02X", channel);
     
     esp_err_t ret = pca9548a_select_channels(pca9548a_handle, channel);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to select channel: %s", esp_err_to_name(ret));
-        return ret;
+        ESP_LOGI(TAG, "Failed to select channel: %s", esp_err_to_name(ret));
+        return ESP_OK; // 返回OK让应用继续运行
     }
     
     // Read back the selected channels to confirm
@@ -641,22 +700,22 @@ esp_err_t pca9548a_select_channel(uint8_t channel)
     if (ret == ESP_OK) {
         ESP_LOGD(TAG, "Current PCA9548A channel: 0x%02X", current_channel);
         if (current_channel != channel) {
-            ESP_LOGW(TAG, "PCA9548A channel mismatch: requested=0x%02X, actual=0x%02X", 
+            ESP_LOGI(TAG, "PCA9548A channel mismatch: requested=0x%02X, actual=0x%02X", 
                     channel, current_channel);
             // 尝试再次设置通道
             ret = pca9548a_select_channels(pca9548a_handle, channel);
             if (ret != ESP_OK) {
-                ESP_LOGE(TAG, "Failed to re-select channel: %s", esp_err_to_name(ret));
+                ESP_LOGI(TAG, "Failed to re-select channel: %s", esp_err_to_name(ret));
             }
         }
     } else {
-        ESP_LOGW(TAG, "Failed to read current PCA9548A channel: %s", esp_err_to_name(ret));
+        ESP_LOGI(TAG, "Failed to read current PCA9548A channel: %s", esp_err_to_name(ret));
     }
     
     // 添加短暂延时以确保通道切换完成
     vTaskDelay(pdMS_TO_TICKS(2));
     
-    return ret;
+    return ESP_OK; // 始终返回OK让应用继续运行
 }
 
 // 选择级联复用器路径

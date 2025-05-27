@@ -41,6 +41,11 @@ set(SOURCES "audio_codecs/audio_codec.cc"
             "iot/things/speaker.cc"
             "ext/pcf8575.c"
             "ext/lu9685.c"
+            "web/web_server.cc"
+            "web/web_content.cc"
+            "web/html_content.cc"
+            "web/api_router.cc"
+            "web/api_handlers.cc"
             )
 
 set(INCLUDE_DIRS "." "display" "audio_codecs" "protocols" "audio_processing" "location")
@@ -52,7 +57,11 @@ if(CONFIG_ENABLE_WEB_SERVER AND CONFIG_ENABLE_WEB_CONTENT)
     set(HTML_FILES "${CMAKE_CURRENT_SOURCE_DIR}/assets/html/index.html"
                    "${CMAKE_CURRENT_SOURCE_DIR}/assets/html/move.html"
                    "${CMAKE_CURRENT_SOURCE_DIR}/assets/html/vision.html"
+                   "${CMAKE_CURRENT_SOURCE_DIR}/assets/html/servo_control.html"
                    "${CMAKE_CURRENT_SOURCE_DIR}/assets/html/ai.html")
+    
+    # JavaScript文件列表
+    set(JS_FILES "${CMAKE_CURRENT_SOURCE_DIR}/assets/html/js/api_client.js")
     
     # 检查文件是否存在
     foreach(HTML_FILE ${HTML_FILES})
@@ -63,8 +72,17 @@ if(CONFIG_ENABLE_WEB_SERVER AND CONFIG_ENABLE_WEB_CONTENT)
         endif()
     endforeach()
     
+    foreach(JS_FILE ${JS_FILES})
+        if(NOT EXISTS ${JS_FILE})
+            message(WARNING "JavaScript文件不存在: ${JS_FILE}")
+        else()
+            message(STATUS "找到JavaScript文件: ${JS_FILE}")
+        endif()
+    endforeach()
+    
     list(APPEND EMBED_FILES ${HTML_FILES})
-    message(STATUS "HTML文件将被嵌入到固件中")
+    list(APPEND EMBED_FILES ${JS_FILES})
+    message(STATUS "HTML和JavaScript文件将被嵌入到固件中")
 endif()
 
 # 根据配置添加Web组件

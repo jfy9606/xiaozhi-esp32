@@ -54,6 +54,15 @@
 #define DISPLAY_MIRROR_X true
 #define DISPLAY_MIRROR_Y true
 
+// ADC 资源冲突处理配置
+// 此开发板通过HW-178多路复用器连接电压传感器监控电池
+// 设置尝试顺序：优先ADC2，如果失败再尝试ADC1
+#define PREFER_ADC_UNIT ADC_UNIT_2
+#define FALLBACK_ADC_UNIT ADC_UNIT_1
+// 减少ADC超时和重试次数，避免长时间等待
+#define ADC_TIMEOUT_MS 20
+#define ADC_MAX_RETRIES 2
+
 // 电机控制引脚定义 - 使用Kconfig中的配置
 #ifdef CONFIG_ENABLE_MOTOR_CONTROLLER
 #define MOTOR_ENA_PIN CONFIG_MOTOR_ENA_PIN  // 电机A使能

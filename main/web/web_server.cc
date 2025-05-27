@@ -18,6 +18,8 @@
 #include "web/web_content.h"
 #include "web/html_content.h"
 #include "iot/thing_manager.h"
+#include "api_definitions.h"
+#include "api_handlers.h"
 #include <algorithm>
 #include <string>
 #include <vector>
@@ -142,6 +144,13 @@ bool WebServer::Start() {
     
     // 注册默认处理器
     RegisterDefaultHandlers();
+    
+    // 初始化API路由器
+    ApiRouter* router = ApiRouter::GetInstance();
+    router->Initialize(this);
+    
+    // 注册API处理器
+    InitializeApiHandlers(router);
     
     // 配置HTTP服务器
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();

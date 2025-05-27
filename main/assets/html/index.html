@@ -434,6 +434,18 @@
       <a href="/location" class="menu-item">
         <i class="fas fa-map-marker-alt"></i> 定位
       </a>
+      <a href="move.html" class="menu-item">
+        <i class="fas fa-bicycle"></i> 运动控制
+      </a>
+      <a href="vision.html" class="menu-item">
+        <i class="fas fa-eye"></i> 视觉识别
+      </a>
+      <a href="ai.html" class="menu-item">
+        <i class="fas fa-microphone"></i> AI语音
+      </a>
+      <a href="servo_control.html" class="menu-item">
+        <i class="fas fa-cog"></i> 舵机控制
+      </a>
     </div>
 
     <a href="#" class="nav-settings-button" id="settings-button" style="margin-top: 20px; display: inline-block;">
@@ -567,7 +579,7 @@
           const uptimeEl = document.getElementById('uptime');
           const freeHeapEl = document.getElementById('free-heap');
           const versionEl = document.getElementById('version');
-
+          
           // 统一处理数据源
           const systemData = (data.type === 'status_response' && data.system) ? data.system : data;
 
@@ -578,7 +590,7 @@
               const minutes = Math.floor((uptimeInSeconds % 3600) / 60);
               const seconds = uptimeInSeconds % 60;
               uptimeEl.textContent = 
-                `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+              `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
             } else {
               uptimeEl.textContent = '未知';
             }
@@ -627,10 +639,10 @@
       if (settingsButton) {
         settingsButton.addEventListener('click', function(e) {
           e.preventDefault();
-          settingsModal.style.display = 'block';
-          // 加载AI设置
-          loadAISettings();
-        });
+        settingsModal.style.display = 'block';
+        // 加载AI设置
+        loadAISettings();
+      });
       } else {
         console.error('设置按钮未找到');
       }

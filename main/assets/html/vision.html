@@ -1164,7 +1164,7 @@
                         }
 
                         if (state.hasOwnProperty(el.id)) { // 确保状态对象中有该ID的键
-                            updateValue(el, state[el.id], false);
+                        updateValue(el, state[el.id], false);
                         } else {
                             console.warn(`状态对象中缺少键: ${el.id}，控件不会被初始化。`);
                         }

@@ -30,6 +30,7 @@ typedef struct {
     uint8_t i2c_addr;       // LU9685 I2C地址，默认为0x80
     uint8_t pca9548a_channel; // LU9685连接的PCA9548A通道，默认为1
     bool use_pca9548a;      // 是否使用PCA9548A多路复用器
+    uint16_t frequency_hz;  // PWM频率 (Hz)，默认为50Hz，最高支持300Hz
 } lu9685_config_t;
 
 /**
@@ -57,6 +58,15 @@ esp_err_t lu9685_deinit(lu9685_handle_t handle);
  * @return esp_err_t ESP_OK表示成功，其他表示失败
  */
 esp_err_t lu9685_set_channel_angle(lu9685_handle_t handle, uint8_t channel, uint8_t angle);
+
+/**
+ * @brief 设置PWM频率
+ * 
+ * @param handle LU9685控制器句柄
+ * @param freq_hz 频率 (Hz)，范围：50-300Hz
+ * @return esp_err_t ESP_OK表示成功，其他表示失败
+ */
+esp_err_t lu9685_set_frequency(lu9685_handle_t handle, uint16_t freq_hz);
 
 /**
  * @brief 检查LU9685是否已初始化

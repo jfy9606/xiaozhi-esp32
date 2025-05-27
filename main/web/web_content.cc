@@ -86,6 +86,34 @@ void WebContent::RegisterStaticContent() {
     ESP_LOGI(TAG, "注册静态资源处理器");
     
     // 注册静态资源处理器
+    // 注册舵机控制页面
+    server_->RegisterHttpHandler("/servo_control.html", HTTP_GET, [](httpd_req_t* req) {
+        #if defined(_binary_servo_control_html_start) && defined(_binary_servo_control_html_end)
+        extern const char servo_control_html_start[] asm("_binary_servo_control_html_start");
+        extern const char servo_control_html_end[] asm("_binary_servo_control_html_end");
+        httpd_resp_set_type(req, "text/html");
+        return httpd_resp_send(req, servo_control_html_start, servo_control_html_end - servo_control_html_start);
+        #else
+        httpd_resp_set_type(req, "text/plain");
+        httpd_resp_send(req, "Servo control page not available", -1);
+        return ESP_OK;
+        #endif
+    });
+    
+    // 注册API客户端JS
+    server_->RegisterHttpHandler("/js/api_client.js", HTTP_GET, [](httpd_req_t* req) {
+        #if defined(_binary_api_client_js_start) && defined(_binary_api_client_js_end)
+        extern const char api_client_js_start[] asm("_binary_api_client_js_start");
+        extern const char api_client_js_end[] asm("_binary_api_client_js_end");
+        httpd_resp_set_type(req, "application/javascript");
+        return httpd_resp_send(req, api_client_js_start, api_client_js_end - api_client_js_start);
+        #else
+        httpd_resp_set_type(req, "text/plain");
+        httpd_resp_send(req, "API client JS not available", -1);
+        return ESP_OK;
+        #endif
+    });
+    
     // 主页和静态资源由WebServer的默认处理器处理，这里不需要额外注册
 }
 
