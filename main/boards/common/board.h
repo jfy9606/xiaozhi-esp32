@@ -10,6 +10,7 @@
 
 #include "led/led.h"
 #include "backlight.h"
+#include "camera.h"
 
 void* create_board();
 class AudioCodec;
@@ -41,6 +42,7 @@ public:
     virtual bool GetTemperature(float& esp32temp);
     virtual Display* GetDisplay();
     virtual i2c_master_bus_handle_t GetDisplayI2CBusHandle() { return nullptr; }
+    virtual Camera* GetCamera();
     virtual Http* CreateHttp() = 0;
     virtual WebSocket* CreateWebSocket() = 0;
     virtual Mqtt* CreateMqtt() = 0;
