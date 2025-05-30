@@ -143,6 +143,17 @@ void Application::CheckNewVersion() {
 
             auto& board = Board::GetInstance();
             board.SetPowerSaveMode(false);
+#if CONFIG_USE_WAKE_WORD_DETECT || CONFIG_USE_WAKE_WORD_DETECT_NO_AFE
+            wake_word_detect_.StopDetection();
+#endif
+            // 预先关闭音频输出，避免升级过程有音频操作
+            auto codec = board.GetAudioCodec();
+            codec->EnableInput(false);
+            codec->EnableOutput(false);
+            {
+                std::lock_guard<std::mutex> lock(mutex_);
+                audio_decode_queue_.clear();
+            }
             background_task_->WaitForCompletion();
             delete background_task_;
             background_task_ = nullptr;
@@ -603,9 +614,9 @@ void Application::Start() {
         }
     });
 
-#if CONFIG_USE_WAKE_WORD_DETECT
-    ESP_LOGI(TAG, "Initializing wake word detection");
+#if CONFIG_USE_WAKE_WORD_DETECT || CONFIG_USE_WAKE_WORD_DETECT_NO_AFE
     wake_word_detect_.Initialize(codec);
+#ifdef CONFIG_USE_WAKE_WORD_DETECT
     wake_word_detect_.OnWakeWordDetected([this](const std::string& wake_word) {
         ESP_LOGI(TAG, "Wake word callback triggered: %s", wake_word.c_str());
         Schedule([this, wake_word]() {
@@ -641,7 +652,7 @@ void Application::Start() {
             }
         });
     });
-    ESP_LOGI(TAG, "Starting wake word detection");
+#endif
     wake_word_detect_.StartDetection();
 #endif
 
@@ -907,7 +918,7 @@ void Application::OnAudioOutput() {
 }
 
 void Application::OnAudioInput() {
-#if CONFIG_USE_WAKE_WORD_DETECT
+#if CONFIG_USE_WAKE_WORD_DETECT || CONFIG_USE_WAKE_WORD_DETECT_NO_AFE
     if (wake_word_detect_.IsDetectionRunning()) {
         std::vector<int16_t> data;
         int samples = wake_word_detect_.GetFeedSize();
@@ -1017,7 +1028,7 @@ void Application::SetDeviceState(DeviceState state) {
             display->SetEmotion("neutral");
             audio_processor_->Stop();
             
-#if CONFIG_USE_WAKE_WORD_DETECT
+#if CONFIG_USE_WAKE_WORD_DETECT || CONFIG_USE_WAKE_WORD_DETECT_NO_AFE
             wake_word_detect_.StartDetection();
 #endif
             break;
@@ -1045,7 +1056,7 @@ void Application::SetDeviceState(DeviceState state) {
                     vTaskDelay(pdMS_TO_TICKS(120));
                 }
                 opus_encoder_->ResetState();
-#if CONFIG_USE_WAKE_WORD_DETECT
+#if CONFIG_USE_WAKE_WORD_DETECT || CONFIG_USE_WAKE_WORD_DETECT_NO_AFE
                 wake_word_detect_.StopDetection();
 #endif
                 audio_processor_->Start();
@@ -1056,7 +1067,7 @@ void Application::SetDeviceState(DeviceState state) {
 
             if (listening_mode_ != kListeningModeRealtime) {
                 audio_processor_->Stop();
-#if CONFIG_USE_WAKE_WORD_DETECT
+#if CONFIG_USE_WAKE_WORD_DETECT || CONFIG_USE_WAKE_WORD_DETECT_NO_AFE
                 wake_word_detect_.StartDetection();
 #endif
             }
