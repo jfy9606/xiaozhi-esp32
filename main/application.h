@@ -23,12 +23,7 @@
 #include "background_task.h"
 #include "audio_processor.h"
 #include "components.h"
-
-#if CONFIG_USE_WAKE_WORD_DETECT
-#include "wake_word_detect.h"
-#elif CONFIG_USE_WAKE_WORD_DETECT_NO_AFE
-#include "wake_word_no_afe.h"
-#endif
+#include "wake_word.h"
 
 // 只有在Web服务器启用时才包含相关头文件
 #if defined(CONFIG_ENABLE_WEB_SERVER)
@@ -97,14 +92,13 @@ public:
     bool InitComponents();
     void SetAecMode(AecMode mode);
     AecMode GetAecMode() const { return aec_mode_; }
+    BackgroundTask* GetBackgroundTask() const { return background_task_; }
 
 private:
     Application();
     ~Application();
 
-#if CONFIG_USE_WAKE_WORD_DETECT || CONFIG_USE_WAKE_WORD_DETECT_NO_AFE
-    WakeWordDetect wake_word_detect_;
-#endif
+    std::unique_ptr<WakeWord> wake_word_;
     std::unique_ptr<AudioProcessor> audio_processor_;
     Ota ota_;
     std::mutex mutex_;
@@ -133,7 +127,10 @@ private:
     // 用于维护音频包的timestamp队列
     std::deque<uint32_t> timestamp_queue_;
     std::mutex timestamp_mutex_;
+<<<<<<< HEAD
     std::atomic<uint32_t> last_output_timestamp_{0};
+=======
+>>>>>>> upstream/main
 
     std::unique_ptr<OpusEncoderWrapper> opus_encoder_;
     std::unique_ptr<OpusDecoderWrapper> opus_decoder_;
@@ -145,7 +142,7 @@ private:
     void MainEventLoop();
     void OnAudioInput();
     void OnAudioOutput();
-    void ReadAudio(std::vector<int16_t>& data, int sample_rate, int samples);
+    bool ReadAudio(std::vector<int16_t>& data, int sample_rate, int samples);
     void ResetDecoder();
     void SetDecodeSampleRate(int sample_rate, int frame_duration);
     void CheckNewVersion();
