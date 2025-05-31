@@ -813,7 +813,7 @@ void Application::Start() {
         display->SetChatMessage("system", "");
         // Play the success sound to indicate the device is ready
         ResetDecoder();
-        PlaySound(Lang::Sounds::P3_SUCCESS);
+        PlaySound(Lang::Sounds::P3_POPUP);
     }
 
     // Print heap stats
