@@ -36,6 +36,29 @@
 #include <driver/gpio.h>
 #include <arpa/inet.h>
 #include <cJSON.h>
+#include <memory>
+#include <string>
+#include <vector>
+#include <fstream>
+#include <sstream>
+#include <algorithm>
+#include <chrono>
+#include <cinttypes>
+#include <functional>
+#include <cstring>
+#include <mutex>
+#include <atomic>
+#include <deque>
+#include <thread>
+#include <regex>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "driver/i2c.h"
+#include "esp_timer.h"
+#include "esp_log.h"
+#include "esp_event.h"
+#include "esp_system.h"
+#include "nvs_flash.h"
 
 #define TAG "Application"
 

@@ -54,7 +54,7 @@ hw178_handle_t hw178_create(const hw178_config_t *config)
     }
 
     // 分配并初始化设备结构
-    hw178_handle_t handle = calloc(1, sizeof(struct hw178_dev_t));
+    hw178_handle_t handle = static_cast<hw178_dev_t*>(calloc(1, sizeof(struct hw178_dev_t)));
     if (handle == NULL) {
         ESP_LOGE(TAG, "Failed to allocate memory for device");
         return NULL;

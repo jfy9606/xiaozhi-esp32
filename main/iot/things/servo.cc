@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <vector>
 #include <string.h>
+#include <driver/i2c.h>
 
 // C语言实现部分，舵机控制器API
 extern "C" {
@@ -239,14 +240,16 @@ static esp_err_t init_lu9685_servo(servo_controller_t *controller) {
     
     // 初始化LU9685驱动
     lu9685_config_t lu9685_config = {
+        .i2c_port = I2C_NUM_0,
         .i2c_addr = CONFIG_LU9685_I2C_ADDR,
-        .pca9548a_channel = CONFIG_LU9685_PCA9548A_CHANNEL,
-        .use_pca9548a = true
+        .pwm_freq = 50,  // 舵机标准50Hz
+        .use_pca9548a = true,
+        .pca9548a_channel = CONFIG_LU9685_PCA9548A_CHANNEL
     };
     
     controller->lu9685.handle = lu9685_init(&lu9685_config);
     if (controller->lu9685.handle == NULL) {
-        ESP_LOGE(TAG_CTRL, "LU9685 initialization failed");
+        ESP_LOGE(TAG_CTRL, "Failed to initialize LU9685 servo controller");
         return ESP_FAIL;
     }
     
@@ -348,7 +351,8 @@ esp_err_t servo_controller_deinit(servo_controller_handle_t handle) {
     } else if (controller->type == SERVO_CONTROLLER_TYPE_LU9685) {
         // 释放LU9685控制器
         if (controller->lu9685.handle != NULL) {
-            lu9685_deinit(controller->lu9685.handle);
+            lu9685_handle_t handle_ptr = controller->lu9685.handle;
+            lu9685_deinit(&handle_ptr);
             controller->lu9685.handle = NULL;
         }
         

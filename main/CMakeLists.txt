@@ -39,8 +39,8 @@ set(SOURCES "audio_codecs/audio_codec.cc"
             "iot/things/light.cc"
             "iot/things/screen.cc"
             "iot/things/speaker.cc"
-            "ext/pcf8575.c"
-            "ext/lu9685.c"
+            "ext/pcf8575.cc"
+            "ext/lu9685.cc"
             "web/web_server.cc"
             "web/web_content.cc"
             "web/html_content.cc"
@@ -58,10 +58,14 @@ if(CONFIG_ENABLE_WEB_SERVER AND CONFIG_ENABLE_WEB_CONTENT)
                    "${CMAKE_CURRENT_SOURCE_DIR}/assets/html/move.html"
                    "${CMAKE_CURRENT_SOURCE_DIR}/assets/html/vision.html"
                    "${CMAKE_CURRENT_SOURCE_DIR}/assets/html/servo_control.html"
-                   "${CMAKE_CURRENT_SOURCE_DIR}/assets/html/ai.html")
+                   "${CMAKE_CURRENT_SOURCE_DIR}/assets/html/ai.html"
+                   "${CMAKE_CURRENT_SOURCE_DIR}/assets/html/location.html")
     
     # JavaScript文件列表
-    set(JS_FILES "${CMAKE_CURRENT_SOURCE_DIR}/assets/html/js/api_client.js")
+    file(GLOB JS_FILES "${CMAKE_CURRENT_SOURCE_DIR}/assets/html/js/*.js")
+    
+    # CSS文件列表
+    file(GLOB CSS_FILES "${CMAKE_CURRENT_SOURCE_DIR}/assets/html/css/*.css")
     
     # 检查文件是否存在
     foreach(HTML_FILE ${HTML_FILES})
@@ -80,9 +84,18 @@ if(CONFIG_ENABLE_WEB_SERVER AND CONFIG_ENABLE_WEB_CONTENT)
         endif()
     endforeach()
     
+    foreach(CSS_FILE ${CSS_FILES})
+        if(NOT EXISTS ${CSS_FILE})
+            message(WARNING "CSS文件不存在: ${CSS_FILE}")
+        else()
+            message(STATUS "找到CSS文件: ${CSS_FILE}")
+        endif()
+    endforeach()
+    
     list(APPEND EMBED_FILES ${HTML_FILES})
     list(APPEND EMBED_FILES ${JS_FILES})
-    message(STATUS "HTML和JavaScript文件将被嵌入到固件中")
+    list(APPEND EMBED_FILES ${CSS_FILES})
+    message(STATUS "HTML、JavaScript和CSS文件将被嵌入到固件中")
 endif()
 
 # 根据配置添加Web组件
@@ -338,7 +351,7 @@ if(CONFIG_IDF_TARGET_ESP32)
 endif()
 
 # 添加外部扩展组件文件
-file(GLOB EXT_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/ext/*.c)
+file(GLOB EXT_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/ext/*.cc)
 file(GLOB EXT_HEADERS ${CMAKE_CURRENT_SOURCE_DIR}/ext/include/*.h)
 list(APPEND SOURCES ${EXT_SOURCES})
 list(APPEND INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/ext ${CMAKE_CURRENT_SOURCE_DIR}/ext/include)

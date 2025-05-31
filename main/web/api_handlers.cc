@@ -14,8 +14,23 @@
 #include <esp_app_desc.h>
 #include "ext/include/lu9685.h"
 #include "../components.h"
+#include "web_server.h"
+#include "../iot/things/servo.h"
+
+// 确保函数声明存在
+extern "C" {
+    bool lu9685_is_initialized(void);
+    lu9685_handle_t lu9685_get_handle(void);
+    esp_err_t lu9685_set_frequency(lu9685_handle_t handle, uint16_t freq_hz);
+    esp_err_t lu9685_set_channel_angle(lu9685_handle_t handle, uint8_t channel, uint8_t angle);
+}
 
 static const char* TAG = "ApiHandlers";
+
+// 前向声明
+static void SendCommandResponse(int client_id, const char* status, const char* message);
+static ApiResponse ErrorResponse(ApiStatusCode code, const std::string& message);
+static ApiResponse SuccessResponse(const std::string& message, cJSON* data = nullptr);
 
 // 初始化所有API处理器
 void InitializeApiHandlers(ApiRouter* router) {
@@ -175,47 +190,43 @@ ApiResponse HandleSetServoAngle(httpd_req_t* req, cJSON* request_json) {
     return ApiRouter::CreateSuccessResponse(data);
 }
 
-ApiResponse HandleSetServoFrequency(httpd_req_t* req, cJSON* request_json) {
-    ESP_LOGI(TAG, "Processing set servo frequency request");
+/**
+ * @brief 处理设置舵机PWM频率
+ */
+ApiResponse HandleSetServoFrequency(httpd_req_t* req, cJSON* request) {
+    ESP_LOGI(TAG, "Handling set servo frequency request");
     
-    if (!request_json) {
-        return ApiRouter::CreateErrorResponse(ApiStatusCode::BAD_REQUEST, "Request body is required");
-    }
-    
-    // 检查LU9685舵机控制器是否已初始化
+    // 检查LU9685是否已初始化
     if (!lu9685_is_initialized()) {
-        return ApiRouter::CreateErrorResponse(ApiStatusCode::INTERNAL_ERROR, "Servo controller not initialized");
+        return ErrorResponse(ApiStatusCode::INTERNAL_ERROR, "LU9685 servo controller not initialized");
     }
     
-    // 提取频率参数
-    cJSON* freq_json = cJSON_GetObjectItem(request_json, "frequency");
-    
-    if (!cJSON_IsNumber(freq_json)) {
-        return ApiRouter::CreateErrorResponse(ApiStatusCode::BAD_REQUEST, "Invalid or missing frequency parameter");
+    // 获取频率参数
+    cJSON* freq_json = cJSON_GetObjectItem(request, "frequency");
+    if (!freq_json || !cJSON_IsNumber(freq_json)) {
+        return ErrorResponse(ApiStatusCode::BAD_REQUEST, "Missing or invalid frequency parameter");
     }
     
-    int frequency = freq_json->valueint;
-    
-    // 验证频率范围
-    if (frequency < 50 || frequency > 300) {
-        return ApiRouter::CreateErrorResponse(ApiStatusCode::BAD_REQUEST, "Frequency must be between 50 and 300 Hz");
+    int frequency = (int)cJSON_GetNumberValue(freq_json);
+    if (frequency < 24 || frequency > 1526) {
+        return ErrorResponse(ApiStatusCode::BAD_REQUEST, "Frequency out of range (24-1526Hz)");
     }
     
-    // 设置PWM频率
+    // 设置频率
     lu9685_handle_t handle = lu9685_get_handle();
-    esp_err_t ret = lu9685_set_frequency(handle, (uint16_t)frequency);
+    if (handle == NULL) {
+        return ErrorResponse(ApiStatusCode::INTERNAL_ERROR, "Failed to get LU9685 handle");
+    }
     
+    ESP_LOGI(TAG, "Setting servo frequency to %d Hz", frequency);
+    esp_err_t ret = lu9685_set_frequency(handle, (uint16_t)frequency);
     if (ret != ESP_OK) {
         char error_msg[64];
         snprintf(error_msg, sizeof(error_msg), "Failed to set frequency: %s", esp_err_to_name(ret));
-        return ApiRouter::CreateErrorResponse(ApiStatusCode::INTERNAL_ERROR, error_msg);
+        return ErrorResponse(ApiStatusCode::INTERNAL_ERROR, error_msg);
     }
     
-    // 创建成功响应
-    cJSON* data = cJSON_CreateObject();
-    cJSON_AddNumberToObject(data, "frequency", frequency);
-    
-    return ApiRouter::CreateSuccessResponse(data);
+    return SuccessResponse("Servo frequency set successfully");
 }
 
 //======================
@@ -299,44 +310,48 @@ void HandleServoSetAngleCommand(int client_id, cJSON* json) {
     SendServoSuccessResponse(client_id, "set_angle", channel, angle);
 }
 
-void HandleServoSetFrequencyCommand(int client_id, cJSON* json) {
-    // 提取频率参数
-    cJSON* freq_json = cJSON_GetObjectItem(json, "frequency");
+/**
+ * @brief 处理舵机设置频率命令
+ */
+void HandleServoSetFrequencyCommand(int client_id, cJSON* params) {
+    ESP_LOGI(TAG, "Handling servo set frequency command");
     
-    if (!cJSON_IsNumber(freq_json)) {
-        SendServoErrorResponse(client_id, "Invalid or missing frequency parameter");
+    // 检查LU9685是否已初始化
+    if (!lu9685_is_initialized()) {
+        SendCommandResponse(client_id, "error", "LU9685 servo controller not initialized");
         return;
     }
     
-    int frequency = freq_json->valueint;
-    
-    // 验证频率范围
-    if (frequency < 50 || frequency > 300) {
-        SendServoErrorResponse(client_id, "Frequency must be between 50 and 300 Hz");
+    // 获取频率参数
+    cJSON* freq_json = cJSON_GetObjectItem(params, "frequency");
+    if (!freq_json || !cJSON_IsNumber(freq_json)) {
+        SendCommandResponse(client_id, "error", "Missing or invalid frequency parameter");
         return;
     }
     
-    // 设置PWM频率
+    int frequency = (int)cJSON_GetNumberValue(freq_json);
+    if (frequency < 24 || frequency > 1526) {
+        SendCommandResponse(client_id, "error", "Frequency out of range (24-1526Hz)");
+        return;
+    }
+    
+    // 设置频率
     lu9685_handle_t handle = lu9685_get_handle();
-    esp_err_t ret = lu9685_set_frequency(handle, (uint16_t)frequency);
+    if (handle == NULL) {
+        SendCommandResponse(client_id, "error", "Failed to get LU9685 handle");
+        return;
+    }
     
+    ESP_LOGI(TAG, "Setting servo frequency to %d Hz", frequency);
+    esp_err_t ret = lu9685_set_frequency(handle, (uint16_t)frequency);
     if (ret != ESP_OK) {
         char error_msg[64];
         snprintf(error_msg, sizeof(error_msg), "Failed to set frequency: %s", esp_err_to_name(ret));
-        SendServoErrorResponse(client_id, error_msg);
+        SendCommandResponse(client_id, "error", error_msg);
         return;
     }
     
-    // 发送成功响应
-    cJSON* response = cJSON_CreateObject();
-    cJSON_AddStringToObject(response, "status", "ok");
-    cJSON_AddStringToObject(response, "cmd", "set_frequency");
-    cJSON_AddNumberToObject(response, "frequency", frequency);
-    
-    char* resp_str = cJSON_PrintUnformatted(response);
-    WebServer::GetActiveInstance()->SendWebSocketMessage(client_id, resp_str);
-    free(resp_str);
-    cJSON_Delete(response);
+    SendCommandResponse(client_id, "ok", "Servo frequency set successfully");
 }
 
 void SendServoErrorResponse(int client_id, const char* error_msg) {
@@ -622,4 +637,36 @@ ApiResponse HandleUpdateDeviceConfig(httpd_req_t* req, cJSON* request_json) {
     cJSON_AddStringToObject(data, "message", "Configuration updated successfully");
     
     return ApiRouter::CreateSuccessResponse(data);
+}
+
+// API响应函数
+static ApiResponse ErrorResponse(ApiStatusCode code, const std::string& message) {
+    return ApiRouter::CreateErrorResponse(code, message);
+}
+
+static ApiResponse SuccessResponse(const std::string& message, cJSON* data) {
+    if (data) {
+        // 在data中添加message字段
+        cJSON_AddStringToObject(data, "message", message.c_str());
+        ApiResponse resp = ApiRouter::CreateSuccessResponse(data);
+        return resp;
+    } else {
+        cJSON* msg_obj = cJSON_CreateObject();
+        cJSON_AddStringToObject(msg_obj, "message", message.c_str());
+        ApiResponse resp = ApiRouter::CreateSuccessResponse(msg_obj);
+        // 不删除msg_obj，因为CreateSuccessResponse会接管它
+        return resp;
+    }
+}
+
+// WebSocket命令响应
+static void SendCommandResponse(int client_id, const char* status, const char* message) {
+    cJSON* response = cJSON_CreateObject();
+    cJSON_AddStringToObject(response, "status", status);
+    cJSON_AddStringToObject(response, "message", message);
+    
+    char* resp_str = cJSON_PrintUnformatted(response);
+    WebServer::GetActiveInstance()->SendWebSocketMessage(client_id, resp_str);
+    free(resp_str);
+    cJSON_Delete(response);
 }

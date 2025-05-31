@@ -1,17 +1,3 @@
-// Copyright 2023-2024 Espressif Systems
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -37,6 +23,9 @@
 #include "include/hw178.h"
 #endif
 
+// 引入PCF8575头文件
+#include "include/pcf8575.h"
+
 // 引入多路复用器头文件
 #include "include/multiplexer.h"
 
@@ -61,13 +50,6 @@ static int default_i2c_port = DEFAULT_MULTIPLEXER_I2C_PORT;
 #ifdef CONFIG_ENABLE_HW178
 static hw178_handle_t hw178_handle = NULL;
 static adc_oneshot_unit_handle_t adc_handle = NULL;
-
-// Define HW-178 pins from Kconfig
-#define HW178_S0_PIN         CONFIG_HW178_S0_PIN
-#define HW178_S1_PIN         CONFIG_HW178_S1_PIN
-#define HW178_S2_PIN         CONFIG_HW178_S2_PIN
-#define HW178_S3_PIN         CONFIG_HW178_S3_PIN
-#define HW178_SIG_PIN        CONFIG_HW178_SIG_PIN
 
 // 添加gpio_to_adc_channel函数的前向声明
 static int gpio_to_adc_channel(gpio_num_t gpio_num);
@@ -274,12 +256,13 @@ static adc_oneshot_unit_handle_t adc_init(void)
         return NULL;
     }
     
-    adc_oneshot_chan_cfg_t config = {
-        .bitwidth = ADC_BITWIDTH_12,
+    // 配置ADC通道
+    adc_oneshot_chan_cfg_t adc_chan_cfg = {
         .atten = ADC_ATTEN_DB_12,
+        .bitwidth = ADC_BITWIDTH_DEFAULT
     };
     
-    ret = adc_oneshot_config_channel(adc_handle, adc_channel, &config);
+    ret = adc_oneshot_config_channel(adc_handle, static_cast<adc_channel_t>(adc_channel), &adc_chan_cfg);
     if (ret != ESP_OK) {
         ESP_LOGW(TAG, "ADC通道配置失败: %s", esp_err_to_name(ret));
         adc_oneshot_del_unit(adc_handle);
@@ -330,7 +313,9 @@ static int gpio_to_adc_channel(gpio_num_t gpio_num)
     return -1;  // 我们不再使用CONFIG_HW178_ADC_CHANNEL，直接返回-1表示无效
 #endif
 }
+#endif
 
+#ifdef CONFIG_ENABLE_HW178
 // Initialize HW178
 esp_err_t hw178_init(void)
 {
@@ -422,7 +407,7 @@ esp_err_t hw178_read_channel(hw178_channel_t channel, int *value)
     ESP_LOGD(TAG, "从GPIO %d使用ADC通道 %d读取模拟值", HW178_SIG_PIN, adc_channel);
     
     // Read ADC value
-    ret = adc_oneshot_read(adc_handle, adc_channel, value);
+    ret = adc_oneshot_read(adc_handle, static_cast<adc_channel_t>(adc_channel), value);
     if (ret != ESP_OK) {
         ESP_LOGW(TAG, "ADC读取失败: %s", esp_err_to_name(ret));
         return ret;
@@ -660,7 +645,7 @@ void multiplexer_deinit(void)
 
     g_multiplexer_initialized = false;
     ESP_LOGI(TAG, "Multiplexer components deinitialized");
-        }
+}
 
 #ifdef CONFIG_ENABLE_PCA9548A
 // Function to check if PCA9548A is initialized
@@ -724,7 +709,7 @@ esp_err_t pca9548a_select_cascade_path(const pca9548a_cascade_path_t *path)
     if (!g_pca9548a_initialized || pca9548a_handle == NULL) {
         ESP_LOGE(TAG, "PCA9548A not initialized");
         return ESP_ERR_INVALID_STATE;
-}
+    }
     
     if (path == NULL || path->level_count == 0 || path->level_count > 4) {
         ESP_LOGE(TAG, "Invalid cascade path");
@@ -829,4 +814,25 @@ i2c_master_bus_handle_t lvgl_port_get_i2c_bus_handle(void)
     ESP_LOGW(TAG, "2. Modify display code to make the I2C bus handle globally accessible");
     
     return NULL;
+}
+
+/**
+ * 为PCF8575选择正确的PCA9548A通道
+ */
+esp_err_t select_pca9548a_channel(pcf8575_dev_t *dev)
+{
+    if (!g_pca9548a_initialized || !pca9548a_handle) {
+        ESP_LOGE(TAG, "PCA9548A not initialized");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    return pca9548a_select_channel(dev->pca9548a_channel);
+}
+
+/**
+ * 别名函数，为了兼容性保留，实际调用select_pca9548a_channel
+ */
+esp_err_t select_pcf8575_channel(pcf8575_dev_t *dev)
+{
+    return select_pca9548a_channel(dev);
 } 

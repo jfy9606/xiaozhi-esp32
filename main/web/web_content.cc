@@ -12,6 +12,7 @@
 #include <sys/param.h>
 #include <wifi_station.h>
 #include <esp_heap_caps.h>
+#include <esp_http_server.h>
 
 #define TAG CONFIG_WEB_CONTENT_TAG
 
@@ -756,6 +757,14 @@ void WebContent::InitStaticHandlers() {
     server_->RegisterHttpHandler("/script.js", HTTP_GET, HandleStaticFile);
     #endif
     
+    // 注册CSS文件处理器
+    server_->RegisterHttpHandler("/css/*", HTTP_GET, HandleCssFile);
+    ESP_LOGI(TAG, "注册CSS文件处理器: /css/*");
+    
+    // 注册JS文件处理器
+    server_->RegisterHttpHandler("/js/*", HTTP_GET, HandleJsFile);
+    ESP_LOGI(TAG, "注册JS文件处理器: /js/*");
+    
     // 如果没有注册任何静态处理器，记录警告
     #if !defined(_binary_favicon_ico_start) && !defined(_binary_style_css_start) && !defined(_binary_script_js_start)
     ESP_LOGW(TAG, "没有找到嵌入式静态资源，请检查CMakeLists.txt配置");
@@ -881,4 +890,175 @@ void WebContent::PreloadStaticAssets() {
     size_t heap_free = esp_get_free_heap_size();
     ESP_LOGI(TAG, "静态资源加载完成, 剩余堆内存: %zu 字节", heap_free);
     #endif
+}
+
+// 处理CSS文件请求
+esp_err_t WebContent::HandleCssFile(httpd_req_t* req) {
+    const char* uri = req->uri;
+    ESP_LOGI(TAG, "处理CSS文件请求: %s", uri);
+    
+    // 提取文件名 - 例如从 "/css/common.css" 提取 "common.css"
+    const char* filename = strrchr(uri, '/');
+    if (!filename) {
+        httpd_resp_send_404(req);
+        return ESP_OK;
+    }
+    filename++; // 跳过'/'字符
+    
+    // 使用dlsym查找符号
+    void* start_ptr = nullptr;
+    void* end_ptr = nullptr;
+    
+    #pragma GCC diagnostic push
+    #pragma GCC diagnostic ignored "-Wpedantic"
+    // 这里使用一个技巧来检查嵌入文件是否存在
+    // 由于我们不能在运行时构建符号名，我们需要为每个文件添加明确的处理
+    
+    if (strcmp(filename, "common.css") == 0) {
+        extern const uint8_t common_css_start[] asm("_binary_common_css_start");
+        extern const uint8_t common_css_end[] asm("_binary_common_css_end");
+        start_ptr = (void*)common_css_start;
+        end_ptr = (void*)common_css_end;
+    } 
+    else if (strcmp(filename, "index.css") == 0) {
+        extern const uint8_t index_css_start[] asm("_binary_index_css_start");
+        extern const uint8_t index_css_end[] asm("_binary_index_css_end");
+        start_ptr = (void*)index_css_start;
+        end_ptr = (void*)index_css_end;
+    }
+    else if (strcmp(filename, "move.css") == 0) {
+        extern const uint8_t move_css_start[] asm("_binary_move_css_start");
+        extern const uint8_t move_css_end[] asm("_binary_move_css_end");
+        start_ptr = (void*)move_css_start;
+        end_ptr = (void*)move_css_end;
+    }
+    else if (strcmp(filename, "ai.css") == 0) {
+        extern const uint8_t ai_css_start[] asm("_binary_ai_css_start");
+        extern const uint8_t ai_css_end[] asm("_binary_ai_css_end");
+        start_ptr = (void*)ai_css_start;
+        end_ptr = (void*)ai_css_end;
+    }
+    else if (strcmp(filename, "vision.css") == 0) {
+        extern const uint8_t vision_css_start[] asm("_binary_vision_css_start");
+        extern const uint8_t vision_css_end[] asm("_binary_vision_css_end");
+        start_ptr = (void*)vision_css_start;
+        end_ptr = (void*)vision_css_end;
+    }
+    else if (strcmp(filename, "location.css") == 0) {
+        extern const uint8_t location_css_start[] asm("_binary_location_css_start");
+        extern const uint8_t location_css_end[] asm("_binary_location_css_end");
+        start_ptr = (void*)location_css_start;
+        end_ptr = (void*)location_css_end;
+    }
+    else if (strcmp(filename, "servo_control.css") == 0) {
+        extern const uint8_t servo_control_css_start[] asm("_binary_servo_control_css_start");
+        extern const uint8_t servo_control_css_end[] asm("_binary_servo_control_css_end");
+        start_ptr = (void*)servo_control_css_start;
+        end_ptr = (void*)servo_control_css_end;
+    }
+    else if (strcmp(filename, "device_config.css") == 0) {
+        extern const uint8_t device_config_css_start[] asm("_binary_device_config_css_start");
+        extern const uint8_t device_config_css_end[] asm("_binary_device_config_css_end");
+        start_ptr = (void*)device_config_css_start;
+        end_ptr = (void*)device_config_css_end;
+    }
+    #pragma GCC diagnostic pop
+    
+    if (start_ptr && end_ptr) {
+        size_t size = (uint8_t*)end_ptr - (uint8_t*)start_ptr;
+        httpd_resp_set_type(req, "text/css");
+        return httpd_resp_send(req, (const char*)start_ptr, size);
+    }
+    
+    // 文件未找到
+    httpd_resp_send_404(req);
+    return ESP_OK;
+}
+
+// 处理JS文件请求
+esp_err_t WebContent::HandleJsFile(httpd_req_t* req) {
+    const char* uri = req->uri;
+    ESP_LOGI(TAG, "处理JS文件请求: %s", uri);
+    
+    // 提取文件名 - 例如从 "/js/api_client.js" 提取 "api_client.js"
+    const char* filename = strrchr(uri, '/');
+    if (!filename) {
+        httpd_resp_send_404(req);
+        return ESP_OK;
+    }
+    filename++; // 跳过'/'字符
+    
+    // 使用dlsym查找符号
+    void* start_ptr = nullptr;
+    void* end_ptr = nullptr;
+    
+    #pragma GCC diagnostic push
+    #pragma GCC diagnostic ignored "-Wpedantic"
+    // 这里使用一个技巧来检查嵌入文件是否存在
+    // 由于我们不能在运行时构建符号名，我们需要为每个文件添加明确的处理
+    
+    if (strcmp(filename, "api_client.js") == 0) {
+        extern const uint8_t api_client_js_start[] asm("_binary_api_client_js_start");
+        extern const uint8_t api_client_js_end[] asm("_binary_api_client_js_end");
+        start_ptr = (void*)api_client_js_start;
+        end_ptr = (void*)api_client_js_end;
+    } 
+    else if (strcmp(filename, "index.js") == 0) {
+        extern const uint8_t index_js_start[] asm("_binary_index_js_start");
+        extern const uint8_t index_js_end[] asm("_binary_index_js_end");
+        start_ptr = (void*)index_js_start;
+        end_ptr = (void*)index_js_end;
+    }
+    else if (strcmp(filename, "move.js") == 0) {
+        extern const uint8_t move_js_start[] asm("_binary_move_js_start");
+        extern const uint8_t move_js_end[] asm("_binary_move_js_end");
+        start_ptr = (void*)move_js_start;
+        end_ptr = (void*)move_js_end;
+    }
+    else if (strcmp(filename, "ai.js") == 0) {
+        extern const uint8_t ai_js_start[] asm("_binary_ai_js_start");
+        extern const uint8_t ai_js_end[] asm("_binary_ai_js_end");
+        start_ptr = (void*)ai_js_start;
+        end_ptr = (void*)ai_js_end;
+    }
+    else if (strcmp(filename, "vision.js") == 0) {
+        extern const uint8_t vision_js_start[] asm("_binary_vision_js_start");
+        extern const uint8_t vision_js_end[] asm("_binary_vision_js_end");
+        start_ptr = (void*)vision_js_start;
+        end_ptr = (void*)vision_js_end;
+    }
+    else if (strcmp(filename, "location.js") == 0) {
+        extern const uint8_t location_js_start[] asm("_binary_location_js_start");
+        extern const uint8_t location_js_end[] asm("_binary_location_js_end");
+        start_ptr = (void*)location_js_start;
+        end_ptr = (void*)location_js_end;
+    }
+    else if (strcmp(filename, "servo_control.js") == 0) {
+        extern const uint8_t servo_control_js_start[] asm("_binary_servo_control_js_start");
+        extern const uint8_t servo_control_js_end[] asm("_binary_servo_control_js_end");
+        start_ptr = (void*)servo_control_js_start;
+        end_ptr = (void*)servo_control_js_end;
+    }
+    else if (strcmp(filename, "device_config.js") == 0) {
+        extern const uint8_t device_config_js_start[] asm("_binary_device_config_js_start");
+        extern const uint8_t device_config_js_end[] asm("_binary_device_config_js_end");
+        start_ptr = (void*)device_config_js_start;
+        end_ptr = (void*)device_config_js_end;
+    }
+    #pragma GCC diagnostic pop
+    
+    if (start_ptr && end_ptr) {
+        size_t size = (uint8_t*)end_ptr - (uint8_t*)start_ptr;
+        httpd_resp_set_type(req, "application/javascript");
+        return httpd_resp_send(req, (const char*)start_ptr, size);
+    }
+    
+    // 文件未找到
+    httpd_resp_send_404(req);
+    return ESP_OK;
+}
+
+// 为保持向后兼容而提供的常量别名
+extern "C" {
+    // ... existing code ...
 } 

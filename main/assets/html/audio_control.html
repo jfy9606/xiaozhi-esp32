@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>音频控制 - 小智ESP32</title>
+    <link rel="stylesheet" href="css/common.css">
+    <link rel="stylesheet" href="css/audio_control.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>音频控制面板</h1>
+            <p>小智ESP32音频流控制</p>
+        </header>
+        
+        <div class="status-bar">
+            <div>
+                <span class="status-indicator status-disconnected" id="connection-status"></span>
+                <span id="status-text">正在连接...</span>
+            </div>
+            <div>
+                <span>音频状态: </span>
+                <span id="audio-status">未启动</span>
+            </div>
+        </div>
+        
+        <div class="control-section">
+            <h2>音频控制</h2>
+            
+            <div class="control-panel">
+                <div class="volume-control">
+                    <span>音量:</span>
+                    <input type="range" id="volume-slider" class="volume-slider" min="0" max="100" value="80">
+                    <span id="volume-value" class="volume-value">80%</span>
+                </div>
+                
+                <div class="button-group">
+                    <button id="start-stream-btn">开始音频流</button>
+                    <button id="stop-stream-btn" disabled>停止音频流</button>
+                    <button id="mute-btn">静音</button>
+                    <button id="unmute-btn" disabled>取消静音</button>
+                </div>
+                
+                <div class="waveform-container">
+                    <div id="waveform" class="waveform">
+                        <p style="text-align: center; padding-top: 80px; color: #666;">音频流未启动</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="log-section">
+            <h2>操作日志</h2>
+            <div class="log-container" id="log-container">
+                <!-- 日志将由JavaScript动态生成 -->
+            </div>
+        </div>
+        
+        <div class="nav-links">
+            <a href="/" class="nav-link">返回首页</a>
+            <a href="device_config.html" class="nav-link">设备配置</a>
+        </div>
+    </div>
+
+    <!-- 引入API客户端库和页面脚本 -->
+    <script src="js/api_client.js"></script>
+    <script src="js/audio_control.js"></script>
+</body>
+</html> 

@@ -1,0 +1,946 @@
+/* vision.css - 小智ESP32视觉识别页面样式 */
+
+body {
+    font-family: 'Roboto', sans-serif;
+    margin: 0;
+    padding: 0;
+    background-color: #f5f5f5;
+    color: #333;
+}
+
+h2 {
+    color: #6200ea;
+    font-size: 1.5rem;
+    margin: 20px 0;
+}
+
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+    box-sizing: border-box;
+}
+
+.header {
+    background: linear-gradient(145deg, #6200ea, #3700b3);
+    color: white;
+    padding: 15px;
+    text-align: center;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+}
+
+.header h1 {
+    margin: 0;
+    font-size: 2rem;
+}
+
+.main-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+}
+
+@media (min-width: 800px) {
+    .main-content {
+        flex-direction: row;
+        align-items: flex-start;
+        justify-content: center;
+    }
+}
+
+section.main {
+    display: flex
+}
+
+#menu,section.main {
+    flex-direction: column
+}
+
+#menu {
+    display: none;
+    flex-wrap: nowrap;
+    min-width: auto;
+    background: #f0f0f0;
+    padding: 15px;
+    border-radius: 4px;
+    margin-top: 0;
+    margin-right: 0;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    border: 1px solid #d0d0d0;
+    overflow-x: hidden;
+    box-sizing: border-box;
+    width: 100%;
+}
+
+#content {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: stretch
+}
+
+figure {
+    padding: 0px;
+    margin: 0;
+    -webkit-margin-before: 0;
+    margin-block-start: 0;
+    -webkit-margin-after: 0;
+    margin-block-end: 0;
+    -webkit-margin-start: 0;
+    margin-inline-start: 0;
+    -webkit-margin-end: 0;
+    margin-inline-end: 0
+}
+
+figure img {
+    display: block;
+    width: 100%;
+    height: auto;
+    border-radius: 4px;
+    margin-top: 8px;
+}
+
+@media (min-width: 800px) and (orientation:landscape) {
+    #content {
+        display:flex;
+        flex-wrap: nowrap;
+        align-items: stretch
+    }
+
+    figure img {
+        display: block;
+        max-width: 100%;
+        max-height: calc(100vh - 40px);
+        width: auto;
+        height: auto
+    }
+
+    figure {
+        padding: 0 0 0 0px;
+        margin: 0;
+        -webkit-margin-before: 0;
+        margin-block-start: 0;
+        -webkit-margin-after: 0;
+        margin-block-end: 0;
+        -webkit-margin-start: 0;
+        margin-inline-start: 0;
+        -webkit-margin-end: 0;
+        margin-inline-end: 0
+    }
+}
+
+section#buttons {
+    display: flex;
+    flex-wrap: nowrap;
+    justify-content: space-between
+}
+
+#nav-toggle {
+    cursor: pointer;
+    display: block
+}
+
+#nav-toggle-cb {
+    outline: 0;
+    opacity: 0;
+    width: 0;
+    height: 0
+}
+
+#nav-toggle-cb:checked+#menu {
+    display: flex
+}
+
+.input-group {
+    margin-bottom: 15px;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.input-group > label {
+    flex: 0 0 40%;
+    font-weight: 500;
+    margin-bottom: 5px;
+    margin-right: 5px;
+    color: #333;
+}
+
+.input-group input,
+.input-group select {
+    flex: 1;
+    min-width: 0;
+    max-width: 100%;
+    padding: 5px;
+    box-sizing: border-box;
+}
+
+.range-max,.range-min {
+    display: inline-block;
+    padding: 0 5px
+}
+
+button, .button {
+    display: block;
+    margin: 5px;
+    padding: 0 12px;
+    border: 0;
+    line-height: 28px;
+    cursor: pointer;
+    color: #fff;
+    background: #ff3034;
+    border-radius: 5px;
+    font-size: 16px;
+    outline: 0
+}
+
+.save {
+    position: absolute;
+    right: 25px;
+    top: 0px;
+    height: 16px;
+    line-height: 16px;
+    padding: 0 4px;
+    text-decoration: none;
+    cursor: pointer
+}
+
+button:hover {
+    background: #ff494d
+}
+
+button:active {
+    background: #f21c21
+}
+
+button.disabled {
+    cursor: default;
+    background: #a0a0a0
+}
+
+input[type=range] {
+    -webkit-appearance: none;
+    width: 100%;
+    height: 22px;
+    background: #f0f0f0;
+    cursor: pointer;
+    margin: 0
+}
+
+input[type=range]:focus {
+    outline: 0
+}
+
+input[type=range]::-webkit-slider-runnable-track {
+    width: 100%;
+    height: 2px;
+    cursor: pointer;
+    background: #aaaaaa;
+    border-radius: 0;
+    border: 0 solid #aaaaaa;
+}
+
+input[type=range]::-webkit-slider-thumb {
+    border: 1px solid rgba(0,0,30,0);
+    height: 22px;
+    width: 22px;
+    border-radius: 50px;
+    background: #ff3034;
+    cursor: pointer;
+    -webkit-appearance: none;
+    margin-top: -11.5px
+}
+
+input[type=range]:focus::-webkit-slider-runnable-track {
+    background: #EFEFEF
+}
+
+input[type=range]::-moz-range-track {
+    width: 100%;
+    height: 2px;
+    cursor: pointer;
+    background: #aaaaaa;
+    border-radius: 0;
+    border: 0 solid #aaaaaa;
+}
+
+input[type=range]::-moz-range-thumb {
+    border: 1px solid rgba(0,0,30,0);
+    height: 22px;
+    width: 22px;
+    border-radius: 50px;
+    background: #ff3034;
+    cursor: pointer
+}
+
+input[type=range]::-ms-track {
+    width: 100%;
+    height: 2px;
+    cursor: pointer;
+    background: 0 0;
+    border-color: transparent;
+    color: transparent
+}
+
+input[type=range]::-ms-fill-lower {
+    background: #EFEFEF;
+    border: 0 solid #EFEFEF;
+    border-radius: 0
+}
+
+input[type=range]::-ms-fill-upper {
+    background: #EFEFEF;
+    border: 0 solid #EFEFEF;
+    border-radius: 0
+}
+
+input[type=range]::-ms-thumb {
+    border: 1px solid rgba(0,0,30,0);
+    height: 22px;
+    width: 22px;
+    border-radius: 50px;
+    background: #ff3034;
+    cursor: pointer;
+    height: 2px
+}
+
+input[type=range]:focus::-ms-fill-lower {
+    background: #EFEFEF
+}
+
+input[type=range]:focus::-ms-fill-upper {
+    background: #e0e0e0
+}
+
+.switch {
+    display: block;
+    position: relative;
+    line-height: 22px;
+    font-size: 16px;
+    height: 22px
+}
+
+.switch input {
+    outline: 0;
+    opacity: 0;
+    width: 0;
+    height: 0
+}
+
+.slider {
+    width: 50px;
+    height: 22px;
+    border-radius: 22px;
+    cursor: pointer;
+    background-color: grey
+}
+
+.slider,.slider:before {
+    display: inline-block;
+    transition: .4s
+}
+
+.slider:before {
+    position: relative;
+    content: "";
+    border-radius: 50%;
+    height: 16px;
+    width: 16px;
+    left: 4px;
+    top: 3px;
+    background-color: #fff
+}
+
+input:checked+.slider {
+    background-color: #ff3034
+}
+
+input:checked+.slider:before {
+    -webkit-transform: translateX(26px);
+    transform: translateX(26px)
+}
+
+select {
+    border: 1px solid #c0c0c0;
+    font-size: 14px;
+    height: 30px;
+    outline: 0;
+    border-radius: 5px;
+    background-color: #ffffff;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.image-container {
+    position: relative;
+    min-width: 160px
+}
+
+.close {
+    position: absolute;
+    right: 5px;
+    top: 5px;
+    background: #ff3034;
+    width: 16px;
+    height: 16px;
+    border-radius: 100px;
+    color: #fff;
+    text-align: center;
+    line-height: 18px;
+    cursor: pointer
+}
+
+.hidden {
+    display: none
+}
+
+input[type=text] {
+    border: 1px solid #c0c0c0;
+    font-size: 14px;
+    height: 20px;
+    margin: 1px;
+    outline: 0;
+    border-radius: 5px;
+    background-color: #ffffff;
+}
+
+.inline-button {
+    line-height: 20px;
+    margin: 2px 0;
+    padding: 5px 8px;
+    white-space: nowrap;
+}
+
+label.toggle-section-label {
+    cursor: pointer;
+    display: block
+}
+
+input.toggle-section-button {
+    outline: 0;
+    opacity: 0;
+    width: 0;
+    height: 0
+}
+
+input.toggle-section-button:checked+section.toggle-section {
+    display: none
+}
+
+#sidebar {
+    background-color: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    margin-bottom: 20px;
+    max-width: 100%;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+@media (min-width: 800px) {
+    #sidebar {
+        flex: 0 0 340px;
+        margin-right: 20px;
+        max-height: 85vh;
+        overflow-y: auto;
+        overflow-x: hidden;
+    }
+}
+
+#content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+figure {
+    margin: 0;
+    flex: 1;
+}
+
+#stream-container {
+    background-color: #222;
+    border-radius: 8px;
+    overflow: hidden;
+    position: relative;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+}
+
+#stream {
+    width: 100%;
+    height: auto;
+    display: block;
+}
+
+#logo {
+    background-color: #6200ea;
+    color: white;
+    padding: 15px;
+    text-align: center;
+    font-weight: 500;
+}
+
+#nav-toggle {
+    cursor: pointer;
+    font-size: 1.1rem;
+}
+
+#menu {
+    padding: 15px;
+}
+
+.input-group {
+    margin-bottom: 15px;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.input-group > label {
+    flex: 0 0 45%;
+    font-weight: 500;
+    margin-bottom: 5px;
+}
+
+.input-group input,
+.input-group select {
+    flex: 1;
+    min-width: 100px;
+    padding: 8px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-family: 'Roboto', sans-serif;
+}
+
+input[type=range] {
+    -webkit-appearance: none;
+    height: 6px;
+    background: #e0e0e0;
+    border-radius: 3px;
+    margin: 10px 0;
+}
+
+input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #6200ea;
+    cursor: pointer;
+    border: none;
+}
+
+input[type=range]::-moz-range-thumb {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #6200ea;
+    cursor: pointer;
+    border: none;
+}
+
+.range-min, .range-max {
+    font-size: 0.8rem;
+    color: #666;
+    margin: 0 5px;
+}
+
+button, .button {
+    background-color: #6200ea;
+    color: white;
+    border: none;
+    padding: 10px 15px;
+    border-radius: 4px;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: background-color 0.3s;
+    margin: 5px;
+    text-decoration: none;
+    display: inline-block;
+    text-align: center;
+}
+
+button:hover, .button:hover {
+    background-color: #3700b3;
+}
+
+/* 返回主页按钮 */
+.back-button {
+    display: inline-block;
+    margin: 10px 0;
+    padding: 8px 15px;
+    background-color: #6200ea;
+    color: white;
+    text-decoration: none;
+    border-radius: 4px;
+    font-weight: 500;
+    font-size: 0.9rem;
+    transition: background-color 0.3s;
+    text-align: center;
+}
+.back-button:hover {
+    background-color: #3700b3;
+}
+
+.save {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background-color: rgba(98, 0, 234, 0.7);
+    padding: 8px 12px;
+    font-size: 0.9rem;
+    border-radius: 4px;
+}
+
+.close {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background-color: rgba(244, 67, 54, 0.7);
+    color: white;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    text-align: center;
+    line-height: 30px;
+    font-size: 1.2rem;
+    cursor: pointer;
+    transition: background-color 0.3s;
+}
+
+.close:hover {
+    background-color: rgba(244, 67, 54, 1);
+}
+
+#buttons {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin: 20px 0;
+}
+
+#buttons button {
+    flex: 1;
+    margin: 5px;
+    min-width: 120px;
+}
+
+.switch {
+    position: relative;
+    display: inline-block;
+    width: 50px;
+    height: 24px;
+}
+
+.switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #ccc;
+    transition: .4s;
+    border-radius: 24px;
+}
+
+.slider:before {
+    position: absolute;
+    content: "";
+    height: 16px;
+    width: 16px;
+    left: 4px;
+    bottom: 4px;
+    background-color: white;
+    transition: .4s;
+    border-radius: 50%;
+}
+
+input:checked + .slider {
+    background-color: #6200ea;
+}
+
+input:checked + .slider:before {
+    transform: translateX(26px);
+}
+
+.hidden {
+    display: none;
+}
+
+/* 高级设置部分 */
+.section-title {
+    background-color: #f0f0f0;
+    padding: 10px 15px;
+    margin: 15px 0 10px 0;
+    border-radius: 4px;
+    font-weight: 500;
+    color: #6200ea;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    position: relative;
+}
+
+.section-title:after {
+    content: '▼';
+    font-size: 0.8rem;
+}
+
+.toggle-section-button:checked + .section-title:after {
+    content: '▲';
+}
+
+.toggle-section-button {
+    display: none;
+}
+
+.toggle-section {
+    padding: 0 15px;
+    overflow: hidden;
+    max-height: 0;
+    transition: max-height 0.3s ease-out;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.toggle-section-button:checked + .section-title + .toggle-section {
+    max-height: 1000px;
+}
+
+hr {
+    border: 0;
+    height: 1px;
+    background-color: #e0e0e0;
+    margin: 15px 0;
+}
+
+.text {
+    display: flex;
+    align-items: center;
+    margin-right: 5px;
+    flex: 1;
+}
+
+.text input {
+    flex: 1;
+    min-width: 0;
+    margin: 2px;
+    box-sizing: border-box;
+}
+
+/* 添加响应式设计 - 基本媒体查询 */
+@media (max-width: 480px) {
+    .header h1 {
+        font-size: 1.5rem;
+    }
+    
+    .container {
+        padding: 10px;
+    }
+    
+    button, .button {
+        padding: 8px 10px;
+        font-size: 14px;
+        margin: 3px;
+    }
+    
+    .input-group > label {
+        flex: 0 0 100%;
+        margin-bottom: 5px;
+    }
+    
+    .input-group input, 
+    .input-group select,
+    .switch {
+        width: 100%;
+    }
+    
+    #buttons button {
+        flex: 0 0 100%;
+    }
+}
+
+/* 平板设备 */
+@media (min-width: 481px) and (max-width: 768px) {
+    .input-group > label {
+        flex: 0 0 40%;
+    }
+    
+    #sidebar {
+        max-width: 100%;
+    }
+}
+
+/* 横屏手机和小平板 */
+@media (max-width: 768px) and (orientation: landscape) {
+    .main-content {
+        flex-direction: row;
+    }
+    
+    #sidebar {
+        flex: 0 0 300px;
+        max-height: 85vh;
+        overflow-y: auto;
+    }
+    
+    #content {
+        flex: 1;
+    }
+    
+    .input-group {
+        margin-bottom: 10px;
+    }
+    
+    .input-group > label {
+        flex: 0 0 40%;
+    }
+}
+
+/* 平板和桌面 - 横屏 */
+@media (min-width: 769px) and (orientation: landscape) {
+    .main-content {
+        flex-direction: row;
+    }
+    
+    #sidebar {
+        flex: 0 0 340px;
+    }
+    
+    #content {
+        flex: 1;
+    }
+    
+    figure img {
+        max-height: calc(100vh - 40px);
+    }
+}
+
+/* 竖屏平板和手机 */
+@media (max-width: 1024px) and (orientation: portrait) {
+    .main-content {
+        flex-direction: column;
+    }
+    
+    #sidebar, #content {
+        width: 100%;
+        max-width: 100%;
+    }
+    
+    #stream-container {
+        margin-top: 20px;
+    }
+}
+
+/* 高分辨率设备 */
+@media (min-width: 1200px) {
+    .container {
+        max-width: 1400px;
+    }
+    
+    #sidebar {
+        flex: 0 0 380px;
+    }
+}
+
+/* 修复设置框在移动端的问题 */
+@media (max-width: 600px) {
+    .toggle-section input[type="text"] {
+        max-width: 60px;
+    }
+    
+    .text {
+        flex: 0 0 auto;
+    }
+    
+    #set-reg-group, #get-reg-group, #set-offset-res-group, 
+    #set-total-res-group, #set-output-res-group {
+        flex-wrap: wrap;
+    }
+    
+    #menu {
+        padding: 10px;
+    }
+    
+    .section-title {
+        padding: 8px 10px;
+        font-size: 14px;
+    }
+    
+    .toggle-section {
+        padding: 0 10px;
+    }
+}
+
+/* 流动布局适配 */
+#stream-container {
+    position: relative;
+    overflow: hidden;
+    width: 100%;
+    height: 0;
+    padding-bottom: 75%; /* 4:3 比例 */
+}
+
+#stream {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+/* 确保在所有设备上菜单都能正常显示 */
+#nav-toggle-cb:checked + #menu {
+    display: flex;
+    flex-direction: column;
+}
+
+/* 优化横竖屏切换时的平滑过渡 */
+.main-content, #sidebar, #content, #menu {
+    transition: all 0.3s ease-in-out;
+}
+
+/* 修复iOS设备上的按钮和输入框样式 */
+button, input, select {
+    -webkit-appearance: none;
+    border-radius: 5px;
+}
+
+input[type=range] {
+    -webkit-appearance: none;
+}
+
+/* 优化触摸设备上的交互 */
+@media (pointer: coarse) {
+    button, .button, 
+    .slider, 
+    .section-title,
+    #nav-toggle {
+        min-height: 44px; /* 符合iOS触摸指南 */
+    }
+    
+    input, select {
+        font-size: 16px; /* 防止iOS上自动缩放 */
+    }
+    
+    .input-group {
+        margin-bottom: 15px;
+    }
+}
+
+/* 修复某些设备上的滚动问题 */
+body {
+    -webkit-overflow-scrolling: touch;
+} 

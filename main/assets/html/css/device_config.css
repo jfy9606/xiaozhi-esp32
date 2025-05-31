@@ -1,0 +1,78 @@
+/* device_config.css - 小智ESP32设备配置页面样式 */
+
+header {
+    text-align: center;
+    margin-bottom: 30px;
+}
+
+.status-bar {
+    background: #f8f9fa;
+    padding: 10px;
+    border-radius: 4px;
+    margin-bottom: 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.config-section {
+    margin-bottom: 30px;
+    padding: 15px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+}
+
+.radio-group {
+    display: flex;
+    gap: 15px;
+    margin-bottom: 10px;
+}
+
+.radio-label {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+}
+
+.radio-label input {
+    margin-right: 6px;
+}
+
+.volume-control {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    margin-top: 10px;
+}
+
+.volume-slider {
+    flex-grow: 1;
+}
+
+.volume-value {
+    font-weight: bold;
+    color: #0066cc;
+    min-width: 45px;
+    text-align: center;
+}
+
+/* 系统信息表格样式 */
+.system-info-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.system-info-table td {
+    padding: 8px;
+    border-bottom: 1px solid #ddd;
+}
+
+.system-info-table td:first-child {
+    font-weight: bold;
+    width: 40%;
+}
+
+/* 确保覆盖通用按钮样式中的margin-top */
+.btn-row button {
+    margin-top: 0;
+} 

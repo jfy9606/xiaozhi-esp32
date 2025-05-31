@@ -1,5 +1,4 @@
-#ifndef _WEB_CONTENT_H_
-#define _WEB_CONTENT_H_
+#pragma once
 
 #include <esp_http_server.h>
 #include "../components.h"
@@ -51,6 +50,10 @@ public:
     // 设置WiFi配置
     bool ConfigureWifi(const PSRAMString& ssid, const PSRAMString& password);
 
+    // 处理CSS和JS文件请求
+    static esp_err_t HandleCssFile(httpd_req_t* req);
+    static esp_err_t HandleJsFile(httpd_req_t* req);
+
 private:
     WebServer* server_;
     bool running_;
@@ -73,4 +76,16 @@ private:
     static size_t script_js_size;
 };
 
-#endif // _WEB_CONTENT_H_ 
+// 导出HTML内容获取函数，供C代码调用
+extern "C" {
+    size_t get_index_html_size();
+    size_t get_move_html_size();
+    size_t get_ai_html_size();
+    size_t get_vision_html_size();
+    size_t get_motor_html_size();
+    
+    const char* get_index_html_content();
+    const char* get_move_html_content();
+    const char* get_ai_html_content();
+    const char* get_vision_html_content();
+} 

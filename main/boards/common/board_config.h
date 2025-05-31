@@ -144,7 +144,7 @@ board_config_t* board_get_config(void);
 
 #ifndef PCA9548A_RESET_PIN
 #ifdef CONFIG_PCA9548A_RESET_PIN
-#define PCA9548A_RESET_PIN          (CONFIG_PCA9548A_RESET_PIN >= 0 ? CONFIG_PCA9548A_RESET_PIN : GPIO_NUM_NC)
+#define PCA9548A_RESET_PIN          ((gpio_num_t)(CONFIG_PCA9548A_RESET_PIN >= 0 ? CONFIG_PCA9548A_RESET_PIN : GPIO_NUM_NC))
 #else
 #define PCA9548A_RESET_PIN          GPIO_NUM_NC  // Not connected by default
 #endif
@@ -162,7 +162,7 @@ board_config_t* board_get_config(void);
 // Using Kconfig values if defined
 #ifndef HW178_S0_PIN
 #ifdef CONFIG_HW178_S0_PIN
-#define HW178_S0_PIN                CONFIG_HW178_S0_PIN
+#define HW178_S0_PIN                ((gpio_num_t)CONFIG_HW178_S0_PIN)
 #else
 #define HW178_S0_PIN                GPIO_NUM_NC  // Not connected by default
 #endif
@@ -170,7 +170,7 @@ board_config_t* board_get_config(void);
 
 #ifndef HW178_S1_PIN
 #ifdef CONFIG_HW178_S1_PIN
-#define HW178_S1_PIN                CONFIG_HW178_S1_PIN
+#define HW178_S1_PIN                ((gpio_num_t)CONFIG_HW178_S1_PIN)
 #else
 #define HW178_S1_PIN                GPIO_NUM_NC  // Not connected by default
 #endif
@@ -178,7 +178,7 @@ board_config_t* board_get_config(void);
 
 #ifndef HW178_S2_PIN
 #ifdef CONFIG_HW178_S2_PIN
-#define HW178_S2_PIN                CONFIG_HW178_S2_PIN
+#define HW178_S2_PIN                ((gpio_num_t)CONFIG_HW178_S2_PIN)
 #else
 #define HW178_S2_PIN                GPIO_NUM_NC  // Not connected by default
 #endif
@@ -186,9 +186,17 @@ board_config_t* board_get_config(void);
 
 #ifndef HW178_S3_PIN
 #ifdef CONFIG_HW178_S3_PIN
-#define HW178_S3_PIN                CONFIG_HW178_S3_PIN
+#define HW178_S3_PIN                ((gpio_num_t)CONFIG_HW178_S3_PIN)
 #else
 #define HW178_S3_PIN                GPIO_NUM_NC  // Not connected by default
+#endif
+#endif
+
+#ifndef HW178_SIG_PIN
+#ifdef CONFIG_HW178_SIG_PIN
+#define HW178_SIG_PIN               ((gpio_num_t)CONFIG_HW178_SIG_PIN)
+#else
+#define HW178_SIG_PIN               GPIO_NUM_NC  // Not connected by default
 #endif
 #endif
 

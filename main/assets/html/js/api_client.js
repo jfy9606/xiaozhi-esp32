@@ -100,6 +100,23 @@ class XiaozhiAPI {
         return this.request('POST', '/servo/frequency', { frequency });
     }
 
+    /**
+     * 获取设备配置
+     * @returns {Promise<Object>} - 设备配置信息
+     */
+    async getDeviceConfig() {
+        return this.request('GET', '/device/config');
+    }
+    
+    /**
+     * 更新设备配置
+     * @param {Object} config - 设备配置对象
+     * @returns {Promise<Object>} - 响应结果
+     */
+    async updateDeviceConfig(config) {
+        return this.request('POST', '/device/config', config);
+    }
+
     //==================
     // WebSocket API 方法
     //==================
@@ -271,6 +288,50 @@ class XiaozhiAPI {
     unsubscribeSensorData() {
         this.sendWebSocketMessage('/sensor', {
             cmd: 'unsubscribe'
+        });
+    }
+    
+    //==================
+    // 音频处理API
+    //==================
+    
+    /**
+     * 连接到音频处理WebSocket
+     * @param {Object} callbacks - 回调函数对象
+     */
+    connectAudioControl(callbacks = {}) {
+        return this.connectWebSocket('/audio', {
+            ...callbacks,
+            autoReconnect: true
+        });
+    }
+    
+    /**
+     * 开始音频流
+     */
+    startAudioStream() {
+        this.sendWebSocketMessage('/audio', {
+            cmd: 'start_stream'
+        });
+    }
+    
+    /**
+     * 停止音频流
+     */
+    stopAudioStream() {
+        this.sendWebSocketMessage('/audio', {
+            cmd: 'stop_stream'
+        });
+    }
+    
+    /**
+     * 调整音量
+     * @param {number} volume - 音量值 (0-100)
+     */
+    setAudioVolume(volume) {
+        this.sendWebSocketMessage('/audio', {
+            cmd: 'volume',
+            value: volume
         });
     }
 }

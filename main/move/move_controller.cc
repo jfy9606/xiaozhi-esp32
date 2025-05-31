@@ -1,16 +1,30 @@
 #include "move_controller.h"
-#include <esp_log.h>
-#include <cmath>
-#include <freertos/FreeRTOS.h>
-#include <freertos/task.h>
-#include <driver/gpio.h>
-#include <driver/ledc.h>
-#include "../boards/bread-compact-wifi/config.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "driver/ledc.h"
+#include "driver/gpio.h"
+#include "driver/i2c.h"
+#include "esp_log.h"
+#include "esp_err.h"
+
+#include "board_config.h"
+#include "ext/include/pcf8575.h"
+#include "ext/include/pca9548a.h"
+#include "ext/include/multiplexer.h"
 #include "../iot/thing_manager.h"
 #include "../iot/things/motor.h"
 #include "../iot/things/servo.h"
 #include <cJSON.h>
 #include "../ext/include/lu9685.h"
+
+// 添加外部声明
+extern "C" {
+    bool lu9685_is_initialized(void);
+    lu9685_handle_t lu9685_get_handle(void);
+}
 
 // 定义GPIO电平
 #define HIGH 1

@@ -1,17 +1,3 @@
-// Copyright 2023-2024 Espressif Systems
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
 #include <memory>
 #include <cstring>
 
@@ -20,6 +6,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_timer.h"
+#include "esp_rom_sys.h"
 
 #include "board_config.h"
 #include "../thing.h"
@@ -28,423 +15,532 @@
 
 static constexpr char TAG[] = "Ultrasonic";
 
+// Thing类型定义
+#define XT_ULTRASONIC_SENSOR "ultrasonic_sensor"
+
 // Default configurations
 #define DEFAULT_SAFE_DISTANCE_CM         15                  // Default safe distance in cm for obstacle detection
 #define DEFAULT_MAX_DISTANCE_CM          400                 // Maximum measurable distance in cm
 #define DEFAULT_MIN_DISTANCE_CM          2                   // Minimum reliable distance in cm
-#define DEFAULT_MEASUREMENT_INTERVAL_MS  200                 // Interval between measurements in ms
-#define SOUND_SPEED_CM_US                0.0343              // Speed of sound in cm/μs
+#define DEFAULT_ECHO_TIMEOUT_US          25000               // Echo timeout in microseconds (for 400cm max distance)
+#define DEFAULT_MEASURE_INTERVAL_MS      100                 // Measurement interval in ms
 
-#define US_TIMEOUT_MS                    25       // Maximum time to wait for echo
-#define US_NO_OBSTACLE_DISTANCE_CM       400      // Default distance when no obstacle detected
-
-// Ultrasonic sensor GPIO pins for direct connection
-#ifdef CONFIG_US_CONNECTION_DIRECT
-#define US_FRONT_TRIG_PIN                CONFIG_US_FRONT_TRIG_PIN
-#define US_FRONT_ECHO_PIN                CONFIG_US_FRONT_ECHO_PIN
-#define US_REAR_TRIG_PIN                 CONFIG_US_REAR_TRIG_PIN
-#define US_REAR_ECHO_PIN                 CONFIG_US_REAR_ECHO_PIN
-#endif
-
-// PCF8575 pins for ultrasonic sensors
-#ifdef CONFIG_US_CONNECTION_PCF8575
-#define US_PCF8575_FRONT_TRIG_PIN        CONFIG_US_PCF8575_FRONT_TRIG_PIN
-#define US_PCF8575_FRONT_ECHO_PIN        CONFIG_US_PCF8575_FRONT_ECHO_PIN
-#define US_PCF8575_REAR_TRIG_PIN         CONFIG_US_PCF8575_REAR_TRIG_PIN
-#define US_PCF8575_REAR_ECHO_PIN         CONFIG_US_PCF8575_REAR_ECHO_PIN
-#endif
+// Sensor constants
+#define SC_SOUND_SPEED_M_S               343                 // Sound speed in m/s at 20°C
+#define SC_MIN_DISTANCE_CM               DEFAULT_MIN_DISTANCE_CM
+#define SC_MAX_DISTANCE_CM               DEFAULT_MAX_DISTANCE_CM
+#define SC_ONE_ECHO_TIMEOUT_US           DEFAULT_ECHO_TIMEOUT_US
+#define SC_IO_MODE_OUTPUT                1
+#define SC_IO_MODE_INPUT                 0
+#define SC_IO_LEVEL_HIGH                 1
+#define SC_IO_LEVEL_LOW                  0
 
 namespace iot {
 
-class US : public Thing {
-public:
-    US() : Thing("US", "Ultrasonic distance sensor") {
-        // Add properties
-        properties_.AddNumberProperty("front_distance", "Front distance in cm", [this]() -> float {
-            return front_distance_;
-        });
-        
-        properties_.AddNumberProperty("rear_distance", "Rear distance in cm", [this]() -> float {
-            return rear_distance_;
-        });
-        
-        properties_.AddBooleanProperty("front_obstacle_detected", "Front obstacle detected", [this]() -> bool {
-            return front_obstacle_detected_;
-        });
-        
-        properties_.AddBooleanProperty("rear_obstacle_detected", "Rear obstacle detected", [this]() -> bool {
-            return rear_obstacle_detected_;
-        });
-        
-        properties_.AddNumberProperty("front_safe_distance", "Front safe distance in cm", [this]() -> float {
-            return front_safe_distance_;
-        });
-        
-        properties_.AddNumberProperty("rear_safe_distance", "Rear safe distance in cm", [this]() -> float {
-            return rear_safe_distance_;
-        });
-            
-        // Add configuration method
-        ParameterList configParams;
-        configParams.AddParameter(Parameter("front_safe_distance", "Front safety distance threshold in cm", kValueTypeNumber));
-        configParams.AddParameter(Parameter("rear_safe_distance", "Rear safety distance threshold in cm", kValueTypeNumber));
-        configParams.AddParameter(Parameter("max_distance", "Maximum measurable distance in cm", kValueTypeNumber));
-        
-        methods_.AddMethod("configure", "Configure the ultrasonic sensors", configParams,
-            [this](const ParameterList& parameters) {
-                // Update the safety distance thresholds
-                try {
-                    front_safe_distance_ = parameters["front_safe_distance"].number();
-                } catch(...) {
-                    // Keep the default if not provided
-                }
-                
-                try {
-                    rear_safe_distance_ = parameters["rear_safe_distance"].number();
-                } catch(...) {
-                    // Keep the default if not provided
-                }
-                
-                try {
-                    max_distance_ = parameters["max_distance"].number();
-                } catch(...) {
-                    // Keep the default if not provided
-                    }
-                    
-                if (front_safe_distance_ <= 0) front_safe_distance_ = DEFAULT_SAFE_DISTANCE_CM;
-                if (rear_safe_distance_ <= 0) rear_safe_distance_ = DEFAULT_SAFE_DISTANCE_CM;
-                if (max_distance_ <= 0) max_distance_ = DEFAULT_MAX_DISTANCE_CM;
-                
-                ESP_LOGI(TAG, "Configured front_safe_distance: %.2f, rear_safe_distance: %.2f, max_distance: %.2f", 
-                    front_safe_distance_, rear_safe_distance_, max_distance_);
-                
-                return true;
-            });
-    }
+enum ultrasonic_position_t {
+    USP_FRONT = 0,
+    USP_REAR,
+    USP_LEFT,
+    USP_RIGHT,
+    USP_MAX
+};
 
-    ~US() {
-        DeInit();
-    }
+enum ultrasonic_connection_t {
+    DIRECT_GPIO = 0,
+    PCF8575_GPIO,
+};
 
-    void Init() {
-        ESP_LOGI(TAG, "Initializing US ultrasonic sensors");
+struct ultrasonic_sensor_config_t {
+    ultrasonic_position_t position;
+    ultrasonic_connection_t connection_type;
+    union {
+        struct {
+            gpio_num_t trigger_pin;
+            gpio_num_t echo_pin;
+        } gpio;
+        struct {
+            pcf8575_handle_t handle;
+            int trigger_pin;
+            int echo_pin;
+        } pcf8575;
+    };
+    float max_distance_cm;
+    float min_distance_cm;
+    uint32_t echo_timeout_us;
+    bool is_initialized;
+};
+
+// 直接使用pcf8575.h中已经定义的函数来设置和读取引脚电平
+static esp_err_t pcf8575_set_trigger(ultrasonic_sensor_config_t* sensor, uint32_t level) {
+    if (!sensor || sensor->connection_type != PCF8575_GPIO) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    return pcf8575_set_level(sensor->pcf8575.handle, sensor->pcf8575.trigger_pin, level);
+}
+
+static esp_err_t pcf8575_get_echo(ultrasonic_sensor_config_t* sensor, uint32_t* level) {
+    if (!sensor || sensor->connection_type != PCF8575_GPIO || !level) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    return pcf8575_get_level(sensor->pcf8575.handle, sensor->pcf8575.echo_pin, level);
+}
+
+class UltrasonicSensor : public Thing {
+private:
+    std::unique_ptr<ultrasonic_sensor_config_t[]> sensors_;
+    size_t sensor_count_ = 0;
+    float safe_distance_cm_ = DEFAULT_SAFE_DISTANCE_CM;
+    bool front_obstacle_ = false;
+    bool rear_obstacle_ = false;
+    
+    TaskHandle_t measure_task_handle_ = nullptr;
+    esp_timer_handle_t measure_timer_handle_ = nullptr;
+    SemaphoreHandle_t measure_mutex_ = nullptr;
+    
+    uint32_t measure_interval_ms_ = DEFAULT_MEASURE_INTERVAL_MS;
+    
+    static void measure_task(void* arg) {
+        UltrasonicSensor* us = static_cast<UltrasonicSensor*>(arg);
+        while (true) {
+            ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+            us->measure_all();
+        }
+    }
+    
+    static void measure_timer_callback(void* arg) {
+        UltrasonicSensor* us = static_cast<UltrasonicSensor*>(arg);
+        if (us->measure_task_handle_) {
+            xTaskNotifyGive(us->measure_task_handle_);
+        }
+    }
+    
+    bool init_gpio_sensor(ultrasonic_sensor_config_t* sensor) {
+        if (!sensor || sensor->connection_type != DIRECT_GPIO) {
+            return false;
+        }
         
-#ifdef CONFIG_US_CONNECTION_PCF8575
-        // 检查PCF8575 GPIO扩展器是否已初始化
-        if (!pcf8575_is_initialized()) {
-            // 检查PCA9548A是否已初始化，因为PCF8575连接在PCA9548A上
-            if (!pca9548a_is_initialized()) {
-                ESP_LOGE(TAG, "PCA9548A multiplexer is not enabled, but ultrasonic sensors are configured to use PCF8575");
-                ESP_LOGE(TAG, "Please enable PCA9548A and PCF8575 in menuconfig or change ultrasonic sensor connection type");
-                return;
+        // Configure trigger pin as output
+        gpio_config_t io_conf = {};
+        io_conf.mode = GPIO_MODE_OUTPUT;
+        io_conf.pin_bit_mask = (1ULL << sensor->gpio.trigger_pin);
+        io_conf.intr_type = GPIO_INTR_DISABLE;
+        io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
+        io_conf.pull_up_en = GPIO_PULLUP_DISABLE;
+        if (gpio_config(&io_conf) != ESP_OK) {
+            return false;
+        }
+        
+        // Configure echo pin as input
+        io_conf.mode = GPIO_MODE_INPUT;
+        io_conf.pin_bit_mask = (1ULL << sensor->gpio.echo_pin);
+        io_conf.intr_type = GPIO_INTR_DISABLE;
+        io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
+        io_conf.pull_up_en = GPIO_PULLUP_ENABLE;
+        if (gpio_config(&io_conf) != ESP_OK) {
+            return false;
+        }
+        
+        // Set initial level of trigger pin to LOW
+        gpio_set_level(sensor->gpio.trigger_pin, 0);
+        
+        sensor->is_initialized = true;
+        return true;
+    }
+    
+    bool init_pcf8575_sensor(ultrasonic_sensor_config_t* sensor) {
+        if (!sensor || sensor->connection_type != PCF8575_GPIO || !sensor->pcf8575.handle) {
+            return false;
+        }
+        
+        // Set trigger pin as output (LOW)
+        esp_err_t err = pcf8575_set_level(sensor->pcf8575.handle, sensor->pcf8575.trigger_pin, 0);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to set trigger pin as output: %s", esp_err_to_name(err));
+            return false;
+        }
+        
+        sensor->is_initialized = true;
+        return true;
+    }
+    
+    float measure_distance_cm(ultrasonic_sensor_config_t* sensor) {
+        if (!sensor || !sensor->is_initialized) {
+            return -1;
+        }
+        
+        esp_err_t err;
+        uint32_t echo_level = 0;
+        
+        // 触发超声波测距过程
+        if (sensor->connection_type == DIRECT_GPIO) {
+            // 设置触发引脚为高电平
+            gpio_set_level(sensor->gpio.trigger_pin, 1);
+            // 保持高电平至少10us
+            esp_rom_delay_us(10);
+            // 设置触发引脚为低电平
+            gpio_set_level(sensor->gpio.trigger_pin, 0);
+        } else {
+            // 使用PCF8575设置触发引脚
+            err = pcf8575_set_trigger(sensor, 1);
+            if (err != ESP_OK) {
+                return -1;
             }
-            
-            // 如果PCA9548A已初始化但PCF8575未初始化，尝试初始化PCF8575
-            ESP_LOGI(TAG, "Initializing PCF8575 for ultrasonic sensors");
-            esp_err_t ret = pcf8575_init();
-            if (ret != ESP_OK) {
-                ESP_LOGE(TAG, "Failed to initialize PCF8575: %s", esp_err_to_name(ret));
-                return;
+            // 保持高电平至少10us
+            esp_rom_delay_us(10);
+            // 设置触发引脚为低电平
+            err = pcf8575_set_trigger(sensor, 0);
+            if (err != ESP_OK) {
+                return -1;
             }
         }
         
-        ESP_LOGI(TAG, "Using PCF8575 GPIO expander for ultrasonic sensors");
+        // 等待回波引脚变为高电平
+        int64_t start_time = esp_timer_get_time();
+        while (true) {
+            if (sensor->connection_type == DIRECT_GPIO) {
+                echo_level = gpio_get_level(sensor->gpio.echo_pin);
+            } else {
+                err = pcf8575_get_echo(sensor, &echo_level);
+                if (err != ESP_OK) {
+                    return -1;
+                }
+            }
+            
+            if (echo_level == 1) break;
+            
+            // 检查是否超时（没有回波）
+            if (esp_timer_get_time() - start_time > sensor->echo_timeout_us) {
+                return -1;
+            }
+            
+            esp_rom_delay_us(1);  // 小延迟防止占用过多CPU
+        }
         
-        // 获取PCF8575句柄
-        pcf8575_handle_t pcf_handle = pcf8575_get_handle();
-        if (pcf_handle == NULL) {
-            ESP_LOGE(TAG, "Failed to get PCF8575 handle");
+        // 记录回波开始时间
+        int64_t echo_start = esp_timer_get_time();
+        
+        // 等待回波引脚变为低电平
+        while (true) {
+            if (sensor->connection_type == DIRECT_GPIO) {
+                echo_level = gpio_get_level(sensor->gpio.echo_pin);
+            } else {
+                err = pcf8575_get_echo(sensor, &echo_level);
+                if (err != ESP_OK) {
+                    return -1;
+                }
+            }
+            
+            if (echo_level == 0) break;
+            
+            // 检查是否超时（回波时间过长）
+            if (esp_timer_get_time() - echo_start > sensor->echo_timeout_us) {
+                return -1;
+            }
+            
+            esp_rom_delay_us(1);  // 小延迟防止占用过多CPU
+        }
+        
+        // 计算回波持续时间（微秒）
+        int64_t echo_duration = esp_timer_get_time() - echo_start;
+        
+        // 计算距离：距离 = (声速 × 时间) ÷ 2
+        // 声速约为343米/秒，转换为厘米/微秒为0.0343厘米/微秒
+        float distance_cm = static_cast<float>(echo_duration) * 0.0343 / 2.0;
+        
+        // 距离范围检查
+        if (distance_cm < sensor->min_distance_cm || distance_cm > sensor->max_distance_cm) {
+            return -1;
+        }
+        
+        return distance_cm;
+    }
+    
+    void measure_all() {
+        if (!measure_mutex_) return;
+        
+        // 获取互斥锁
+        if (xSemaphoreTake(measure_mutex_, pdMS_TO_TICKS(10)) == pdFALSE) {
             return;
         }
         
-        // 配置PCF8575上的超声波引脚
-        ESP_LOGI(TAG, "Configuring PCF8575 pins for ultrasonic sensors");
-        ESP_LOGI(TAG, "Front sensor - Trig: P%02d, Echo: P%02d", 
-                US_PCF8575_FRONT_TRIG_PIN, US_PCF8575_FRONT_ECHO_PIN);
-        ESP_LOGI(TAG, "Rear sensor - Trig: P%02d, Echo: P%02d", 
-                US_PCF8575_REAR_TRIG_PIN, US_PCF8575_REAR_ECHO_PIN);
+        bool new_front_obstacle = false;
+        bool new_rear_obstacle = false;
         
-        // 配置触发引脚为输出模式，回响引脚为输入模式
-        pcf8575_set_gpio_mode(pcf_handle, (pcf8575_gpio_t)US_PCF8575_FRONT_TRIG_PIN, PCF8575_GPIO_MODE_OUTPUT);
-        pcf8575_set_gpio_mode(pcf_handle, (pcf8575_gpio_t)US_PCF8575_FRONT_ECHO_PIN, PCF8575_GPIO_MODE_INPUT);
-        pcf8575_set_gpio_mode(pcf_handle, (pcf8575_gpio_t)US_PCF8575_REAR_TRIG_PIN, PCF8575_GPIO_MODE_OUTPUT);
-        pcf8575_set_gpio_mode(pcf_handle, (pcf8575_gpio_t)US_PCF8575_REAR_ECHO_PIN, PCF8575_GPIO_MODE_INPUT);
-        
-        // 设置触发引脚的初始电平为低
-        pcf8575_set_gpio_level(pcf_handle, (pcf8575_gpio_t)US_PCF8575_FRONT_TRIG_PIN, 0);
-        pcf8575_set_gpio_level(pcf_handle, (pcf8575_gpio_t)US_PCF8575_REAR_TRIG_PIN, 0);
-#else
-        ESP_LOGI(TAG, "Using direct GPIO connection for ultrasonic sensors");
-        
-        // 检查超声波引脚配置
-        ESP_LOGI(TAG, "Ultrasonic sensor pins configuration:");
-        ESP_LOGI(TAG, "Front sensor - Trig: %d, Echo: %d", US_FRONT_TRIG_PIN, US_FRONT_ECHO_PIN);
-        ESP_LOGI(TAG, "Rear sensor - Trig: %d, Echo: %d", US_REAR_TRIG_PIN, US_REAR_ECHO_PIN);
-        
-        // Configure GPIO pins for front sensor
-        gpio_config_t io_conf = {};
-        
-        // Configure front sensor trigger pin as output
-        io_conf.pin_bit_mask = (1ULL << US_FRONT_TRIG_PIN);
-        io_conf.mode = GPIO_MODE_OUTPUT;
-        io_conf.pull_up_en = GPIO_PULLUP_DISABLE;
-        io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
-        io_conf.intr_type = GPIO_INTR_DISABLE;
-        ESP_ERROR_CHECK(gpio_config(&io_conf));
-        
-        // Configure front sensor echo pin as input
-        io_conf.pin_bit_mask = (1ULL << US_FRONT_ECHO_PIN);
-        io_conf.mode = GPIO_MODE_INPUT;
-        io_conf.pull_up_en = GPIO_PULLUP_DISABLE;
-        io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
-        io_conf.intr_type = GPIO_INTR_DISABLE;
-        ESP_ERROR_CHECK(gpio_config(&io_conf));
-        
-        // Configure rear sensor trigger pin as output
-        io_conf.pin_bit_mask = (1ULL << US_REAR_TRIG_PIN);
-        io_conf.mode = GPIO_MODE_OUTPUT;
-        io_conf.pull_up_en = GPIO_PULLUP_DISABLE;
-        io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
-        io_conf.intr_type = GPIO_INTR_DISABLE;
-        ESP_ERROR_CHECK(gpio_config(&io_conf));
-        
-        // Configure rear sensor echo pin as input
-        io_conf.pin_bit_mask = (1ULL << US_REAR_ECHO_PIN);
-        io_conf.mode = GPIO_MODE_INPUT;
-        io_conf.pull_up_en = GPIO_PULLUP_DISABLE;
-        io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
-        io_conf.intr_type = GPIO_INTR_DISABLE;
-        ESP_ERROR_CHECK(gpio_config(&io_conf));
-        
-        // Set initial pin states
-        gpio_set_level((gpio_num_t)US_FRONT_TRIG_PIN, 0);
-        gpio_set_level((gpio_num_t)US_REAR_TRIG_PIN, 0);
-#endif
-        
-        // Apply default values if needed
-        if (front_safe_distance_ <= 0) front_safe_distance_ = DEFAULT_SAFE_DISTANCE_CM;
-        if (rear_safe_distance_ <= 0) rear_safe_distance_ = DEFAULT_SAFE_DISTANCE_CM;
-        if (max_distance_ <= 0) max_distance_ = DEFAULT_MAX_DISTANCE_CM;
-        
-        ESP_LOGI(TAG, "Using front_safe_distance: %.2f, rear_safe_distance: %.2f, max_distance: %.2f", 
-                 front_safe_distance_, rear_safe_distance_, max_distance_);
-        
-        // Create task for periodic measurements
-        xTaskCreate(
-            MeasurementTask,
-            "US_task",
-            4096,  // Increased stack size for handling two sensors
-            this,
-            5,
-            &measurement_task_handle_);
+        // 测量每个传感器的距离
+        for (size_t i = 0; i < sensor_count_; i++) {
+            float distance = measure_distance_cm(&sensors_[i]);
             
-        initialized_ = true;
-        ESP_LOGI(TAG, "Ultrasonic sensors initialized successfully");
-    }
-    
-    void DeInit() {
-        // Stop measurement task if running
-        if (measurement_task_handle_ != nullptr) {
-            vTaskDelete(measurement_task_handle_);
-            measurement_task_handle_ = nullptr;
-        }
-        initialized_ = false;
-    }
-
-private:
-    static void MeasurementTask(void* pvParameters) {
-        US* us = static_cast<US*>(pvParameters);
-        
-        // Main measurement loop
-        while (1) {
-            // Measure front distance
-            float front_dist = 0;
-#ifdef CONFIG_US_CONNECTION_PCF8575
-            bool front_success = us->MeasurePCF8575Distance(US_PCF8575_FRONT_TRIG_PIN, US_PCF8575_FRONT_ECHO_PIN, &front_dist);
-#else
-            bool front_success = us->MeasureDirectDistance(US_FRONT_TRIG_PIN, US_FRONT_ECHO_PIN, &front_dist);
-#endif
-            
-            if (front_success) {
-                us->front_distance_ = front_dist;
-                us->front_obstacle_detected_ = front_dist < us->front_safe_distance_;
-                ESP_LOGD(TAG, "Front Distance: %.2f cm, Obstacle: %d", 
-                         us->front_distance_, us->front_obstacle_detected_);
-            } else {
-                ESP_LOGW(TAG, "Front measurement failed");
+            // 记录障碍物状态
+            if (distance > 0 && distance < safe_distance_cm_) {
+                switch (sensors_[i].position) {
+                    case USP_FRONT:
+                        new_front_obstacle = true;
+                        break;
+                    case USP_REAR:
+                        new_rear_obstacle = true;
+                        break;
+                    default:
+                        break;
+                }
             }
             
-            // Small delay between measurements
-            vTaskDelay(pdMS_TO_TICKS(30));
-            
-            // Measure rear distance
-            float rear_dist = 0;
-#ifdef CONFIG_US_CONNECTION_PCF8575
-            bool rear_success = us->MeasurePCF8575Distance(US_PCF8575_REAR_TRIG_PIN, US_PCF8575_REAR_ECHO_PIN, &rear_dist);
-#else
-            bool rear_success = us->MeasureDirectDistance(US_REAR_TRIG_PIN, US_REAR_ECHO_PIN, &rear_dist);
-#endif
-            
-            if (rear_success) {
-                us->rear_distance_ = rear_dist;
-                us->rear_obstacle_detected_ = rear_dist < us->rear_safe_distance_;
-                ESP_LOGD(TAG, "Rear Distance: %.2f cm, Obstacle: %d", 
-                         us->rear_distance_, us->rear_obstacle_detected_);
-            } else {
-                ESP_LOGW(TAG, "Rear measurement failed");
+            // 记录日志（仅在值有效或状态改变时）
+            if (distance > 0 || 
+                (sensors_[i].position == USP_FRONT && front_obstacle_ != new_front_obstacle) || 
+                (sensors_[i].position == USP_REAR && rear_obstacle_ != new_rear_obstacle)) {
+                
+                const char* pos_str = "unknown";
+                switch (sensors_[i].position) {
+                    case USP_FRONT: pos_str = "front"; break;
+                    case USP_REAR:  pos_str = "rear";  break;
+                    case USP_LEFT:  pos_str = "left";  break;
+                    case USP_RIGHT: pos_str = "right"; break;
+                    default: break;
+                }
+                
+                if (distance > 0) {
+                    ESP_LOGD(TAG, "%s distance: %.1f cm", pos_str, distance);
+                } else {
+                    ESP_LOGD(TAG, "%s sensor: no valid reading", pos_str);
+                }
             }
-            
-            // Wait for the next measurement period
-            vTaskDelay(pdMS_TO_TICKS(170));  // 5Hz measurement rate per sensor (200ms total cycle)
         }
+        
+        // 更新障碍物状态
+        front_obstacle_ = new_front_obstacle;
+        rear_obstacle_ = new_rear_obstacle;
+        
+        // 释放互斥锁
+        xSemaphoreGive(measure_mutex_);
     }
     
-#ifdef CONFIG_US_CONNECTION_PCF8575
-    bool MeasurePCF8575Distance(int trig_pin, int echo_pin, float* distance) {
-        if (distance == nullptr) {
+public:
+    UltrasonicSensor() : Thing("UltrasonicSensor", "Ultrasonic distance sensor") {}
+    
+    bool init() {
+        ESP_LOGI(TAG, "Initializing ultrasonic sensors");
+        
+        // 创建互斥锁
+        measure_mutex_ = xSemaphoreCreateMutex();
+        if (!measure_mutex_) {
+            ESP_LOGE(TAG, "Failed to create measure mutex");
             return false;
         }
         
-        pcf8575_handle_t pcf_handle = pcf8575_get_handle();
-        if (pcf_handle == NULL) {
-            ESP_LOGE(TAG, "PCF8575 handle is NULL");
-            return false;
-        }
+        // 计算需要的传感器数量
+        size_t count = 0;
         
-        // 触发超声波
-        pcf8575_set_gpio_level(pcf_handle, (pcf8575_gpio_t)trig_pin, 0);
-        // 短暂延时
-        int64_t start_us = esp_timer_get_time();
-        while ((esp_timer_get_time() - start_us) < 5) { }  // 5us稳定延时
-        
-        pcf8575_set_gpio_level(pcf_handle, (pcf8575_gpio_t)trig_pin, 1);
-        // 短暂延时
-        start_us = esp_timer_get_time();
-        while ((esp_timer_get_time() - start_us) < 15) { }  // 15us触发脉冲
-        
-        pcf8575_set_gpio_level(pcf_handle, (pcf8575_gpio_t)trig_pin, 0);
-        
-        // 等待回响开始
-        uint8_t echo_level = 0;
-        int64_t start_time = esp_timer_get_time();
-        do {
-            if ((esp_timer_get_time() - start_time) > US_TIMEOUT_MS * 1000) {
-                ESP_LOGW(TAG, "Echo start timeout on pin P%d", echo_pin);
-                return false;  // 等待回响超时
-            }
-            pcf8575_get_gpio_level(pcf_handle, (pcf8575_gpio_t)echo_pin, &echo_level);
-        } while (echo_level == 0);
-        
-        // 测量回响持续时间
-        start_time = esp_timer_get_time();
-        do {
-            if ((esp_timer_get_time() - start_time) > US_TIMEOUT_MS * 1000) {
-                *distance = max_distance_;  // 如果超时则设为最大距离
-                ESP_LOGD(TAG, "Echo end timeout on pin P%d, setting max distance", echo_pin);
-                return true;
-            }
-            pcf8575_get_gpio_level(pcf_handle, (pcf8575_gpio_t)echo_pin, &echo_level);
-        } while (echo_level == 1);
-        
-        int64_t end_time = esp_timer_get_time();
-        int64_t duration_us = end_time - start_time;
-        
-        // 计算距离
-        *distance = duration_us * 0.017150f;
-        
-        // 限制最大可测量距离
-        if (*distance > max_distance_) {
-            *distance = max_distance_;
-        }
-        
-        ESP_LOGI(TAG, "PCF8575 pin P%d measured distance: %.2f cm", echo_pin, *distance);
-        return true;
-    }
-#endif
-
 #ifdef CONFIG_US_CONNECTION_DIRECT
-    bool MeasureDirectDistance(int trig_pin, int echo_pin, float* distance) {
-        if (distance == nullptr) {
+        if (CONFIG_US_FRONT_TRIG_GPIO >= 0 && CONFIG_US_FRONT_ECHO_GPIO >= 0) count++;
+        if (CONFIG_US_REAR_TRIG_GPIO >= 0 && CONFIG_US_REAR_ECHO_GPIO >= 0) count++;
+#endif
+
+#ifdef CONFIG_US_CONNECTION_PCF8575
+        // 检查是否有PCF8575连接的传感器配置
+        if (pcf8575_is_initialized()) {
+            pcf8575_handle_t pcf_handle = pcf8575_get_handle();
+            if (pcf_handle) {
+                count++;  // 前方传感器
+                count++;  // 后方传感器
+            }
+        }
+#endif
+        
+        if (count == 0) {
+            ESP_LOGW(TAG, "No ultrasonic sensors configured");
             return false;
         }
         
-        // 触发超声波
-        gpio_set_level((gpio_num_t)trig_pin, 0);
-        // 短暂延时
-        int64_t start_us = esp_timer_get_time();
-        while ((esp_timer_get_time() - start_us) < 5) { }  // 5us稳定延时
+        // 分配传感器配置空间
+        sensors_ = std::make_unique<ultrasonic_sensor_config_t[]>(count);
+        if (!sensors_) {
+            ESP_LOGE(TAG, "Failed to allocate memory for sensor configurations");
+            return false;
+        }
         
-        gpio_set_level((gpio_num_t)trig_pin, 1);
-        // 短暂延时
-        start_us = esp_timer_get_time();
-        while ((esp_timer_get_time() - start_us) < 15) { }  // 15us触发脉冲
+        // 初始化配置
+        size_t index = 0;
         
-        gpio_set_level((gpio_num_t)trig_pin, 0);
-        
-        // 等待回响开始
-        int64_t start_time = esp_timer_get_time();
-        while (gpio_get_level((gpio_num_t)echo_pin) == 0) {
-            if ((esp_timer_get_time() - start_time) > US_TIMEOUT_MS * 1000) {
-                ESP_LOGW(TAG, "Echo start timeout on pin %d", echo_pin);
-                return false;  // 等待回响超时
+#ifdef CONFIG_US_CONNECTION_DIRECT
+        // 直接GPIO连接的传感器配置
+        if (CONFIG_US_FRONT_TRIG_GPIO >= 0 && CONFIG_US_FRONT_ECHO_GPIO >= 0) {
+            sensors_[index].position = USP_FRONT;
+            sensors_[index].connection_type = DIRECT_GPIO;
+            sensors_[index].gpio.trigger_pin = static_cast<gpio_num_t>(CONFIG_US_FRONT_TRIG_GPIO);
+            sensors_[index].gpio.echo_pin = static_cast<gpio_num_t>(CONFIG_US_FRONT_ECHO_GPIO);
+            sensors_[index].max_distance_cm = DEFAULT_MAX_DISTANCE_CM;
+            sensors_[index].min_distance_cm = DEFAULT_MIN_DISTANCE_CM;
+            sensors_[index].echo_timeout_us = DEFAULT_ECHO_TIMEOUT_US;
+            sensors_[index].is_initialized = false;
+            
+            if (!init_gpio_sensor(&sensors_[index])) {
+                ESP_LOGE(TAG, "Failed to initialize front GPIO sensor");
+            } else {
+                index++;
             }
         }
         
-        // 测量回响持续时间
-        start_time = esp_timer_get_time();
-        while (gpio_get_level((gpio_num_t)echo_pin) == 1) {
-            if ((esp_timer_get_time() - start_time) > US_TIMEOUT_MS * 1000) {
-                *distance = max_distance_;  // 如果超时则设为最大距离
-                ESP_LOGD(TAG, "Echo end timeout on pin %d, setting max distance", echo_pin);
-                return true;
+        if (CONFIG_US_REAR_TRIG_GPIO >= 0 && CONFIG_US_REAR_ECHO_GPIO >= 0) {
+            sensors_[index].position = USP_REAR;
+            sensors_[index].connection_type = DIRECT_GPIO;
+            sensors_[index].gpio.trigger_pin = static_cast<gpio_num_t>(CONFIG_US_REAR_TRIG_GPIO);
+            sensors_[index].gpio.echo_pin = static_cast<gpio_num_t>(CONFIG_US_REAR_ECHO_GPIO);
+            sensors_[index].max_distance_cm = DEFAULT_MAX_DISTANCE_CM;
+            sensors_[index].min_distance_cm = DEFAULT_MIN_DISTANCE_CM;
+            sensors_[index].echo_timeout_us = DEFAULT_ECHO_TIMEOUT_US;
+            sensors_[index].is_initialized = false;
+            
+            if (!init_gpio_sensor(&sensors_[index])) {
+                ESP_LOGE(TAG, "Failed to initialize rear GPIO sensor");
+            } else {
+                index++;
             }
         }
+#endif
         
-        int64_t end_time = esp_timer_get_time();
-        int64_t duration_us = end_time - start_time;
+#ifdef CONFIG_US_CONNECTION_PCF8575
+        // PCF8575连接的传感器配置
+        if (pcf8575_is_initialized()) {
+            pcf8575_handle_t pcf_handle = pcf8575_get_handle();
+            if (pcf_handle) {
+                // 前方传感器
+                sensors_[index].position = USP_FRONT;
+                sensors_[index].connection_type = PCF8575_GPIO;
+                sensors_[index].pcf8575.handle = pcf_handle;
+                sensors_[index].pcf8575.trigger_pin = CONFIG_US_PCF8575_FRONT_TRIG_PIN;
+                sensors_[index].pcf8575.echo_pin = CONFIG_US_PCF8575_FRONT_ECHO_PIN;
+                sensors_[index].max_distance_cm = DEFAULT_MAX_DISTANCE_CM;
+                sensors_[index].min_distance_cm = DEFAULT_MIN_DISTANCE_CM;
+                sensors_[index].echo_timeout_us = DEFAULT_ECHO_TIMEOUT_US;
+                sensors_[index].is_initialized = false;
+                
+                if (!init_pcf8575_sensor(&sensors_[index])) {
+                    ESP_LOGE(TAG, "Failed to initialize front PCF8575 sensor");
+                } else {
+                    index++;
+                }
+                
+                // 后方传感器
+                sensors_[index].position = USP_REAR;
+                sensors_[index].connection_type = PCF8575_GPIO;
+                sensors_[index].pcf8575.handle = pcf_handle;
+                sensors_[index].pcf8575.trigger_pin = CONFIG_US_PCF8575_REAR_TRIG_PIN;
+                sensors_[index].pcf8575.echo_pin = CONFIG_US_PCF8575_REAR_ECHO_PIN;
+                sensors_[index].max_distance_cm = DEFAULT_MAX_DISTANCE_CM;
+                sensors_[index].min_distance_cm = DEFAULT_MIN_DISTANCE_CM;
+                sensors_[index].echo_timeout_us = DEFAULT_ECHO_TIMEOUT_US;
+                sensors_[index].is_initialized = false;
+                
+                if (!init_pcf8575_sensor(&sensors_[index])) {
+                    ESP_LOGE(TAG, "Failed to initialize rear PCF8575 sensor");
+                } else {
+                    index++;
+                }
+            }
+        }
+#endif
         
-        // 计算距离
-        *distance = duration_us * 0.017150f;
+        // 更新实际传感器数量
+        sensor_count_ = index;
         
-        // 限制最大可测量距离
-        if (*distance > max_distance_) {
-            *distance = max_distance_;
+        if (sensor_count_ == 0) {
+            ESP_LOGE(TAG, "No ultrasonic sensors were successfully initialized");
+            return false;
         }
         
-        ESP_LOGI(TAG, "Direct GPIO pin %d measured distance: %.2f cm", echo_pin, *distance);
+        // 创建测量任务
+        xTaskCreate(measure_task, "us_measure", 4096, this, 5, &measure_task_handle_);
+        if (!measure_task_handle_) {
+            ESP_LOGE(TAG, "Failed to create measure task");
+            return false;
+        }
+        
+        // 创建定时器
+        esp_timer_create_args_t timer_args = {
+            .callback = measure_timer_callback,
+            .arg = this,
+            .dispatch_method = ESP_TIMER_TASK,
+            .name = "us_timer",
+            .skip_unhandled_events = true,
+        };
+        
+        if (esp_timer_create(&timer_args, &measure_timer_handle_) != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to create measure timer");
+            return false;
+        }
+        
+        // 启动定时器
+        if (esp_timer_start_periodic(measure_timer_handle_, measure_interval_ms_ * 1000) != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to start measure timer");
+            return false;
+        }
+        
+        ESP_LOGI(TAG, "Initialized %d ultrasonic sensors", sensor_count_);
         return true;
     }
-#endif
     
-    // Configuration
-    float front_safe_distance_ = DEFAULT_SAFE_DISTANCE_CM;
-    float rear_safe_distance_ = DEFAULT_SAFE_DISTANCE_CM;
-    float max_distance_ = DEFAULT_MAX_DISTANCE_CM;
+    void deinit() {
+        // 停止定时器
+        if (measure_timer_handle_) {
+            esp_timer_stop(measure_timer_handle_);
+            esp_timer_delete(measure_timer_handle_);
+            measure_timer_handle_ = nullptr;
+        }
+        
+        // 删除任务
+        if (measure_task_handle_) {
+            vTaskDelete(measure_task_handle_);
+            measure_task_handle_ = nullptr;
+        }
+        
+        // 释放互斥锁
+        if (measure_mutex_) {
+            vSemaphoreDelete(measure_mutex_);
+            measure_mutex_ = nullptr;
+        }
+        
+        // 清除传感器配置
+        sensor_count_ = 0;
+        sensors_.reset();
+    }
     
-    // State
-    float front_distance_ = 0;
-    float rear_distance_ = 0;
-    bool front_obstacle_detected_ = false;
-    bool rear_obstacle_detected_ = false;
-    bool initialized_ = false;
+    bool has_front_obstacle() const {
+        return front_obstacle_;
+    }
     
-    // Task handle
-    TaskHandle_t measurement_task_handle_ = nullptr;
+    bool has_rear_obstacle() const {
+        return rear_obstacle_;
+    }
+    
+    void set_safe_distance(float cm) {
+        if (cm > 0) {
+            safe_distance_cm_ = cm;
+        }
+    }
+    
+    float get_safe_distance() const {
+        return safe_distance_cm_;
+    }
+    
+    void set_measure_interval(uint32_t ms) {
+        if (ms >= 10 && ms <= 1000) {
+            measure_interval_ms_ = ms;
+            
+            // 更新定时器间隔
+            if (measure_timer_handle_) {
+                esp_timer_stop(measure_timer_handle_);
+                esp_timer_start_periodic(measure_timer_handle_, measure_interval_ms_ * 1000);
+            }
+        }
+    }
+    
+    uint32_t get_measure_interval() const {
+        return measure_interval_ms_;
+    }
 };
 
-// Singleton instance
-static std::unique_ptr<US> us_instance;
+} // namespace iot
 
-// Function to create the ultrasonic sensor Thing instance
-static iot::Thing* CreateUS() {
-    us_instance = std::make_unique<US>();
-    return us_instance.get();
-}
-
-void RegisterUS() {
-    iot::RegisterThing("US", CreateUS);
-}
-
-} // namespace iot 
-
-DECLARE_THING(US);
+DECLARE_THING(UltrasonicSensor);

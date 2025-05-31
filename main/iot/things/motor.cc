@@ -1,18 +1,38 @@
+#include "board_config.h"
+#include "../thing.h"
+#include "ext/include/pcf8575.h"
+#include "esp_timer.h"
+
+#ifdef CONFIG_MOTOR_CONNECTION_PCF8575
+// 外部函数声明
+extern "C" {
+    esp_err_t pcf8575_set_level(pcf8575_handle_t handle, int pin, uint32_t level);
+    pcf8575_handle_t pcf8575_get_handle(void);
+    bool pcf8575_is_initialized(void);
+}
+#endif
+
 #include "iot/thing.h"
 #include "iot/thing_manager.h"
 #include "board.h"
 #include "../boards/common/board_config.h"
 #include "motor.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "driver/ledc.h"
+#include "driver/gpio.h"
+#include "driver/i2c.h"
+#include "esp_log.h"
+#include "esp_err.h"
+#include <cmath>
+#include <freertos/timers.h>
+
 #include "ext/include/pcf8575.h"
 #include "ext/include/pca9548a.h"
-
-#include <driver/gpio.h>
-#include <driver/ledc.h>
-#include <esp_log.h>
-#include <cmath>
-#include <freertos/FreeRTOS.h>
-#include <freertos/task.h>
-#include <freertos/timers.h>
+#include "ext/include/multiplexer.h"
 
 #define TAG "MotorThing"
 
@@ -134,17 +154,11 @@ private:
                 ESP_LOGI(TAG, "Motor control pins: IN1: P%02d, IN2: P%02d, IN3: P%02d, IN4: P%02d", 
                         MOTOR_PCF8575_IN1_PIN, MOTOR_PCF8575_IN2_PIN, MOTOR_PCF8575_IN3_PIN, MOTOR_PCF8575_IN4_PIN);
                 
-                // 设置所有引脚为输出模式
-                pcf8575_set_gpio_mode(pcf_handle, (pcf8575_gpio_t)MOTOR_PCF8575_IN1_PIN, PCF8575_GPIO_MODE_OUTPUT);
-                pcf8575_set_gpio_mode(pcf_handle, (pcf8575_gpio_t)MOTOR_PCF8575_IN2_PIN, PCF8575_GPIO_MODE_OUTPUT);
-                pcf8575_set_gpio_mode(pcf_handle, (pcf8575_gpio_t)MOTOR_PCF8575_IN3_PIN, PCF8575_GPIO_MODE_OUTPUT);
-                pcf8575_set_gpio_mode(pcf_handle, (pcf8575_gpio_t)MOTOR_PCF8575_IN4_PIN, PCF8575_GPIO_MODE_OUTPUT);
-                
-                // 设置初始状态为低电平
-                pcf8575_set_gpio_level(pcf_handle, (pcf8575_gpio_t)MOTOR_PCF8575_IN1_PIN, 0);
-                pcf8575_set_gpio_level(pcf_handle, (pcf8575_gpio_t)MOTOR_PCF8575_IN2_PIN, 0);
-                pcf8575_set_gpio_level(pcf_handle, (pcf8575_gpio_t)MOTOR_PCF8575_IN3_PIN, 0);
-                pcf8575_set_gpio_level(pcf_handle, (pcf8575_gpio_t)MOTOR_PCF8575_IN4_PIN, 0);
+                // 设置所有引脚的初始状态为低电平
+                pcf8575_set_level(pcf_handle, MOTOR_PCF8575_IN1_PIN, 0);
+                pcf8575_set_level(pcf_handle, MOTOR_PCF8575_IN2_PIN, 0);
+                pcf8575_set_level(pcf_handle, MOTOR_PCF8575_IN3_PIN, 0);
+                pcf8575_set_level(pcf_handle, MOTOR_PCF8575_IN4_PIN, 0);
                 
                 // PCF8575配置成功，标记初始化完成
                 ledc_initialized_ = true;
@@ -335,37 +349,19 @@ private:
     
     // 控制电机函数
     void ControlMotor(int in1, int in2, int in3, int in4) {
-        // 检查是否使用PCF8575连接
-#ifdef CONFIG_MOTOR_CONNECTION_PCF8575
         if (use_pcf8575_) {
             pcf8575_handle_t pcf_handle = pcf8575_get_handle();
-            if (!pcf_handle) {
-                ESP_LOGE(TAG, "PCF8575 handle is NULL");
+            if (pcf_handle) {
+                // 通过PCF8575设置电机控制引脚
+                pcf8575_set_level(pcf_handle, MOTOR_PCF8575_IN1_PIN, in1);
+                pcf8575_set_level(pcf_handle, MOTOR_PCF8575_IN2_PIN, in2);
+                pcf8575_set_level(pcf_handle, MOTOR_PCF8575_IN3_PIN, in3);
+                pcf8575_set_level(pcf_handle, MOTOR_PCF8575_IN4_PIN, in4);
                 return;
             }
-            
-            // 设置电机控制引脚电平
-            pcf8575_set_gpio_level(pcf_handle, (pcf8575_gpio_t)MOTOR_PCF8575_IN1_PIN, in1);
-            pcf8575_set_gpio_level(pcf_handle, (pcf8575_gpio_t)MOTOR_PCF8575_IN2_PIN, in2);
-            pcf8575_set_gpio_level(pcf_handle, (pcf8575_gpio_t)MOTOR_PCF8575_IN3_PIN, in3);
-            pcf8575_set_gpio_level(pcf_handle, (pcf8575_gpio_t)MOTOR_PCF8575_IN4_PIN, in4);
-            
-            // 如果是停止状态，两个电机都停止
-            if (in1 == LOW && in2 == LOW && in3 == LOW && in4 == LOW) {
-                // 停止，不需要额外处理
-                return;
-            }
-            
-            // 计算PWM控制
-            // ... existing PWM calculation code
-            
-            // 对于PCF8575控制，仅使用方向控制，不能控制PWM
-            ESP_LOGD(TAG, "PCF8575 motor control: IN1=%d, IN2=%d, IN3=%d, IN4=%d", in1, in2, in3, in4);
-            return;
         }
-#endif
         
-        // 使用直接GPIO控制（原有代码）
+        // 如果没有使用PCF8575或PCF8575不可用，使用GPIO控制
         // 检查引脚是否有效
         if (in1_pin_ < 0 || in2_pin_ < 0 || in3_pin_ < 0 || in4_pin_ < 0) {
             ESP_LOGW(TAG, "Invalid motor pins, cannot control motors");
