@@ -127,10 +127,6 @@ private:
     // 用于维护音频包的timestamp队列
     std::deque<uint32_t> timestamp_queue_;
     std::mutex timestamp_mutex_;
-<<<<<<< HEAD
-    std::atomic<uint32_t> last_output_timestamp_{0};
-=======
->>>>>>> upstream/main
 
     std::unique_ptr<OpusEncoderWrapper> opus_encoder_;
     std::unique_ptr<OpusDecoderWrapper> opus_decoder_;
