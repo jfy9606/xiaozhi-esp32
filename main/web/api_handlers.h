@@ -65,4 +65,27 @@ void SendSensorSuccessResponse(int client_id, const char* cmd);
 // 发送传感器数据到所有客户端
 void BroadcastSensorData(const float* values, int count, int64_t timestamp);
 
-#endif // API_HANDLERS_H 
+// ===================
+// 音频API处理器
+// ===================
+
+// WebSocket音频数据消息处理
+void HandleAudioWsMessage(int client_id, cJSON* json, const std::string& type);
+
+// 发送音频错误响应
+void SendAudioErrorResponse(int client_id, const char* error_msg);
+
+// 发送音频成功响应
+void SendAudioSuccessResponse(int client_id, const char* cmd, cJSON* data = nullptr);
+
+// ===================
+// 设备配置API处理器
+// ===================
+
+// 获取设备配置
+ApiResponse HandleGetDeviceConfig(httpd_req_t* req, cJSON* request_json);
+
+// 更新设备配置
+ApiResponse HandleUpdateDeviceConfig(httpd_req_t* req, cJSON* request_json);
+
+#endif // API_HANDLERS_H

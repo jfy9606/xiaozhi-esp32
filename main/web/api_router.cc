@@ -65,7 +65,7 @@ void ApiRouter::Initialize(WebServer* web_server) {
     ESP_LOGI(TAG, "API Router initialized successfully");
 }
 
-void ApiRouter::RegisterHttpApi(const std::string& path, httpd_method_t method, HttpApiHandler handler) {
+void ApiRouter::RegisterHttpApi(const std::string& path, httpd_method_t method, ::HttpApiHandler handler) {
     std::string full_path = path;
     if (path.find(HTTP_API_PREFIX) != 0) {
         // 自动添加前缀
@@ -76,7 +76,7 @@ void ApiRouter::RegisterHttpApi(const std::string& path, httpd_method_t method, 
     ESP_LOGI(TAG, "Registered HTTP API handler for %s", full_path.c_str());
 }
 
-void ApiRouter::RegisterWsApi(const std::string& type, WsApiHandler handler) {
+void ApiRouter::RegisterWsApi(const std::string& type, ::WsApiHandler handler) {
     ws_handlers_[type] = handler;
     ESP_LOGI(TAG, "Registered WebSocket API handler for type '%s'", type.c_str());
 }

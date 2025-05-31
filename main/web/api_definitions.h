@@ -97,6 +97,12 @@ public:
     // WebSocket消息处理分发
     static void WsApiHandler(int client_id, const std::string& message, const std::string& type);
     
+    // 创建错误响应
+    static ApiResponse CreateErrorResponse(ApiStatusCode code, const std::string& message);
+    
+    // 创建成功响应
+    static ApiResponse CreateSuccessResponse(cJSON* data = nullptr);
+    
 private:
     // 解析HTTP请求体为JSON
     static cJSON* ParseRequestJson(httpd_req_t* req);
@@ -104,15 +110,9 @@ private:
     // 发送API响应
     static esp_err_t SendApiResponse(httpd_req_t* req, const ApiResponse& response);
     
-    // 创建错误响应
-    static ApiResponse CreateErrorResponse(ApiStatusCode code, const std::string& message);
-    
-    // 创建成功响应
-    static ApiResponse CreateSuccessResponse(cJSON* data = nullptr);
-    
     WebServer* web_server_;
-    std::map<std::string, std::pair<httpd_method_t, HttpApiHandler>> http_handlers_;
-    std::map<std::string, WsApiHandler> ws_handlers_;
+    std::map<std::string, std::pair<httpd_method_t, ::HttpApiHandler>> http_handlers_;
+    std::map<std::string, ::WsApiHandler> ws_handlers_;
 };
 
-#endif // API_DEFINITIONS_H 
+#endif // API_DEFINITIONS_H

@@ -11,7 +11,7 @@
 #include <cJSON.h>
 #include <string.h>
 #include <esp_timer.h>
-#include <esp_ota_ops.h>
+#include <esp_app_desc.h>
 #include "ext/include/lu9685.h"
 #include "../components.h"
 
@@ -33,9 +33,14 @@ void InitializeApiHandlers(ApiRouter* router) {
     router->RegisterHttpApi(HTTP_API_SERVO_ANGLE, HTTP_POST, HandleSetServoAngle);
     router->RegisterHttpApi(HTTP_API_SERVO_FREQUENCY, HTTP_POST, HandleSetServoFrequency);
     
+    // 注册设备配置API
+    router->RegisterHttpApi(HTTP_API_DEVICE_CONFIG, HTTP_GET, HandleGetDeviceConfig);
+    router->RegisterHttpApi(HTTP_API_DEVICE_CONFIG, HTTP_POST, HandleUpdateDeviceConfig);
+    
     // 注册WebSocket处理器
     router->RegisterWsApi(WS_MSG_TYPE_SERVO, HandleServoWsMessage);
     router->RegisterWsApi(WS_MSG_TYPE_SENSOR, HandleSensorWsMessage);
+    router->RegisterWsApi(WS_MSG_TYPE_AUDIO, HandleAudioWsMessage);
     
     ESP_LOGI(TAG, "API handlers initialized successfully");
 }
@@ -58,7 +63,7 @@ ApiResponse HandleSystemInfo(httpd_req_t* req, cJSON* request_json) {
     cJSON_AddNumberToObject(data, "min_free_heap", esp_get_minimum_free_heap_size());
     
     // 添加芯片信息
-    const esp_app_desc_t* app_desc = esp_ota_get_app_description();
+    const esp_app_desc_t* app_desc = esp_app_get_description();
     if (app_desc) {
         cJSON_AddStringToObject(data, "app_name", app_desc->project_name);
         cJSON_AddStringToObject(data, "app_version", app_desc->version);
@@ -444,4 +449,177 @@ void BroadcastSensorData(const float* values, int count, int64_t timestamp) {
     // 释放资源
     free(data_str);
     cJSON_Delete(data);
-} 
+}
+
+//======================
+// 音频API处理器实现
+//======================
+
+void HandleAudioWsMessage(int client_id, cJSON* json, const std::string& type) {
+    if (!json) {
+        ESP_LOGW(TAG, "WebSocket audio message is null");
+        return;
+    }
+    
+    // 提取命令类型
+    cJSON* cmd_json = cJSON_GetObjectItem(json, "cmd");
+    if (!cJSON_IsString(cmd_json)) {
+        ESP_LOGW(TAG, "Missing or invalid 'cmd' in audio message");
+        SendAudioErrorResponse(client_id, "Missing or invalid command");
+        return;
+    }
+    
+    const char* cmd = cmd_json->valuestring;
+    
+    // 处理不同的音频命令
+    if (strcmp(cmd, "start_stream") == 0) {
+        // 启动音频流处理
+        ESP_LOGI(TAG, "Starting audio stream for client %d", client_id);
+        SendAudioSuccessResponse(client_id, "start_stream");
+    } 
+    else if (strcmp(cmd, "stop_stream") == 0) {
+        // 停止音频流处理
+        ESP_LOGI(TAG, "Stopping audio stream for client %d", client_id);
+        SendAudioSuccessResponse(client_id, "stop_stream");
+    }
+    else if (strcmp(cmd, "volume") == 0) {
+        // 处理音量调整
+        cJSON* volume_json = cJSON_GetObjectItem(json, "value");
+        if (!cJSON_IsNumber(volume_json)) {
+            SendAudioErrorResponse(client_id, "Invalid or missing volume value");
+            return;
+        }
+        
+        int volume = volume_json->valueint;
+        if (volume < 0 || volume > 100) {
+            SendAudioErrorResponse(client_id, "Volume must be between 0 and 100");
+            return;
+        }
+        
+        ESP_LOGI(TAG, "Setting volume to %d for client %d", volume, client_id);
+        
+        // 创建响应数据
+        cJSON* data = cJSON_CreateObject();
+        cJSON_AddNumberToObject(data, "volume", volume);
+        SendAudioSuccessResponse(client_id, "volume", data);
+    }
+    else {
+        ESP_LOGW(TAG, "Unknown audio command: %s", cmd);
+        SendAudioErrorResponse(client_id, "Unknown command");
+    }
+}
+
+void SendAudioErrorResponse(int client_id, const char* error_msg) {
+    cJSON* response = cJSON_CreateObject();
+    cJSON_AddStringToObject(response, "status", "error");
+    cJSON_AddStringToObject(response, "message", error_msg);
+    
+    char* resp_str = cJSON_PrintUnformatted(response);
+    WebServer::GetActiveInstance()->SendWebSocketMessage(client_id, resp_str);
+    free(resp_str);
+    cJSON_Delete(response);
+}
+
+void SendAudioSuccessResponse(int client_id, const char* cmd, cJSON* data) {
+    cJSON* response = cJSON_CreateObject();
+    cJSON_AddStringToObject(response, "status", "ok");
+    cJSON_AddStringToObject(response, "cmd", cmd);
+    
+    if (data) {
+        cJSON_AddItemToObject(response, "data", data);
+    }
+    
+    char* resp_str = cJSON_PrintUnformatted(response);
+    WebServer::GetActiveInstance()->SendWebSocketMessage(client_id, resp_str);
+    free(resp_str);
+    cJSON_Delete(response);
+}
+
+//======================
+// 设备配置API处理器实现
+//======================
+
+// 获取设备配置
+ApiResponse HandleGetDeviceConfig(httpd_req_t* req, cJSON* request_json) {
+    ESP_LOGI(TAG, "Processing get device config request");
+    
+    cJSON* data = cJSON_CreateObject();
+    
+    // 添加设备配置信息
+    cJSON_AddStringToObject(data, "device_name", "Xiaozhi ESP32");
+    cJSON_AddStringToObject(data, "firmware_version", "1.0.0");
+    
+    // 网络配置
+    cJSON* network = cJSON_CreateObject();
+    cJSON_AddStringToObject(network, "wifi_mode", "AP"); // AP or STA
+    cJSON_AddStringToObject(network, "ap_ssid", "XiaoZhi-ESP32");
+    cJSON_AddStringToObject(network, "sta_ssid", "");
+    cJSON_AddBoolToObject(network, "dhcp_enabled", true);
+    cJSON_AddItemToObject(data, "network", network);
+    
+    // 音频配置
+    cJSON* audio = cJSON_CreateObject();
+    cJSON_AddNumberToObject(audio, "volume", 80);
+    cJSON_AddNumberToObject(audio, "sample_rate", 16000);
+    cJSON_AddItemToObject(data, "audio", audio);
+    
+    // 舵机配置
+    cJSON* servo = cJSON_CreateObject();
+    cJSON_AddNumberToObject(servo, "default_frequency", 50);
+    cJSON_AddItemToObject(data, "servo", servo);
+    
+    return ApiRouter::CreateSuccessResponse(data);
+}
+
+// 更新设备配置
+ApiResponse HandleUpdateDeviceConfig(httpd_req_t* req, cJSON* request_json) {
+    ESP_LOGI(TAG, "Processing update device config request");
+    
+    if (!request_json) {
+        return ApiRouter::CreateErrorResponse(ApiStatusCode::BAD_REQUEST, "Request body is required");
+    }
+    
+    // 处理设备配置更新逻辑
+    // 这里仅作示例，您可以根据实际需求扩展
+    cJSON* device_name = cJSON_GetObjectItem(request_json, "device_name");
+    if (cJSON_IsString(device_name)) {
+        ESP_LOGI(TAG, "Updating device name to: %s", device_name->valuestring);
+        // 实际应用中，应该将配置保存到NVS或其他存储介质
+    }
+    
+    // 处理网络配置更新
+    cJSON* network = cJSON_GetObjectItem(request_json, "network");
+    if (cJSON_IsObject(network)) {
+        cJSON* wifi_mode = cJSON_GetObjectItem(network, "wifi_mode");
+        if (cJSON_IsString(wifi_mode)) {
+            ESP_LOGI(TAG, "Updating WiFi mode to: %s", wifi_mode->valuestring);
+            // 实际应用中，应该更新WiFi设置
+        }
+    }
+    
+    // 处理音频配置更新
+    cJSON* audio = cJSON_GetObjectItem(request_json, "audio");
+    if (cJSON_IsObject(audio)) {
+        cJSON* volume = cJSON_GetObjectItem(audio, "volume");
+        if (cJSON_IsNumber(volume)) {
+            ESP_LOGI(TAG, "Updating audio volume to: %d", volume->valueint);
+            // 实际应用中，应该更新音频设置
+        }
+    }
+    
+    // 处理舵机配置更新
+    cJSON* servo = cJSON_GetObjectItem(request_json, "servo");
+    if (cJSON_IsObject(servo)) {
+        cJSON* freq = cJSON_GetObjectItem(servo, "default_frequency");
+        if (cJSON_IsNumber(freq)) {
+            ESP_LOGI(TAG, "Updating default servo frequency to: %d", freq->valueint);
+            // 实际应用中，应该更新舵机设置
+        }
+    }
+    
+    // 创建响应数据
+    cJSON* data = cJSON_CreateObject();
+    cJSON_AddStringToObject(data, "message", "Configuration updated successfully");
+    
+    return ApiRouter::CreateSuccessResponse(data);
+}
