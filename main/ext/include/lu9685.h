@@ -12,7 +12,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "esp_err.h"
-#include "driver/i2c.h"
+#include "driver/i2c_master.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -53,7 +53,7 @@ extern "C" {
  * @brief LU9685设备结构体
  */
 typedef struct {
-    i2c_port_t i2c_port;        // I2C端口号
+    i2c_master_bus_handle_t i2c_port;        // I2C总线句柄
     uint8_t i2c_addr;           // I2C地址
     uint16_t pwm_freq;          // PWM频率(Hz)
     bool use_pca9548a;          // 是否使用PCA9548A
@@ -69,7 +69,7 @@ typedef lu9685_dev_t* lu9685_handle_t;
  * @brief LU9685初始化配置结构体
  */
 typedef struct {
-    i2c_port_t i2c_port;        // I2C端口号
+    i2c_master_bus_handle_t i2c_port;        // I2C总线句柄
     uint8_t i2c_addr;           // I2C地址
     uint16_t pwm_freq;          // PWM频率(Hz)，默认为50Hz
     bool use_pca9548a;          // 是否通过PCA9548A访问

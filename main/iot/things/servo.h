@@ -8,6 +8,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <esp_err.h>
+#include <driver/i2c_master.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -26,6 +27,10 @@ typedef enum {
  */
 typedef struct {
     servo_controller_type_t type;  // 控制器类型
+    
+    // I2C配置
+    i2c_port_t i2c_port;                     // I2C端口号，用于兼容旧版API
+    i2c_master_bus_handle_t i2c_bus_handle;  // I2C总线句柄，用于新版I2C Master API
     
     // 直接GPIO控制时的配置
     struct {

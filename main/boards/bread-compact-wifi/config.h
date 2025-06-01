@@ -2,7 +2,7 @@
 #define _BOARD_CONFIG_H_
 
 #include <driver/gpio.h>
-#include <driver/i2c.h>
+#include <driver/i2c_master.h>
 #include "sdkconfig.h"
 
 #define AUDIO_INPUT_SAMPLE_RATE  16000

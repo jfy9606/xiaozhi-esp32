@@ -7,17 +7,6 @@
 
 #define TAG "HtmlContent"
 
-// PSRAM内存分配宏 - 根据CONFIG_WEB_SERVER_USE_PSRAM决定是否使用PSRAM
-#if defined(CONFIG_WEB_SERVER_USE_PSRAM) && WEB_SERVER_HAS_PSRAM
-#define HTML_MALLOC(size) heap_caps_malloc(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)
-#define HTML_FREE(ptr) heap_caps_free(ptr)
-#define USING_PSRAM_FOR_HTML 1
-#else
-#define HTML_MALLOC(size) malloc(size)
-#define HTML_FREE(ptr) free(ptr)
-#define USING_PSRAM_FOR_HTML 0
-#endif
-
 // 从assets/html目录导入HTML内容
 #define HTML_STR(x) #x
 
@@ -34,22 +23,13 @@ extern const uint8_t ai_html_end[] asm("_binary_ai_html_end");
 extern const uint8_t vision_html_start[] asm("_binary_vision_html_start");
 extern const uint8_t vision_html_end[] asm("_binary_vision_html_end");
 
-//extern const uint8_t motor_html_start[] asm("_binary_motor_html_start");
-//extern const uint8_t motor_html_end[] asm("_binary_motor_html_end");
-
-// PSRAM存储的HTML内容指针
-static char* index_html_psram = NULL;
-static char* move_html_psram = NULL;
-static char* ai_html_psram = NULL;
-static char* vision_html_psram = NULL;
-
 // HTML内容大小
 static size_t index_html_size = 0;
 static size_t move_html_size = 0;
 static size_t ai_html_size = 0;
 static size_t vision_html_size = 0;
 
-// 初始化函数 - 将HTML内容复制到PSRAM
+// 初始化函数 - 计算HTML内容大小
 static void init_html_content() {
     static bool initialized = false;
     if (initialized) return;
@@ -65,57 +45,7 @@ static void init_html_content() {
     ESP_LOGI(TAG, "HTML文件大小: index=%zu, move=%zu, ai=%zu, vision=%zu",
             index_html_size, move_html_size, ai_html_size, vision_html_size);
     
-    // 分配PSRAM内存并复制内容
-    #if USING_PSRAM_FOR_HTML
-    ESP_LOGI(TAG, "将HTML内容复制到PSRAM...");
-    
-    index_html_psram = (char*)HTML_MALLOC(index_html_size + 1);
-    if (index_html_psram) {
-        memcpy(index_html_psram, index_html_start, index_html_size);
-        index_html_psram[index_html_size] = '\0';
-        ESP_LOGI(TAG, "index.html 复制到PSRAM: %zu 字节", index_html_size);
-    } else {
-        ESP_LOGW(TAG, "无法分配PSRAM用于index.html (%zu 字节), 将使用内部flash存储", index_html_size);
-    }
-    
-    move_html_psram = (char*)HTML_MALLOC(move_html_size + 1);
-    if (move_html_psram) {
-        memcpy(move_html_psram, move_html_start, move_html_size);
-        move_html_psram[move_html_size] = '\0';
-        ESP_LOGI(TAG, "move.html 复制到PSRAM: %zu 字节", move_html_size);
-    } else {
-        ESP_LOGW(TAG, "无法分配PSRAM用于move.html (%zu 字节), 将使用内部flash存储", move_html_size);
-    }
-    
-    ai_html_psram = (char*)HTML_MALLOC(ai_html_size + 1);
-    if (ai_html_psram) {
-        memcpy(ai_html_psram, ai_html_start, ai_html_size);
-        ai_html_psram[ai_html_size] = '\0';
-        ESP_LOGI(TAG, "ai.html 复制到PSRAM: %zu 字节", ai_html_size);
-    } else {
-        ESP_LOGW(TAG, "无法分配PSRAM用于ai.html (%zu 字节), 将使用内部flash存储", ai_html_size);
-    }
-    
-    vision_html_psram = (char*)HTML_MALLOC(vision_html_size + 1);
-    if (vision_html_psram) {
-        memcpy(vision_html_psram, vision_html_start, vision_html_size);
-        vision_html_psram[vision_html_size] = '\0';
-        ESP_LOGI(TAG, "vision.html 复制到PSRAM: %zu 字节", vision_html_size);
-    } else {
-        ESP_LOGW(TAG, "无法分配PSRAM用于vision.html (%zu 字节), 将使用内部flash存储", vision_html_size);
-    }
-    
-    // 检查是否所有文件都成功复制到PSRAM
-    int success_count = 0;
-    if (index_html_psram) success_count++;
-    if (move_html_psram) success_count++;
-    if (ai_html_psram) success_count++;
-    if (vision_html_psram) success_count++;
-    
-    ESP_LOGI(TAG, "%d/4 HTML文件成功复制到PSRAM", success_count);
-    #else
-    ESP_LOGI(TAG, "PSRAM存储HTML未启用，使用内部flash存储");
-    #endif
+    ESP_LOGI(TAG, "HTML内容将直接从flash读取");
     
     initialized = true;
 }
@@ -154,24 +84,24 @@ extern "C" {
         return move_html_size;
     }
 
-    // 获取HTML内容的函数 - 优先返回PSRAM中的内容
+    // 获取HTML内容的函数 - 直接返回flash中的内容
     const char* get_index_html_content() {
         init_html_content();
-        return index_html_psram ? index_html_psram : (const char*)index_html_start;
+        return (const char*)index_html_start;
     }
 
     const char* get_move_html_content() {
         init_html_content();
-        return move_html_psram ? move_html_psram : (const char*)move_html_start;
+        return (const char*)move_html_start;
     }
 
     const char* get_ai_html_content() {
         init_html_content();
-        return ai_html_psram ? ai_html_psram : (const char*)ai_html_start;
+        return (const char*)ai_html_start;
     }
 
     const char* get_vision_html_content() {
         init_html_content();
-        return vision_html_psram ? vision_html_psram : (const char*)vision_html_start;
+        return (const char*)vision_html_start;
     }
 }

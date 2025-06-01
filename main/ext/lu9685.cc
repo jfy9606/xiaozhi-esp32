@@ -7,10 +7,13 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-#include "driver/i2c.h"
+#include "driver/i2c_master.h"
 #include "esp_log.h"
 #include "esp_err.h"
 #include "include/multiplexer.h" // 添加对多路复用器的支持
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "esp_rom_sys.h" // 用于esp_rom_delay_us
 
 static const char *TAG = "LU9685";
 
@@ -44,7 +47,7 @@ static esp_err_t select_pca9548a_channel(lu9685_dev_t *dev)
     }
     
     // 通道选择后短暂延时以稳定
-    vTaskDelay(1 / portTICK_PERIOD_MS);
+    vTaskDelay(pdMS_TO_TICKS(1));
     return ESP_OK;
 }
 
@@ -57,90 +60,89 @@ static esp_err_t select_pca9548a_channel(lu9685_dev_t *dev)
 lu9685_handle_t lu9685_init(const lu9685_config_t *config)
 {
     if (config == NULL) {
-        ESP_LOGE(TAG, "配置参数为NULL");
+        ESP_LOGE(TAG, "配置为NULL");
         return NULL;
     }
-
+    
     // 分配内存
-    lu9685_dev_t *dev = static_cast<lu9685_dev_t*>(calloc(1, sizeof(lu9685_dev_t)));
+    lu9685_dev_t *dev = (lu9685_dev_t *)malloc(sizeof(lu9685_dev_t));
     if (dev == NULL) {
         ESP_LOGE(TAG, "内存分配失败");
         return NULL;
     }
-
-    // 复制配置参数
+    
+    // 复制配置
     dev->i2c_port = config->i2c_port;
     dev->i2c_addr = config->i2c_addr;
-    dev->pwm_freq = config->pwm_freq > 0 ? config->pwm_freq : 50; // 默认50Hz
+    dev->pwm_freq = config->pwm_freq;
     dev->use_pca9548a = config->use_pca9548a;
     dev->pca9548a_channel = config->pca9548a_channel;
     
-    // 如果使用PCA9548A，检查PCA9548A是否已经初始化
-    if (dev->use_pca9548a) {
-        if (!pca9548a_is_initialized()) {
-            ESP_LOGW(TAG, "PCA9548A未初始化，尝试使用默认方式初始化多路复用器");
-            
-            // 尝试初始化多路复用器
-            esp_err_t ret = multiplexer_init();
-            if (ret != ESP_OK || !pca9548a_is_initialized()) {
-                ESP_LOGE(TAG, "无法初始化PCA9548A，请确保先初始化多路复用器");
-                free(dev);
-                return NULL;
-            }
-        }
-        
-        // 选择PCA9548A通道
-        if (select_pca9548a_channel(dev) != ESP_OK) {
-            ESP_LOGE(TAG, "选择PCA9548A通道失败");
+    // 如果使用PCA9548A，确保已初始化
+    if (dev->use_pca9548a && !pca9548a_is_initialized()) {
+        ESP_LOGI(TAG, "PCA9548A未初始化，尝试初始化多路复用器");
+        esp_err_t ret = multiplexer_init();
+        if (ret != ESP_OK || !pca9548a_is_initialized()) {
+            ESP_LOGE(TAG, "无法初始化PCA9548A");
             free(dev);
             return NULL;
         }
     }
-
-    // 检查设备是否存在
-    i2c_cmd_handle_t cmd = i2c_cmd_link_create();
-    if (cmd == NULL) {
-        ESP_LOGE(TAG, "创建I2C命令链接失败");
-        free(dev);
-        return NULL;
-    }
-
-    if (i2c_master_start(cmd) != ESP_OK ||
-        i2c_master_write_byte(cmd, (dev->i2c_addr << 1) | I2C_MASTER_WRITE, true) != ESP_OK ||
-        i2c_master_stop(cmd) != ESP_OK) {
-        ESP_LOGE(TAG, "构造I2C命令失败");
-        i2c_cmd_link_delete(cmd);
-        free(dev);
-        return NULL;
-    }
     
-    esp_err_t ret = i2c_master_cmd_begin(dev->i2c_port, cmd, 1000 / portTICK_PERIOD_MS);
-    i2c_cmd_link_delete(cmd);
+    // 检查LU9685设备是否可访问
+    i2c_master_bus_handle_t bus_handle = dev->i2c_port;
     
+    // 设置I2C设备配置
+    i2c_device_config_t dev_cfg = {
+        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+        .device_address = dev->i2c_addr,
+        .scl_speed_hz = 100000,
+    };
+    
+    // 尝试探测设备是否存在
+    esp_err_t ret = i2c_master_probe(bus_handle, dev->i2c_addr, 1000);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "LU9685设备不存在，地址：0x%02x，错误：%s", dev->i2c_addr, esp_err_to_name(ret));
+        ESP_LOGE(TAG, "LU9685设备探测失败(0x%02X), %s", dev->i2c_addr, esp_err_to_name(ret));
         free(dev);
         return NULL;
     }
-
-    // 初始化设备
+    
+    // 复位LU9685
     ret = lu9685_reset(dev);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "重置LU9685设备失败");
+        ESP_LOGE(TAG, "LU9685重置失败: %s", esp_err_to_name(ret));
         free(dev);
         return NULL;
     }
-
+    
+    // 唤醒LU9685
+    ret = lu9685_set_sleep_mode(dev, false);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "LU9685唤醒失败: %s", esp_err_to_name(ret));
+        free(dev);
+        return NULL;
+    }
+    
     // 设置PWM频率
     ret = lu9685_set_frequency(dev, dev->pwm_freq);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "设置PWM频率失败");
+        ESP_LOGE(TAG, "设置PWM频率失败: %s", esp_err_to_name(ret));
         free(dev);
         return NULL;
     }
-
+    
+    // 将所有通道设置为0
+    ret = lu9685_set_all_pwm(dev, 0, 0);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "清除所有通道失败: %s", esp_err_to_name(ret));
+        free(dev);
+        return NULL;
+    }
+    
     // 保存全局句柄
     lu9685_global_handle = dev;
+    
+    ESP_LOGI(TAG, "LU9685初始化成功，地址:0x%02X，频率:%dHz", dev->i2c_addr, dev->pwm_freq);
     return dev;
 }
 
@@ -191,36 +193,39 @@ esp_err_t lu9685_reset(lu9685_handle_t handle)
         }
     }
 
-    // 准备要写入的数据
-    uint8_t reg_addr = LU9685_MODE1;
-    uint8_t data = LU9685_RESET;
+    // 使用新版I2C API
+    i2c_master_bus_handle_t bus_handle = (i2c_master_bus_handle_t)dev->i2c_port;
+    i2c_master_dev_handle_t dev_handle;
     
-    // 创建I2C通信
-    i2c_cmd_handle_t cmd = i2c_cmd_link_create();
-    if (cmd == NULL) {
-        ESP_LOGE(TAG, "创建I2C命令链接失败");
-        return ESP_ERR_NO_MEM;
+    // 配置I2C设备
+    i2c_device_config_t dev_cfg = {
+        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+        .device_address = dev->i2c_addr,
+        .scl_speed_hz = 400000, // 400kHz
+    };
+    
+    // 创建临时设备句柄
+    esp_err_t ret = i2c_master_bus_add_device(bus_handle, &dev_cfg, &dev_handle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "无法创建I2C设备: %s", esp_err_to_name(ret));
+        return ret;
     }
-
-    if (i2c_master_start(cmd) != ESP_OK ||
-        i2c_master_write_byte(cmd, (dev->i2c_addr << 1) | I2C_MASTER_WRITE, true) != ESP_OK ||
-        i2c_master_write_byte(cmd, reg_addr, true) != ESP_OK ||
-        i2c_master_write_byte(cmd, data, true) != ESP_OK ||
-        i2c_master_stop(cmd) != ESP_OK) {
-        ESP_LOGE(TAG, "构造I2C命令失败");
-        i2c_cmd_link_delete(cmd);
-        return ESP_ERR_INVALID_STATE;
-    }
-
-    esp_err_t ret = i2c_master_cmd_begin(dev->i2c_port, cmd, 1000 / portTICK_PERIOD_MS);
-    i2c_cmd_link_delete(cmd);
-
+    
+    // 准备发送数据
+    uint8_t tx_data[2] = {LU9685_MODE1, LU9685_RESET};
+    
+    // 发送复位命令
+    ret = i2c_master_transmit(dev_handle, tx_data, sizeof(tx_data), 1000);
+    
+    // 删除临时设备
+    i2c_master_bus_rm_device(dev_handle);
+    
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "重置LU9685设备失败：%s", esp_err_to_name(ret));
     }
 
     // 等待重置完成
-    vTaskDelay(10 / portTICK_PERIOD_MS);
+    vTaskDelay(pdMS_TO_TICKS(10));
 
     return ret;
 }
@@ -250,27 +255,37 @@ esp_err_t lu9685_read_register(lu9685_handle_t handle, uint8_t reg_addr, uint8_t
         }
     }
     
-    i2c_cmd_handle_t cmd = i2c_cmd_link_create();
-    if (cmd == NULL) {
-        ESP_LOGE(TAG, "Failed to create I2C command");
-        return ESP_ERR_NO_MEM;
+    // 使用新版I2C API
+    i2c_master_bus_handle_t bus_handle = (i2c_master_bus_handle_t)dev->i2c_port;
+    i2c_master_dev_handle_t dev_handle;
+    
+    // 配置I2C设备
+    i2c_device_config_t dev_cfg = {
+        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+        .device_address = dev->i2c_addr,
+        .scl_speed_hz = 400000, // 400kHz
+    };
+    
+    // 创建临时设备句柄
+    esp_err_t ret = i2c_master_bus_add_device(bus_handle, &dev_cfg, &dev_handle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "无法创建I2C设备: %s", esp_err_to_name(ret));
+        return ret;
     }
     
-    esp_err_t ret;
+    // 先发送寄存器地址
+    ret = i2c_master_transmit(dev_handle, &reg_addr, 1, 1000);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to write register address: %s", esp_err_to_name(ret));
+        i2c_master_bus_rm_device(dev_handle);
+        return ret;
+    }
     
-    // 写入寄存器地址
-    i2c_master_start(cmd);
-    i2c_master_write_byte(cmd, (dev->i2c_addr << 1) | I2C_MASTER_WRITE, true);
-    i2c_master_write_byte(cmd, reg_addr, true);
+    // 然后读取数据
+    ret = i2c_master_receive(dev_handle, value, 1, 1000);
     
-    // 重复开始，读取数据
-    i2c_master_start(cmd);
-    i2c_master_write_byte(cmd, (dev->i2c_addr << 1) | I2C_MASTER_READ, true);
-    i2c_master_read_byte(cmd, value, I2C_MASTER_NACK);
-    i2c_master_stop(cmd);
-    
-    ret = i2c_master_cmd_begin(dev->i2c_port, cmd, 1000 / portTICK_PERIOD_MS);
-    i2c_cmd_link_delete(cmd);
+    // 删除临时设备
+    i2c_master_bus_rm_device(dev_handle);
     
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to read register 0x%02x: %s", reg_addr, esp_err_to_name(ret));
@@ -304,22 +319,32 @@ esp_err_t lu9685_write_register(lu9685_handle_t handle, uint8_t reg_addr, uint8_
         }
     }
     
-    i2c_cmd_handle_t cmd = i2c_cmd_link_create();
-    if (cmd == NULL) {
-        ESP_LOGE(TAG, "Failed to create I2C command");
-        return ESP_ERR_NO_MEM;
+    // 使用新版I2C API
+    i2c_master_bus_handle_t bus_handle = (i2c_master_bus_handle_t)dev->i2c_port;
+    i2c_master_dev_handle_t dev_handle;
+    
+    // 配置I2C设备
+    i2c_device_config_t dev_cfg = {
+        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+        .device_address = dev->i2c_addr,
+        .scl_speed_hz = 400000, // 400kHz
+    };
+    
+    // 创建临时设备句柄
+    esp_err_t ret = i2c_master_bus_add_device(bus_handle, &dev_cfg, &dev_handle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "无法创建I2C设备: %s", esp_err_to_name(ret));
+        return ret;
     }
     
-    esp_err_t ret;
+    // 准备发送数据
+    uint8_t tx_data[2] = {reg_addr, value};
     
-    i2c_master_start(cmd);
-    i2c_master_write_byte(cmd, (dev->i2c_addr << 1) | I2C_MASTER_WRITE, true);
-    i2c_master_write_byte(cmd, reg_addr, true);
-    i2c_master_write_byte(cmd, value, true);
-    i2c_master_stop(cmd);
+    // 发送数据
+    ret = i2c_master_transmit(dev_handle, tx_data, sizeof(tx_data), 1000);
     
-    ret = i2c_master_cmd_begin(dev->i2c_port, cmd, 1000 / portTICK_PERIOD_MS);
-    i2c_cmd_link_delete(cmd);
+    // 删除临时设备
+    i2c_master_bus_rm_device(dev_handle);
     
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to write register 0x%02x: %s", reg_addr, esp_err_to_name(ret));
@@ -432,18 +457,38 @@ esp_err_t lu9685_set_pwm_channel(lu9685_handle_t handle, uint8_t channel, uint16
     // 准备寄存器地址
     uint8_t reg_addr = LU9685_LED0_ON_L + 4 * channel;
     
-    // 发送设置命令
-    i2c_cmd_handle_t cmd = i2c_cmd_link_create();
-    i2c_master_start(cmd);
-    i2c_master_write_byte(cmd, (dev->i2c_addr << 1) | I2C_MASTER_WRITE, true);
-    i2c_master_write_byte(cmd, reg_addr, true);
-    i2c_master_write_byte(cmd, on_value & 0xFF, true);
-    i2c_master_write_byte(cmd, (on_value >> 8) & 0x0F, true);
-    i2c_master_write_byte(cmd, off_value & 0xFF, true);
-    i2c_master_write_byte(cmd, (off_value >> 8) & 0x0F, true);
-    i2c_master_stop(cmd);
-    esp_err_t ret = i2c_master_cmd_begin(dev->i2c_port, cmd, 1000 / portTICK_PERIOD_MS);
-    i2c_cmd_link_delete(cmd);
+    // 使用新版I2C API
+    i2c_master_bus_handle_t bus_handle = (i2c_master_bus_handle_t)dev->i2c_port;
+    i2c_master_dev_handle_t dev_handle;
+    
+    // 配置I2C设备
+    i2c_device_config_t dev_cfg = {
+        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+        .device_address = dev->i2c_addr,
+        .scl_speed_hz = 400000, // 400kHz
+    };
+    
+    // 创建临时设备句柄
+    esp_err_t ret = i2c_master_bus_add_device(bus_handle, &dev_cfg, &dev_handle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "无法创建I2C设备: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    
+    // 准备发送数据
+    uint8_t tx_data[5] = {
+        reg_addr,
+        static_cast<uint8_t>(on_value & 0xFF),
+        static_cast<uint8_t>((on_value >> 8) & 0x0F),
+        static_cast<uint8_t>(off_value & 0xFF),
+        static_cast<uint8_t>((off_value >> 8) & 0x0F)
+    };
+    
+    // 发送数据
+    ret = i2c_master_transmit(dev_handle, tx_data, sizeof(tx_data), 1000);
+    
+    // 删除临时设备
+    i2c_master_bus_rm_device(dev_handle);
 
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "设置PWM通道 %d 失败：%s", channel, esp_err_to_name(ret));
@@ -513,18 +558,38 @@ esp_err_t lu9685_set_all_pwm(lu9685_handle_t handle, uint16_t on_value, uint16_t
         }
     }
 
-    // 发送设置命令
-    i2c_cmd_handle_t cmd = i2c_cmd_link_create();
-    i2c_master_start(cmd);
-    i2c_master_write_byte(cmd, (dev->i2c_addr << 1) | I2C_MASTER_WRITE, true);
-    i2c_master_write_byte(cmd, LU9685_ALL_LED_ON_L, true);
-    i2c_master_write_byte(cmd, on_value & 0xFF, true);
-    i2c_master_write_byte(cmd, (on_value >> 8) & 0x0F, true);
-    i2c_master_write_byte(cmd, off_value & 0xFF, true);
-    i2c_master_write_byte(cmd, (off_value >> 8) & 0x0F, true);
-    i2c_master_stop(cmd);
-    esp_err_t ret = i2c_master_cmd_begin(dev->i2c_port, cmd, 1000 / portTICK_PERIOD_MS);
-    i2c_cmd_link_delete(cmd);
+    // 使用新版I2C API
+    i2c_master_bus_handle_t bus_handle = (i2c_master_bus_handle_t)dev->i2c_port;
+    i2c_master_dev_handle_t dev_handle;
+    
+    // 配置I2C设备
+    i2c_device_config_t dev_cfg = {
+        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+        .device_address = dev->i2c_addr,
+        .scl_speed_hz = 400000, // 400kHz
+    };
+    
+    // 创建临时设备句柄
+    esp_err_t ret = i2c_master_bus_add_device(bus_handle, &dev_cfg, &dev_handle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "无法创建I2C设备: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    
+    // 准备发送数据
+    uint8_t tx_data[5] = {
+        LU9685_ALL_LED_ON_L,
+        static_cast<uint8_t>(on_value & 0xFF),
+        static_cast<uint8_t>((on_value >> 8) & 0x0F),
+        static_cast<uint8_t>(off_value & 0xFF),
+        static_cast<uint8_t>((off_value >> 8) & 0x0F)
+    };
+    
+    // 发送数据
+    ret = i2c_master_transmit(dev_handle, tx_data, sizeof(tx_data), 1000);
+    
+    // 删除临时设备
+    i2c_master_bus_rm_device(dev_handle);
 
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "设置所有PWM通道失败：%s", esp_err_to_name(ret));
@@ -589,28 +654,10 @@ esp_err_t lu9685_set_sleep_mode(lu9685_handle_t handle, bool sleep)
 
     // 获取当前模式
     uint8_t mode1;
-    i2c_cmd_handle_t cmd = i2c_cmd_link_create();
-    i2c_master_start(cmd);
-    i2c_master_write_byte(cmd, (dev->i2c_addr << 1) | I2C_MASTER_WRITE, true);
-    i2c_master_write_byte(cmd, LU9685_MODE1, true);
-    i2c_master_start(cmd);
-    i2c_master_write_byte(cmd, (dev->i2c_addr << 1) | I2C_MASTER_READ, true);
-    i2c_master_read_byte(cmd, &mode1, I2C_MASTER_NACK);
-    i2c_master_stop(cmd);
-    esp_err_t ret = i2c_master_cmd_begin(dev->i2c_port, cmd, 1000 / portTICK_PERIOD_MS);
-    i2c_cmd_link_delete(cmd);
-
+    esp_err_t ret = lu9685_read_register(handle, LU9685_MODE1, &mode1);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "读取MODE1寄存器失败：%s", esp_err_to_name(ret));
         return ret;
-    }
-
-    // 如果启用了多路复用器，再次选择正确的通道
-    if (dev->use_pca9548a) {
-        ret = select_pca9548a_channel(dev);
-        if (ret != ESP_OK) {
-            return ret;
-        }
     }
 
     // 设置或清除SLEEP位
@@ -621,15 +668,7 @@ esp_err_t lu9685_set_sleep_mode(lu9685_handle_t handle, bool sleep)
         newmode = mode1 & ~LU9685_SLEEP; // 清除SLEEP位
     }
 
-    cmd = i2c_cmd_link_create();
-    i2c_master_start(cmd);
-    i2c_master_write_byte(cmd, (dev->i2c_addr << 1) | I2C_MASTER_WRITE, true);
-    i2c_master_write_byte(cmd, LU9685_MODE1, true);
-    i2c_master_write_byte(cmd, newmode, true);
-    i2c_master_stop(cmd);
-    ret = i2c_master_cmd_begin(dev->i2c_port, cmd, 1000 / portTICK_PERIOD_MS);
-    i2c_cmd_link_delete(cmd);
-
+    ret = lu9685_write_register(handle, LU9685_MODE1, newmode);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "设置睡眠模式失败：%s", esp_err_to_name(ret));
         return ret;

@@ -76,26 +76,49 @@ if(CONFIG_ENABLE_WEB_SERVER AND CONFIG_ENABLE_WEB_CONTENT)
         endif()
     endforeach()
     
+    # 检查和处理JavaScript文件
     foreach(JS_FILE ${JS_FILES})
         if(NOT EXISTS ${JS_FILE})
             message(WARNING "JavaScript文件不存在: ${JS_FILE}")
         else()
-            message(STATUS "找到JavaScript文件: ${JS_FILE}")
+            get_filename_component(JS_FILENAME ${JS_FILE} NAME)
+            message(STATUS "找到JavaScript文件: ${JS_FILE} -> ${JS_FILENAME}")
+            
+            # 为了避免嵌入文件符号名不匹配，不设置自定义名称，使用ESP-IDF默认的命名
+            list(APPEND EMBED_FILES ${JS_FILE})
         endif()
     endforeach()
     
+    # 检查和处理CSS文件
     foreach(CSS_FILE ${CSS_FILES})
         if(NOT EXISTS ${CSS_FILE})
             message(WARNING "CSS文件不存在: ${CSS_FILE}")
         else()
-            message(STATUS "找到CSS文件: ${CSS_FILE}")
+            get_filename_component(CSS_FILENAME ${CSS_FILE} NAME)
+            message(STATUS "找到CSS文件: ${CSS_FILE} -> ${CSS_FILENAME}")
+            
+            # 为了避免嵌入文件符号名不匹配，不设置自定义名称，使用ESP-IDF默认的命名
+            list(APPEND EMBED_FILES ${CSS_FILE})
         endif()
     endforeach()
     
     list(APPEND EMBED_FILES ${HTML_FILES})
     list(APPEND EMBED_FILES ${JS_FILES})
     list(APPEND EMBED_FILES ${CSS_FILES})
-    message(STATUS "HTML、JavaScript和CSS文件将被嵌入到固件中")
+    
+    # 显示嵌入文件的统计信息
+    list(LENGTH JS_FILES JS_FILES_LENGTH)
+    list(LENGTH CSS_FILES CSS_FILES_LENGTH)
+    list(LENGTH HTML_FILES HTML_FILES_LENGTH)
+    
+    message(STATUS "HTML、JavaScript和CSS文件将被嵌入到固件中：")
+    message(STATUS "HTML文件数量: ${HTML_FILES_LENGTH}")
+    message(STATUS "JS文件数量: ${JS_FILES_LENGTH}")
+    message(STATUS "CSS文件数量: ${CSS_FILES_LENGTH}")
+    
+    # 计算嵌入文件总数
+    list(LENGTH EMBED_FILES EMBED_FILES_LENGTH)
+    message(STATUS "总共嵌入文件数量: ${EMBED_FILES_LENGTH}")
 endif()
 
 # 根据配置添加Web组件
@@ -389,40 +412,3 @@ add_custom_command(
 add_custom_target(lang_header ALL
     DEPENDS ${LANG_HEADER}
 )
-
-if(CONFIG_BOARD_TYPE_ESP_HI)
-set(URL "https://github.com/espressif2022/image_player/raw/main/test_apps/test_8bit")
-set(SPIFFS_DIR "${CMAKE_BINARY_DIR}/emoji")
-file(MAKE_DIRECTORY ${SPIFFS_DIR})
-
-# List all files to download
-set(FILES_TO_DOWNLOAD "")
-list(APPEND FILES_TO_DOWNLOAD "Anger_enter.aaf" "Anger_loop.aaf" "Anger_return.aaf")
-list(APPEND FILES_TO_DOWNLOAD "happy_enter.aaf" "happy_loop.aaf" "happ_return.aaf")
-list(APPEND FILES_TO_DOWNLOAD "sad_enter.aaf" "sad_loop.aaf" "sad_return.aaf")
-list(APPEND FILES_TO_DOWNLOAD "scorn_enter.aaf" "scorn_loop.aaf" "scorn_return.aaf")
-list(APPEND FILES_TO_DOWNLOAD "left_enter.aaf" "left_loop.aaf" "left_return.aaf")
-list(APPEND FILES_TO_DOWNLOAD "right_enter.aaf" "right_loop.aaf" "right_return.aaf")
-list(APPEND FILES_TO_DOWNLOAD "asking.aaf" "blink_once.aaf" "blink_quick.aaf")
-list(APPEND FILES_TO_DOWNLOAD "connecting.aaf" "panic_enter.aaf" "panic_loop.aaf")
-list(APPEND FILES_TO_DOWNLOAD "panic_return.aaf" "wake.aaf")
-
-foreach(FILENAME IN LISTS FILES_TO_DOWNLOAD)
-    set(REMOTE_FILE "${URL}/${FILENAME}")
-    set(LOCAL_FILE "${SPIFFS_DIR}/${FILENAME}")
-    message(STATUS "Downloading ${FILENAME}")
-    file(DOWNLOAD ${REMOTE_FILE} ${LOCAL_FILE}
-         STATUS DOWNLOAD_STATUS)
-    list(GET DOWNLOAD_STATUS 0 STATUS_CODE)
-    if(NOT STATUS_CODE EQUAL 0)
-        message(FATAL_ERROR "Failed to download ${FILENAME} from ${URL}")
-    endif()
-endforeach()
-
-spiffs_create_partition_assets(
-    assets_A
-    ${SPIFFS_DIR}
-    FLASH_IN_PROJECT
-    MMAP_FILE_SUPPORT_FORMAT ".aaf"
-)
-endif()

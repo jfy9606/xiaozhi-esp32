@@ -11,23 +11,37 @@
 #define CONFIG_WEB_CONTENT_TAG "WebContent"
 #endif
 
-// 所有内存分配根据WEB_SERVER_USE_PSRAM决定是否使用PSRAM宏
-
 // Web内容处理组件
 class WebContent : public Component {
 public:
+    // 构造函数
     WebContent(WebServer* server);
+    
+    // 析构函数
     virtual ~WebContent();
-
-    // Component接口实现
-    virtual bool Start() override;
-    virtual void Stop() override;
-    virtual bool IsRunning() const override;
-    virtual const char* GetName() const override;
-
-    // 获取MIME类型
+    
+    // 启动Web内容服务
+    bool Start();
+    
+    // 停止Web内容服务
+    void Stop();
+    
+    // 检查是否正在运行
+    bool IsRunning() const;
+    
+    // 获取组件名称
+    const char* GetName() const;
+    
+    // 获取文件的MIME类型
     static const char* GetContentType(const PSRAMString& path);
-
+    
+    // 处理静态文件请求
+    static esp_err_t HandleStaticFile(httpd_req_t* req);
+    
+    // 处理CSS和JS文件请求
+    static esp_err_t HandleCssFile(httpd_req_t* req);
+    static esp_err_t HandleJsFile(httpd_req_t* req);
+    
     // 注册静态资源处理器
     void RegisterStaticContent();
     
@@ -50,29 +64,19 @@ public:
     // 设置WiFi配置
     bool ConfigureWifi(const PSRAMString& ssid, const PSRAMString& password);
 
-    // 处理CSS和JS文件请求
-    static esp_err_t HandleCssFile(httpd_req_t* req);
-    static esp_err_t HandleJsFile(httpd_req_t* req);
-
 private:
     WebServer* server_;
     bool running_;
     
-    // 处理静态文件请求
-    static esp_err_t HandleStaticFile(httpd_req_t* req);
-    
-    // 初始化静态资源处理器
+    // 初始化静态处理器
     void InitStaticHandlers();
     
-    // 预加载静态资源到PSRAM
-    void PreloadStaticAssets();
+    // 计算嵌入资源大小
+    void ComputeResourceSizes();
     
-    // 缓存的静态资源
-    static char* favicon_ico_psram;
+    // 嵌入资源大小
     static size_t favicon_ico_size;
-    static char* style_css_psram;
     static size_t style_css_size;
-    static char* script_js_psram;
     static size_t script_js_size;
 };
 

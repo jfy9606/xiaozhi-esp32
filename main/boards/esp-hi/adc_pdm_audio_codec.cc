@@ -1,7 +1,6 @@
 #include "adc_pdm_audio_codec.h"
 
 #include <esp_log.h>
-#include <driver/i2c.h>
 #include <driver/i2c_master.h>
 #include <driver/i2s_tdm.h>
 #include "adc_mic.h"

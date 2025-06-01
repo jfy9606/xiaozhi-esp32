@@ -20,7 +20,7 @@
 #include <algorithm>
 #include <vector>
 #include <string.h>
-#include <driver/i2c.h>
+#include <driver/i2c_master.h>
 
 // C语言实现部分，舵机控制器API
 extern "C" {
@@ -58,6 +58,10 @@ extern "C" {
 typedef struct servo_controller_t {
     servo_controller_type_t type;
     bool is_initialized;
+    
+    // I2C端口配置
+    i2c_master_bus_handle_t i2c_bus_handle;  // I2C总线句柄
+    i2c_port_t i2c_port;                     // I2C端口号
     
     // 直接GPIO控制时的配置
     struct {
@@ -232,19 +236,24 @@ static esp_err_t init_gpio_servo(servo_controller_t *controller) {
 
 // 初始化LU9685控制
 static esp_err_t init_lu9685_servo(servo_controller_t *controller) {
-    if (controller == NULL || controller->lu9685.lu9685_initialized) {
-        return ESP_ERR_INVALID_STATE;
+    if (controller == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    // 如果已经初始化过，直接返回OK
+    if (controller->lu9685.lu9685_initialized) {
+        return ESP_OK;
     }
     
     ESP_LOGI(TAG_CTRL, "Initializing LU9685 servo controller");
     
     // 初始化LU9685驱动
     lu9685_config_t lu9685_config = {
-        .i2c_port = I2C_NUM_0,
-        .i2c_addr = CONFIG_LU9685_I2C_ADDR,
-        .pwm_freq = 50,  // 舵机标准50Hz
-        .use_pca9548a = true,
-        .pca9548a_channel = CONFIG_LU9685_PCA9548A_CHANNEL
+        .i2c_port = controller->i2c_bus_handle,  // 使用总线句柄
+        .i2c_addr = 0x40,            // 默认地址
+        .pwm_freq = 50,              // 50Hz
+        .use_pca9548a = false,
+        .pca9548a_channel = 0
     };
     
     controller->lu9685.handle = lu9685_init(&lu9685_config);
@@ -259,6 +268,23 @@ static esp_err_t init_lu9685_servo(servo_controller_t *controller) {
     servo_controller_reset((servo_controller_handle_t)controller);
     
     return ESP_OK;
+}
+
+// 获取I2C总线句柄
+static i2c_master_bus_handle_t get_i2c_bus_handle(i2c_port_t port) {
+    // 由于board_config_t中没有get_i2c_bus_handle成员，这里需要使用其他方式获取I2C总线句柄
+    
+    // 这里可以通过全局变量或者从特定函数获取I2C总线句柄
+    // 在实际项目中，应当通过适当的方式获取I2C总线句柄
+    
+    // 临时解决方案：如果项目中有特定函数可获取I2C总线句柄，则应调用该函数
+    ESP_LOGW(TAG_CTRL, "I2C bus handle retrieval not implemented, returning NULL");
+    
+    // 如果你的项目中有类似这样的函数，取消下面注释并使用
+    // extern i2c_master_bus_handle_t BoardGetI2CMasterBusHandle(i2c_port_t port);
+    // return BoardGetI2CMasterBusHandle(port);
+    
+    return NULL;
 }
 
 servo_controller_handle_t servo_controller_init(const servo_controller_config_t *config) {
@@ -280,6 +306,10 @@ servo_controller_handle_t servo_controller_init(const servo_controller_config_t 
     
     // 配置控制器
     servo_ctrl->type = config->type;
+    
+    // 保存I2C总线句柄
+    servo_ctrl->i2c_port = config->i2c_port;
+    servo_ctrl->i2c_bus_handle = config->i2c_bus_handle;
     
     if (config->type == SERVO_CONTROLLER_TYPE_DIRECT) {
         // 配置直接GPIO控制
@@ -1078,6 +1108,19 @@ private:
         ESP_LOGI(TAG, "Initializing servo controller");
         
         servo_controller_config_t config = {};
+        
+        // 设置I2C配置
+        board_config_t* board_config = board_get_config();
+        if (board_config) {
+            // 从Board配置获取I2C端口号
+            config.i2c_port = I2C_NUM_0;  // 默认使用I2C0
+            
+            // 获取I2C总线句柄
+            config.i2c_bus_handle = get_i2c_bus_handle(config.i2c_port);
+            if (config.i2c_bus_handle == NULL) {
+                ESP_LOGW(TAG, "Failed to get I2C bus handle, servo controller may not work correctly");
+            }
+        }
         
 #ifdef CONFIG_SERVO_CONNECTION_DIRECT
         // 直接GPIO控制方式

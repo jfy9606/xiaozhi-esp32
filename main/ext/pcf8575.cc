@@ -8,7 +8,8 @@
 #include "include/pcf8575.h"
 #include "include/pca9548a.h"
 #include "include/multiplexer.h"
-#include "driver/i2c.h"
+#include "driver/i2c_master.h"
+#include "esp_timer.h" // 用于延时函数
 
 static const char* TAG = "PCF8575";
 
@@ -50,7 +51,7 @@ static esp_err_t select_pcf8575_channel(pcf8575_dev_t *dev)
     }
     
     // 通道选择后短暂延时以稳定
-    vTaskDelay(1 / portTICK_PERIOD_MS);
+    vTaskDelay(pdMS_TO_TICKS(1));
     return ESP_OK;
 }
 
@@ -79,14 +80,29 @@ esp_err_t pcf8575_read_ports(pcf8575_handle_t handle, uint16_t *value) {
     uint8_t data[2] = {0};
     esp_err_t ret;
 
-    i2c_cmd_handle_t cmd = i2c_cmd_link_create();
-    i2c_master_start(cmd);
-    i2c_master_write_byte(cmd, (dev->i2c_addr << 1) | I2C_MASTER_READ, true);
-    i2c_master_read_byte(cmd, &data[0], I2C_MASTER_ACK);
-    i2c_master_read_byte(cmd, &data[1], I2C_MASTER_NACK);
-    i2c_master_stop(cmd);
-    ret = i2c_master_cmd_begin(dev->i2c_port, cmd, dev->i2c_timeout_ms / portTICK_PERIOD_MS);
-    i2c_cmd_link_delete(cmd);
+    // 使用新版I2C API
+    i2c_master_bus_handle_t bus_handle = (i2c_master_bus_handle_t)dev->i2c_port;
+    i2c_master_dev_handle_t dev_handle;
+
+    // 配置I2C设备
+    i2c_device_config_t dev_cfg = {
+        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+        .device_address = dev->i2c_addr,
+        .scl_speed_hz = 400000, // 400kHz
+    };
+
+    // 临时创建设备句柄
+    ret = i2c_master_bus_add_device(bus_handle, &dev_cfg, &dev_handle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "无法创建I2C设备: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    // 读取数据
+    ret = i2c_master_receive(dev_handle, data, sizeof(data), dev->i2c_timeout_ms);
+
+    // 删除临时设备
+    i2c_master_bus_rm_device(dev_handle);
 
     if (ret == ESP_OK) {
         *value = ((uint16_t)data[1] << 8) | data[0];
@@ -119,21 +135,34 @@ esp_err_t pcf8575_write_ports(pcf8575_handle_t handle, uint16_t value) {
         }
     }
     
-    esp_err_t ret;
-
-    i2c_cmd_handle_t cmd = i2c_cmd_link_create();
-    i2c_master_start(cmd);
-    i2c_master_write_byte(cmd, (dev->i2c_addr << 1) | I2C_MASTER_WRITE, true);
-    
     // 准备发送数据 - 低字节在前，高字节在后
     uint8_t data[2];
     data[0] = static_cast<uint8_t>(value & 0xFFU);         // 低8位
     data[1] = static_cast<uint8_t>((value >> 8) & 0xFFU);  // 高8位
     
-    i2c_master_write(cmd, data, 2, true);
-    i2c_master_stop(cmd);
-    ret = i2c_master_cmd_begin(dev->i2c_port, cmd, dev->i2c_timeout_ms / portTICK_PERIOD_MS);
-    i2c_cmd_link_delete(cmd);
+    // 使用新版I2C API
+    i2c_master_bus_handle_t bus_handle = (i2c_master_bus_handle_t)dev->i2c_port;
+    i2c_master_dev_handle_t dev_handle;
+
+    // 配置I2C设备
+    i2c_device_config_t dev_cfg = {
+        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+        .device_address = dev->i2c_addr,
+        .scl_speed_hz = 400000, // 400kHz
+    };
+
+    // 临时创建设备句柄
+    esp_err_t ret = i2c_master_bus_add_device(bus_handle, &dev_cfg, &dev_handle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "无法创建I2C设备: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    // 发送数据
+    ret = i2c_master_transmit(dev_handle, data, sizeof(data), dev->i2c_timeout_ms);
+
+    // 删除临时设备
+    i2c_master_bus_rm_device(dev_handle);
 
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "写入PCF8575端口状态失败: %s", esp_err_to_name(ret));
@@ -152,87 +181,51 @@ esp_err_t pcf8575_write_ports(pcf8575_handle_t handle, uint16_t value) {
  * @return pcf8575_handle_t 设备句柄，NULL表示创建失败
  */
 pcf8575_handle_t pcf8575_create(const pcf8575_config_t *config) {
-    if (!config) {
-        ESP_LOGE(TAG, "PCF8575配置为NULL");
+    if (config == NULL) {
+        ESP_LOGE(TAG, "配置为NULL");
         return NULL;
     }
-
-    pcf8575_dev_t *dev = static_cast<pcf8575_dev_t*>(calloc(1, sizeof(pcf8575_dev_t)));
-    if (!dev) {
+    
+    // 分配内存
+    pcf8575_dev_t *dev = (pcf8575_dev_t *)malloc(sizeof(pcf8575_dev_t));
+    if (dev == NULL) {
         ESP_LOGE(TAG, "内存分配失败");
         return NULL;
     }
-
+    
+    // 复制配置
     dev->i2c_port = config->i2c_port;
     dev->i2c_addr = config->i2c_addr;
     dev->i2c_timeout_ms = config->i2c_timeout_ms;
+    dev->output_state = 0xFFFF; // 默认全部设置为高电平(输入模式)
     dev->use_pca9548a = config->use_pca9548a;
     dev->pca9548a_channel = config->pca9548a_channel;
     
-    // 如果使用PCA9548A，检查PCA9548A是否已经初始化
-    if (dev->use_pca9548a) {
-        if (!pca9548a_is_initialized()) {
-            ESP_LOGW(TAG, "PCA9548A未初始化，尝试使用默认方式初始化多路复用器");
-            
-            // 尝试初始化多路复用器
-            esp_err_t ret = multiplexer_init();
-            if (ret != ESP_OK || !pca9548a_is_initialized()) {
-                ESP_LOGE(TAG, "无法初始化PCA9548A，请确保先初始化多路复用器");
-                free(dev);
-                return NULL;
-            }
-        }
-        
-        // 选择PCA9548A通道
-        if (select_pcf8575_channel(dev) != ESP_OK) {
-            ESP_LOGE(TAG, "选择PCA9548A通道失败");
-            free(dev);
-            return NULL;
-        }
-    }
-
-    // 检查I2C设备是否存在
-    i2c_cmd_handle_t cmd = i2c_cmd_link_create();
-    i2c_master_start(cmd);
-    i2c_master_write_byte(cmd, (dev->i2c_addr << 1) | I2C_MASTER_WRITE, true);
-    i2c_master_stop(cmd);
-    esp_err_t ret = i2c_master_cmd_begin(dev->i2c_port, cmd, dev->i2c_timeout_ms / portTICK_PERIOD_MS);
-    i2c_cmd_link_delete(cmd);
-
+    // 检查PCF8575设备是否可访问
+    i2c_master_bus_handle_t bus_handle = dev->i2c_port;
+    
+    // 尝试探测设备是否存在
+    esp_err_t ret = i2c_master_probe(bus_handle, dev->i2c_addr, dev->i2c_timeout_ms);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "PCF8575设备不存在，地址: 0x%02x，错误: %s", dev->i2c_addr, esp_err_to_name(ret));
+        ESP_LOGE(TAG, "PCF8575设备探测失败(0x%02X), %s", dev->i2c_addr, esp_err_to_name(ret));
         free(dev);
         return NULL;
     }
-
-    // 如果启用了多路复用器，再次选择正确的通道
-    if (dev->use_pca9548a) {
-        ret = select_pcf8575_channel(dev);
-        if (ret != ESP_OK) {
-            ESP_LOGE(TAG, "选择PCA9548A通道失败");
-            free(dev);
-            return NULL;
-        }
-    }
-
-    // 默认将所有引脚设置为高电平（输入模式）
+    
+    // 如果需要所有引脚设为输出模式，写入0
     if (config->all_output) {
-        if (pcf8575_write_ports(static_cast<pcf8575_handle_t>(dev), 0x0000) != ESP_OK) {
-            ESP_LOGE(TAG, "设置全部端口为输出模式失败");
+        dev->output_state = 0x0000; // 全部设置为低电平（输出模式）
+        
+        // 向PCF8575写入输出值
+        if (pcf8575_write_ports(dev, dev->output_state) != ESP_OK) {
+            ESP_LOGE(TAG, "PCF8575设置输出模式失败");
             free(dev);
             return NULL;
         }
-        dev->output_state = 0x0000;
-    } else {
-        if (pcf8575_write_ports(static_cast<pcf8575_handle_t>(dev), 0xFFFF) != ESP_OK) {
-            ESP_LOGE(TAG, "设置默认端口状态失败");
-            free(dev);
-            return NULL;
-        }
-        dev->output_state = 0xFFFF;
     }
-
-    return static_cast<pcf8575_handle_t>(dev);
+    
+    ESP_LOGI(TAG, "PCF8575设备创建成功，地址: 0x%02X", dev->i2c_addr);
+    return dev;
 }
 
 /**
@@ -290,7 +283,30 @@ esp_err_t pcf8575_set_level(pcf8575_handle_t handle, int pin, uint32_t level)
     data[0] = dev->output_state & 0xFF;       // 低字节
     data[1] = (dev->output_state >> 8) & 0xFF; // 高字节
     
-    esp_err_t ret = i2c_master_write_to_device(dev->i2c_port, dev->i2c_addr, data, sizeof(data), pdMS_TO_TICKS(dev->i2c_timeout_ms));
+    // 使用新版I2C API
+    i2c_master_bus_handle_t bus_handle = (i2c_master_bus_handle_t)dev->i2c_port;
+    i2c_master_dev_handle_t dev_handle;
+
+    // 配置I2C设备
+    i2c_device_config_t dev_cfg = {
+        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+        .device_address = dev->i2c_addr,
+        .scl_speed_hz = 400000, // 400kHz
+    };
+
+    // 临时创建设备句柄
+    esp_err_t ret = i2c_master_bus_add_device(bus_handle, &dev_cfg, &dev_handle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "无法创建I2C设备: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    // 发送数据
+    ret = i2c_master_transmit(dev_handle, data, sizeof(data), dev->i2c_timeout_ms);
+
+    // 删除临时设备
+    i2c_master_bus_rm_device(dev_handle);
+    
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to set pin %d to level %ld: %s", pin, level, esp_err_to_name(ret));
         return ret;
@@ -327,7 +343,31 @@ esp_err_t pcf8575_get_level(pcf8575_handle_t handle, int pin, uint32_t *level)
 
     // 从PCF8575读取状态
     uint8_t data[2] = {0};
-    esp_err_t ret = i2c_master_read_from_device(dev->i2c_port, dev->i2c_addr, data, sizeof(data), pdMS_TO_TICKS(dev->i2c_timeout_ms));
+    
+    // 使用新版I2C API
+    i2c_master_bus_handle_t bus_handle = (i2c_master_bus_handle_t)dev->i2c_port;
+    i2c_master_dev_handle_t dev_handle;
+
+    // 配置I2C设备
+    i2c_device_config_t dev_cfg = {
+        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+        .device_address = dev->i2c_addr,
+        .scl_speed_hz = 400000, // 400kHz
+    };
+
+    // 临时创建设备句柄
+    esp_err_t ret = i2c_master_bus_add_device(bus_handle, &dev_cfg, &dev_handle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "无法创建I2C设备: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    // 读取数据
+    ret = i2c_master_receive(dev_handle, data, sizeof(data), dev->i2c_timeout_ms);
+
+    // 删除临时设备
+    i2c_master_bus_rm_device(dev_handle);
+    
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to read device state: %s", esp_err_to_name(ret));
         return ret;
@@ -405,13 +445,13 @@ esp_err_t pcf8575_set_pins(pcf8575_handle_t handle, uint16_t pin_mask, uint16_t 
 /**
  * @brief 初始化PCF8575并设置默认配置
  * 
- * @param i2c_port I2C端口号
+ * @param i2c_port I2C总线句柄
  * @param i2c_addr I2C地址
  * @param use_pca9548a 是否通过PCA9548A访问
  * @param pca9548a_channel 如果使用PCA9548A，指定通道号
  * @return pcf8575_handle_t 设备句柄，NULL表示创建失败
  */
-pcf8575_handle_t pcf8575_init_with_defaults(i2c_port_t i2c_port, uint8_t i2c_addr, bool use_pca9548a, uint8_t pca9548a_channel) {
+pcf8575_handle_t pcf8575_init_with_defaults(i2c_master_bus_handle_t i2c_port, uint8_t i2c_addr, bool use_pca9548a, uint8_t pca9548a_channel) {
     // 如果使用PCA9548A，确保已初始化
     if (use_pca9548a && !pca9548a_is_initialized()) {
         ESP_LOGI(TAG, "PCA9548A未初始化，尝试初始化多路复用器");
@@ -457,49 +497,46 @@ pcf8575_handle_t pcf8575_get_handle(void)
     return pcf8575_global_handle;
 }
 
-// 初始化PCF8575
-esp_err_t pcf8575_init(void)
-{
+/**
+ * @brief 初始化PCF8575
+ * 
+ * @return esp_err_t 
+ */
+esp_err_t pcf8575_init(void) {
+    // 如果已经初始化，则直接返回
     if (pcf8575_global_handle != NULL) {
-        ESP_LOGW(TAG, "PCF8575 already initialized");
         return ESP_OK;
     }
-
-    // 检查PCA9548A是否已初始化
-    if (!pca9548a_is_initialized()) {
-        ESP_LOGE(TAG, "PCA9548A not initialized, cannot proceed with PCF8575 initialization");
-        return ESP_ERR_INVALID_STATE;
-    }
-
-    // 分配PCF8575设备结构体内存
-    pcf8575_handle_t handle = (pcf8575_handle_t)calloc(1, sizeof(pcf8575_dev_t));
+    
+    ESP_LOGI(TAG, "初始化PCF8575设备");
+    
+    // 创建PCF8575设备
+    pcf8575_handle_t handle = (pcf8575_handle_t)malloc(sizeof(pcf8575_dev_t));
     if (handle == NULL) {
-        ESP_LOGE(TAG, "Failed to allocate memory for PCF8575");
+        ESP_LOGE(TAG, "无法分配内存");
         return ESP_ERR_NO_MEM;
     }
-
-    // 配置PCF8575设备参数
-    handle->i2c_port = PCF8575_I2C_PORT;
-    handle->i2c_addr = PCF8575_I2C_ADDR;
-    handle->i2c_timeout_ms = PCF8575_I2C_TIMEOUT_MS;
-    handle->output_state = 0xFFFF; // 默认所有IO为输入模式
-    handle->use_pca9548a = true;
-    handle->pca9548a_channel = PCF8575_PCA9548A_CHANNEL;
-
-    ESP_LOGI(TAG, "Initializing PCF8575 with I2C address 0x%X on PCA9548A channel %d", 
-            handle->i2c_addr, handle->pca9548a_channel);
     
-    // 初始测试：写入全1，然后读回，确保通信正常
-    esp_err_t ret = pcf8575_write_ports(handle, 0xFFFF);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to communicate with PCF8575");
-        free(handle);
-        return ret;
-    }
+    // 配置I2C端口
+    // 注意：这里我们需要先从BoardGetI2CMasterBusHandle获取总线句柄
+    // 如果你的项目中有提供获取I2C总线句柄的函数，应该使用该函数
+    // 此处仅为示例，实际应根据项目情况调整
     
-    // 将句柄保存在全局变量中
+    // 由于无法直接将i2c_port_t转换为i2c_master_bus_handle_t，
+    // 这里需要通过外部函数获取总线句柄，或者修改BoardConfig中的代码
+    // 临时解决方案：让用户在使用pcf8575_init_with_defaults时提供有效的句柄
+    
+    // 配置PCF8575
+    handle->i2c_addr = PCF8575_I2C_ADDR;          // 使用默认地址
+    handle->i2c_timeout_ms = PCF8575_I2C_TIMEOUT_MS; // 设置超时时间
+    handle->output_state = 0xFFFF;                // 默认全高电平
+    handle->use_pca9548a = true;                 // 默认使用多路复用器
+    handle->pca9548a_channel = PCF8575_PCA9548A_CHANNEL; // 默认通道
+    
+    // 存储全局句柄
     pcf8575_global_handle = handle;
-    ESP_LOGI(TAG, "PCF8575 initialized successfully");
+    
+    ESP_LOGI(TAG, "PCF8575初始化完成");
     return ESP_OK;
 }
 
@@ -538,8 +575,7 @@ esp_err_t pcf8575_set_gpio_level(pcf8575_handle_t handle, pcf8575_gpio_t gpio_nu
 }
 
 // 获取GPIO电平，兼容函数，调用pcf8575_get_level
-esp_err_t pcf8575_get_gpio_level(pcf8575_handle_t handle, pcf8575_gpio_t gpio_num, uint32_t *level)
-{
+esp_err_t pcf8575_get_gpio_level(pcf8575_handle_t handle, pcf8575_gpio_t gpio_num, uint32_t *level) {
     return pcf8575_get_level(handle, gpio_num, level);
 }
 

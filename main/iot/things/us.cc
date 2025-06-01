@@ -345,9 +345,9 @@ public:
                 count++;  // 前方传感器
                 count++;  // 后方传感器
             }
-        }
+    }
 #endif
-        
+
         if (count == 0) {
             ESP_LOGW(TAG, "No ultrasonic sensors configured");
             return false;
@@ -541,6 +541,6 @@ public:
     }
 };
 
-} // namespace iot
+} // namespace iot 
 
 DECLARE_THING(UltrasonicSensor);

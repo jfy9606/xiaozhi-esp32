@@ -16,7 +16,7 @@
 
 #include <stdint.h>
 #include "esp_err.h"
-#include "driver/i2c.h"
+#include "driver/i2c_master.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -29,7 +29,7 @@ extern "C" {
  * @brief PCF8575设备结构体
  */
 typedef struct {
-    i2c_port_t i2c_port;    // I2C端口号
+    i2c_master_bus_handle_t i2c_port;    // I2C总线句柄
     uint8_t i2c_addr;       // I2C地址
     uint32_t i2c_timeout_ms; // I2C超时时间(毫秒)
     uint16_t output_state;  // 输出端口状态(16位)
@@ -46,7 +46,7 @@ typedef pcf8575_dev_t* pcf8575_handle_t;
  * @brief PCF8575配置结构体
  */
 typedef struct {
-    i2c_port_t i2c_port;    // I2C端口号
+    i2c_master_bus_handle_t i2c_port;    // I2C总线句柄
     uint8_t i2c_addr;       // I2C地址
     uint32_t i2c_timeout_ms; // I2C超时时间(毫秒)
     bool all_output;        // 是否全部设置为输出
@@ -130,13 +130,13 @@ esp_err_t pcf8575_set_pins(pcf8575_handle_t handle, uint16_t pin_mask, uint16_t 
 /**
  * @brief 初始化PCF8575并设置默认配置
  * 
- * @param i2c_port I2C端口号
+ * @param i2c_port I2C总线句柄
  * @param i2c_addr I2C地址
  * @param use_pca9548a 是否通过PCA9548A访问
  * @param pca9548a_channel 如果使用PCA9548A，指定通道号
  * @return pcf8575_handle_t 设备句柄，NULL表示创建失败
  */
-pcf8575_handle_t pcf8575_init_with_defaults(i2c_port_t i2c_port, uint8_t i2c_addr, bool use_pca9548a, uint8_t pca9548a_channel);
+pcf8575_handle_t pcf8575_init_with_defaults(i2c_master_bus_handle_t i2c_port, uint8_t i2c_addr, bool use_pca9548a, uint8_t pca9548a_channel);
 
 /**
  * @brief 判断PCF8575是否已经初始化

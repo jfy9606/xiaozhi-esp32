@@ -16,12 +16,9 @@
 
 #define TAG CONFIG_WEB_CONTENT_TAG
 
-// 初始化静态成员变量
-char* WebContent::favicon_ico_psram = NULL;
+// 初始化静态成员变量 - 移除PSRAM变量，保留大小变量用于引用内嵌资源
 size_t WebContent::favicon_ico_size = 0;
-char* WebContent::style_css_psram = NULL;
 size_t WebContent::style_css_size = 0;
-char* WebContent::script_js_psram = NULL;
 size_t WebContent::script_js_size = 0;
 
 // 构造函数
@@ -48,8 +45,8 @@ bool WebContent::Start() {
         return false;
     }
 
-    // 预加载静态资源
-    PreloadStaticAssets();
+    // 计算嵌入资源大小
+    ComputeResourceSizes();
     
     // 注册静态资源处理器
     RegisterStaticContent();
@@ -86,36 +83,48 @@ const char* WebContent::GetName() const {
 void WebContent::RegisterStaticContent() {
     ESP_LOGI(TAG, "注册静态资源处理器");
     
-    // 注册静态资源处理器
-    // 注册舵机控制页面
-    server_->RegisterHttpHandler("/servo_control.html", HTTP_GET, [](httpd_req_t* req) {
-        #if defined(_binary_servo_control_html_start) && defined(_binary_servo_control_html_end)
-        extern const char servo_control_html_start[] asm("_binary_servo_control_html_start");
-        extern const char servo_control_html_end[] asm("_binary_servo_control_html_end");
-        httpd_resp_set_type(req, "text/html");
-        return httpd_resp_send(req, servo_control_html_start, servo_control_html_end - servo_control_html_start);
-        #else
-        httpd_resp_set_type(req, "text/plain");
-        httpd_resp_send(req, "Servo control page not available", -1);
-        return ESP_OK;
-        #endif
-    });
+    // 不再单独注册每个静态资源路径，使用通配符注册器
+    // 检查是否已存在通配符处理器
+    bool wildcard_exists = server_->HasUriHandler("/*");
     
-    // 注册API客户端JS
-    server_->RegisterHttpHandler("/js/api_client.js", HTTP_GET, [](httpd_req_t* req) {
-        #if defined(_binary_api_client_js_start) && defined(_binary_api_client_js_end)
-        extern const char api_client_js_start[] asm("_binary_api_client_js_start");
-        extern const char api_client_js_end[] asm("_binary_api_client_js_end");
-        httpd_resp_set_type(req, "application/javascript");
-        return httpd_resp_send(req, api_client_js_start, api_client_js_end - api_client_js_start);
-        #else
-        httpd_resp_set_type(req, "text/plain");
-        httpd_resp_send(req, "API client JS not available", -1);
-        return ESP_OK;
-        #endif
-    });
+    if (!wildcard_exists) {
+        // 如果没有通配符处理器，注册一个
+        server_->RegisterHttpHandler("/*", HTTP_GET, [this](httpd_req_t* req) {
+            // 处理路径
+            const char* uri = req->uri;
+            ESP_LOGI(TAG, "处理静态资源请求: %s", uri);
+            
+            // 检查是否是CSS文件
+            if (strncmp(uri, "/css/", 5) == 0) {
+                return HandleCssFile(req);
+            }
+            // 检查是否是JS文件
+            else if (strncmp(uri, "/js/", 4) == 0) {
+                return HandleJsFile(req);
+            }
+            // 检查是否是特定的HTML文件或其他静态资源
+            else if (strcmp(uri, "/favicon.ico") == 0) {
+                return HandleStaticFile(req);
+            }
+            // 其他静态资源
+            else {
+                // 通过Content-Type判断文件类型
+                const char* content_type = GetContentType(PSRAMString(uri));
+                httpd_resp_set_type(req, content_type);
+                
+                // 尝试找到对应的内嵌资源，如果找不到则返回404
+                ESP_LOGW(TAG, "未找到静态资源: %s", uri);
+                httpd_resp_send_404(req);
+                return ESP_OK;
+            }
+        });
+        ESP_LOGI(TAG, "注册通配符处理器: /*");
+    } else {
+        ESP_LOGI(TAG, "通配符处理器 /* 已存在，跳过注册");
+    }
     
-    // 主页和静态资源由WebServer的默认处理器处理，这里不需要额外注册
+    // 不再单独注册CSS和JS处理器
+    ESP_LOGI(TAG, "静态资源将通过通配符处理器处理");
 }
 
 // 注册WebSocket消息处理器
@@ -666,71 +675,53 @@ esp_err_t WebContent::HandleStaticFile(httpd_req_t* req) {
     // 检查是否为已知的静态资源
     if (strcmp(uri, "/favicon.ico") == 0) {
         // 处理favicon.ico
-        if (favicon_ico_psram) {
-            httpd_resp_set_type(req, "image/x-icon");
-            esp_err_t ret = httpd_resp_send(req, favicon_ico_psram, favicon_ico_size);
-            return ret;
-        } 
-        #if defined(_binary_favicon_ico_start)
-        else {
-            // 如果PSRAM分配失败，直接从flash发送
-            extern const char favicon_ico_start[] asm("_binary_favicon_ico_start");
-            httpd_resp_set_type(req, "image/x-icon");
-            return httpd_resp_send(req, favicon_ico_start, favicon_ico_size);
-        }
+        #if defined(_binary_favicon_ico_start) && defined(_binary_favicon_ico_end)
+        // 只有当favicon.ico被编译到固件中时才尝试访问
+        extern const uint8_t _binary_favicon_ico_start[] asm("_binary_favicon_ico_start");
+        extern const uint8_t _binary_favicon_ico_end[]   asm("_binary_favicon_ico_end");
+        size_t len = _binary_favicon_ico_end - _binary_favicon_ico_start;
+        
+        httpd_resp_set_type(req, "image/x-icon");
+        return httpd_resp_send(req, (const char*)_binary_favicon_ico_start, len);
         #else
-        else {
-            // 资源不存在
-            httpd_resp_set_type(req, "text/plain");
-            httpd_resp_send(req, "Favicon not available", -1);
-            return ESP_OK;
-        }
+        // 资源不存在
+        httpd_resp_set_type(req, "text/plain");
+        httpd_resp_send(req, "Favicon not available", -1);
+        return ESP_OK;
         #endif
     }
     else if (strcmp(uri, "/style.css") == 0) {
         // 处理CSS文件
-        if (style_css_psram) {
-            httpd_resp_set_type(req, "text/css");
-            esp_err_t ret = httpd_resp_send(req, style_css_psram, style_css_size);
-            return ret;
-        }
-        #if defined(_binary_style_css_start) 
-        else {
-            // 如果PSRAM分配失败，直接从flash发送
-            extern const char style_css_start[] asm("_binary_style_css_start");
-            httpd_resp_set_type(req, "text/css");
-            return httpd_resp_send(req, style_css_start, style_css_size);
-        }
+        #if defined(_binary_style_css_start) && defined(_binary_style_css_end)
+        // 只有当style.css被编译到固件中时才尝试访问
+        extern const uint8_t _binary_style_css_start[] asm("_binary_style_css_start");
+        extern const uint8_t _binary_style_css_end[]   asm("_binary_style_css_end");
+        size_t len = _binary_style_css_end - _binary_style_css_start;
+        
+        httpd_resp_set_type(req, "text/css");
+        return httpd_resp_send(req, (const char*)_binary_style_css_start, len);
         #else
-        else {
-            // 资源不存在
-            httpd_resp_set_type(req, "text/plain");
-            httpd_resp_send(req, "CSS not available", -1);
-            return ESP_OK;
-        }
+        // 资源不存在
+        httpd_resp_set_type(req, "text/plain");
+        httpd_resp_send(req, "CSS not available", -1);
+        return ESP_OK;
         #endif
     }
     else if (strcmp(uri, "/script.js") == 0) {
         // 处理JavaScript文件
-        if (script_js_psram) {
-            httpd_resp_set_type(req, "application/javascript");
-            esp_err_t ret = httpd_resp_send(req, script_js_psram, script_js_size);
-            return ret;
-        }
-        #if defined(_binary_script_js_start)
-        else {
-            // 如果PSRAM分配失败，直接从flash发送
-            extern const char script_js_start[] asm("_binary_script_js_start");
-            httpd_resp_set_type(req, "application/javascript");
-            return httpd_resp_send(req, script_js_start, script_js_size);
-        }
+        #if defined(_binary_script_js_start) && defined(_binary_script_js_end)
+        // 只有当script.js被编译到固件中时才尝试访问
+        extern const uint8_t _binary_script_js_start[] asm("_binary_script_js_start");
+        extern const uint8_t _binary_script_js_end[]   asm("_binary_script_js_end");
+        size_t len = _binary_script_js_end - _binary_script_js_start;
+        
+        httpd_resp_set_type(req, "application/javascript");
+        return httpd_resp_send(req, (const char*)_binary_script_js_start, len);
         #else
-        else {
-            // 资源不存在
-            httpd_resp_set_type(req, "text/plain");
-            httpd_resp_send(req, "JavaScript not available", -1);
-            return ESP_OK;
-        }
+        // 资源不存在
+        httpd_resp_set_type(req, "text/plain");
+        httpd_resp_send(req, "JavaScript not available", -1);
+        return ESP_OK;
         #endif
     }
     
@@ -744,152 +735,46 @@ esp_err_t WebContent::HandleStaticFile(httpd_req_t* req) {
 void WebContent::InitStaticHandlers() {
     ESP_LOGI(TAG, "初始化静态资源处理器");
     
-    // 只为存在的静态资源注册处理器
-    #if defined(_binary_favicon_ico_start) || defined(favicon_ico_psram)
-    server_->RegisterHttpHandler("/favicon.ico", HTTP_GET, HandleStaticFile);
-    #endif
-    
-    #if defined(_binary_style_css_start) || defined(style_css_psram)
-    server_->RegisterHttpHandler("/style.css", HTTP_GET, HandleStaticFile);
-    #endif
-    
-    #if defined(_binary_script_js_start) || defined(script_js_psram)
-    server_->RegisterHttpHandler("/script.js", HTTP_GET, HandleStaticFile);
-    #endif
-    
-    // 注册CSS文件处理器
-    server_->RegisterHttpHandler("/css/*", HTTP_GET, HandleCssFile);
-    ESP_LOGI(TAG, "注册CSS文件处理器: /css/*");
-    
-    // 注册JS文件处理器
-    server_->RegisterHttpHandler("/js/*", HTTP_GET, HandleJsFile);
-    ESP_LOGI(TAG, "注册JS文件处理器: /js/*");
-    
-    // 如果没有注册任何静态处理器，记录警告
-    #if !defined(_binary_favicon_ico_start) && !defined(_binary_style_css_start) && !defined(_binary_script_js_start)
-    ESP_LOGW(TAG, "没有找到嵌入式静态资源，请检查CMakeLists.txt配置");
-    #endif
+    // 由于我们已经在RegisterStaticContent方法中使用通配符处理器，这里不需要额外操作
+    ESP_LOGI(TAG, "静态资源将通过通配符处理器处理");
 }
 
-// 预加载静态资源到PSRAM
-void WebContent::PreloadStaticAssets() {
-    #if WEB_SERVER_USE_PSRAM
-    ESP_LOGI(TAG, "预加载静态资源到PSRAM...");
-    #else
-    ESP_LOGI(TAG, "预加载静态资源到标准内存...");
-    #endif
+// 计算嵌入资源大小
+void WebContent::ComputeResourceSizes() {
+    ESP_LOGI(TAG, "计算嵌入资源大小...");
     
-    // 释放可能已经存在的资源
-    if (favicon_ico_psram) {
-        WEB_SERVER_FREE(favicon_ico_psram);
-        favicon_ico_psram = NULL;
-    }
-    
-    if (style_css_psram) {
-        WEB_SERVER_FREE(style_css_psram);
-        style_css_psram = NULL;
-    }
-    
-    if (script_js_psram) {
-        WEB_SERVER_FREE(script_js_psram);
-        script_js_psram = NULL;
-    }
-    
-    // 检查是否编译进了favicon.ico
+    // 检查常见的嵌入资源是否存在
     #if defined(_binary_favicon_ico_start) && defined(_binary_favicon_ico_end)
-    // 加载favicon.ico
-    extern const char favicon_ico_start[] asm("_binary_favicon_ico_start");
-    extern const char favicon_ico_end[] asm("_binary_favicon_ico_end");
-    favicon_ico_size = favicon_ico_end - favicon_ico_start;
-    
-    if (favicon_ico_size > 0) {
-        favicon_ico_psram = (char*)WEB_SERVER_MALLOC(favicon_ico_size);
-        if (favicon_ico_psram) {
-            memcpy(favicon_ico_psram, favicon_ico_start, favicon_ico_size);
-            #if WEB_SERVER_USE_PSRAM
-            ESP_LOGI(TAG, "favicon.ico 加载到PSRAM: %zu 字节", favicon_ico_size);
-            #else
-            ESP_LOGI(TAG, "favicon.ico 加载到内存: %zu 字节", favicon_ico_size);
-            #endif
-        } else {
-            #if WEB_SERVER_USE_PSRAM
-            ESP_LOGW(TAG, "无法分配PSRAM用于favicon.ico (%zu 字节)", favicon_ico_size);
-            #else
-            ESP_LOGW(TAG, "无法分配内存用于favicon.ico (%zu 字节)", favicon_ico_size);
-            #endif
-        }
-    }
+    extern const uint8_t _binary_favicon_ico_start[] asm("_binary_favicon_ico_start");
+    extern const uint8_t _binary_favicon_ico_end[] asm("_binary_favicon_ico_end");
+    favicon_ico_size = _binary_favicon_ico_end - _binary_favicon_ico_start;
+    ESP_LOGI(TAG, "favicon.ico 大小: %zu 字节", favicon_ico_size);
     #else
+    favicon_ico_size = 0;
     ESP_LOGW(TAG, "favicon.ico 未在固件中找到");
     #endif
     
-    // 检查是否编译进了style.css
     #if defined(_binary_style_css_start) && defined(_binary_style_css_end)
-    // 加载style.css
-    extern const char style_css_start[] asm("_binary_style_css_start");
-    extern const char style_css_end[] asm("_binary_style_css_end");
-    style_css_size = style_css_end - style_css_start;
-    
-    if (style_css_size > 0) {
-        style_css_psram = (char*)WEB_SERVER_MALLOC(style_css_size);
-        if (style_css_psram) {
-            memcpy(style_css_psram, style_css_start, style_css_size);
-            #if WEB_SERVER_USE_PSRAM
-            ESP_LOGI(TAG, "style.css 加载到PSRAM: %zu 字节", style_css_size);
-            #else
-            ESP_LOGI(TAG, "style.css 加载到内存: %zu 字节", style_css_size);
-            #endif
-        } else {
-            #if WEB_SERVER_USE_PSRAM
-            ESP_LOGW(TAG, "无法分配PSRAM用于style.css (%zu 字节)", style_css_size);
-            #else
-            ESP_LOGW(TAG, "无法分配内存用于style.css (%zu 字节)", style_css_size);
-            #endif
-        }
-    }
+    extern const uint8_t _binary_style_css_start[] asm("_binary_style_css_start");
+    extern const uint8_t _binary_style_css_end[] asm("_binary_style_css_end");
+    style_css_size = _binary_style_css_end - _binary_style_css_start;
+    ESP_LOGI(TAG, "style.css 大小: %zu 字节", style_css_size);
     #else
+    style_css_size = 0;
     ESP_LOGW(TAG, "style.css 未在固件中找到");
     #endif
     
-    // 检查是否编译进了script.js
     #if defined(_binary_script_js_start) && defined(_binary_script_js_end)
-    // 加载script.js
-    extern const char script_js_start[] asm("_binary_script_js_start");
-    extern const char script_js_end[] asm("_binary_script_js_end");
-    script_js_size = script_js_end - script_js_start;
-    
-    if (script_js_size > 0) {
-        script_js_psram = (char*)WEB_SERVER_MALLOC(script_js_size);
-        if (script_js_psram) {
-            memcpy(script_js_psram, script_js_start, script_js_size);
-            #if WEB_SERVER_USE_PSRAM
-            ESP_LOGI(TAG, "script.js 加载到PSRAM: %zu 字节", script_js_size);
-            #else
-            ESP_LOGI(TAG, "script.js 加载到内存: %zu 字节", script_js_size);
-            #endif
-        } else {
-            #if WEB_SERVER_USE_PSRAM
-            ESP_LOGW(TAG, "无法分配PSRAM用于script.js (%zu 字节)", script_js_size);
-            #else
-            ESP_LOGW(TAG, "无法分配内存用于script.js (%zu 字节)", script_js_size);
-            #endif
-        }
-    }
+    extern const uint8_t _binary_script_js_start[] asm("_binary_script_js_start");
+    extern const uint8_t _binary_script_js_end[] asm("_binary_script_js_end");
+    script_js_size = _binary_script_js_end - _binary_script_js_start;
+    ESP_LOGI(TAG, "script.js 大小: %zu 字节", script_js_size);
     #else
+    script_js_size = 0;
     ESP_LOGW(TAG, "script.js 未在固件中找到");
     #endif
     
-    // 输出内存使用情况
-    #if WEB_SERVER_USE_PSRAM && WEB_SERVER_HAS_PSRAM
-    size_t psram_free = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
-    size_t psram_total = heap_caps_get_total_size(MALLOC_CAP_SPIRAM);
-    ESP_LOGI(TAG, "静态资源加载完成, PSRAM使用: %zu/%zu 字节 (%.1f%%)", 
-             psram_total - psram_free, psram_total, 
-             100.0f * (psram_total - psram_free) / psram_total);
-    #else
-    size_t heap_free = esp_get_free_heap_size();
-    ESP_LOGI(TAG, "静态资源加载完成, 剩余堆内存: %zu 字节", heap_free);
-    #endif
+    ESP_LOGI(TAG, "嵌入资源大小计算完成");
 }
 
 // 处理CSS文件请求
@@ -900,165 +785,147 @@ esp_err_t WebContent::HandleCssFile(httpd_req_t* req) {
     // 提取文件名 - 例如从 "/css/common.css" 提取 "common.css"
     const char* filename = strrchr(uri, '/');
     if (!filename) {
+        ESP_LOGE(TAG, "无法从URI中提取文件名: %s", uri);
         httpd_resp_send_404(req);
         return ESP_OK;
     }
     filename++; // 跳过'/'字符
     
-    // 使用dlsym查找符号
-    void* start_ptr = nullptr;
-    void* end_ptr = nullptr;
+    // 构建符合ESP-IDF嵌入文件命名规范的符号名
+    // ESP-IDF通常将文件名中的非字母数字字符替换为下划线
+    char sym_name[64] = {0};
+    strncpy(sym_name, filename, sizeof(sym_name) - 1);
     
-    #pragma GCC diagnostic push
-    #pragma GCC diagnostic ignored "-Wpedantic"
-    // 这里使用一个技巧来检查嵌入文件是否存在
-    // 由于我们不能在运行时构建符号名，我们需要为每个文件添加明确的处理
+    // 将.替换为_
+    for (char* p = sym_name; *p; ++p) {
+        if (*p == '.') *p = '_';
+    }
     
+    char start_sym[80];
+    char end_sym[80];
+    snprintf(start_sym, sizeof(start_sym), "_binary_%s_start", sym_name);
+    snprintf(end_sym, sizeof(end_sym), "_binary_%s_end", sym_name);
+    
+    ESP_LOGI(TAG, "尝试加载CSS文件: %s, 查找符号: %s", filename, start_sym);
+    
+    // 设置内容类型为CSS
+    httpd_resp_set_type(req, "text/css");
+    
+    // 尝试使用常见的CSS文件名模式
     if (strcmp(filename, "common.css") == 0) {
-        extern const uint8_t common_css_start[] asm("_binary_common_css_start");
-        extern const uint8_t common_css_end[] asm("_binary_common_css_end");
-        start_ptr = (void*)common_css_start;
-        end_ptr = (void*)common_css_end;
+        extern const uint8_t _binary_common_css_start[] asm("_binary_common_css_start");
+        extern const uint8_t _binary_common_css_end[] asm("_binary_common_css_end");
+        size_t len = _binary_common_css_end - _binary_common_css_start;
+        ESP_LOGI(TAG, "发送common.css, 大小: %d字节", (int)len);
+        return httpd_resp_send(req, (const char*)_binary_common_css_start, len);
     } 
     else if (strcmp(filename, "index.css") == 0) {
-        extern const uint8_t index_css_start[] asm("_binary_index_css_start");
-        extern const uint8_t index_css_end[] asm("_binary_index_css_end");
-        start_ptr = (void*)index_css_start;
-        end_ptr = (void*)index_css_end;
+        extern const uint8_t _binary_index_css_start[] asm("_binary_index_css_start");
+        extern const uint8_t _binary_index_css_end[] asm("_binary_index_css_end");
+        size_t len = _binary_index_css_end - _binary_index_css_start;
+        ESP_LOGI(TAG, "发送index.css, 大小: %d字节", (int)len);
+        return httpd_resp_send(req, (const char*)_binary_index_css_start, len);
     }
     else if (strcmp(filename, "move.css") == 0) {
-        extern const uint8_t move_css_start[] asm("_binary_move_css_start");
-        extern const uint8_t move_css_end[] asm("_binary_move_css_end");
-        start_ptr = (void*)move_css_start;
-        end_ptr = (void*)move_css_end;
+        extern const uint8_t _binary_move_css_start[] asm("_binary_move_css_start");
+        extern const uint8_t _binary_move_css_end[] asm("_binary_move_css_end");
+        size_t len = _binary_move_css_end - _binary_move_css_start;
+        ESP_LOGI(TAG, "发送move.css, 大小: %d字节", (int)len);
+        return httpd_resp_send(req, (const char*)_binary_move_css_start, len);
     }
     else if (strcmp(filename, "ai.css") == 0) {
-        extern const uint8_t ai_css_start[] asm("_binary_ai_css_start");
-        extern const uint8_t ai_css_end[] asm("_binary_ai_css_end");
-        start_ptr = (void*)ai_css_start;
-        end_ptr = (void*)ai_css_end;
+        extern const uint8_t _binary_ai_css_start[] asm("_binary_ai_css_start");
+        extern const uint8_t _binary_ai_css_end[] asm("_binary_ai_css_end");
+        size_t len = _binary_ai_css_end - _binary_ai_css_start;
+        ESP_LOGI(TAG, "发送ai.css, 大小: %d字节", (int)len);
+        return httpd_resp_send(req, (const char*)_binary_ai_css_start, len);
     }
     else if (strcmp(filename, "vision.css") == 0) {
-        extern const uint8_t vision_css_start[] asm("_binary_vision_css_start");
-        extern const uint8_t vision_css_end[] asm("_binary_vision_css_end");
-        start_ptr = (void*)vision_css_start;
-        end_ptr = (void*)vision_css_end;
-    }
-    else if (strcmp(filename, "location.css") == 0) {
-        extern const uint8_t location_css_start[] asm("_binary_location_css_start");
-        extern const uint8_t location_css_end[] asm("_binary_location_css_end");
-        start_ptr = (void*)location_css_start;
-        end_ptr = (void*)location_css_end;
-    }
-    else if (strcmp(filename, "servo_control.css") == 0) {
-        extern const uint8_t servo_control_css_start[] asm("_binary_servo_control_css_start");
-        extern const uint8_t servo_control_css_end[] asm("_binary_servo_control_css_end");
-        start_ptr = (void*)servo_control_css_start;
-        end_ptr = (void*)servo_control_css_end;
-    }
-    else if (strcmp(filename, "device_config.css") == 0) {
-        extern const uint8_t device_config_css_start[] asm("_binary_device_config_css_start");
-        extern const uint8_t device_config_css_end[] asm("_binary_device_config_css_end");
-        start_ptr = (void*)device_config_css_start;
-        end_ptr = (void*)device_config_css_end;
-    }
-    #pragma GCC diagnostic pop
-    
-    if (start_ptr && end_ptr) {
-        size_t size = (uint8_t*)end_ptr - (uint8_t*)start_ptr;
-        httpd_resp_set_type(req, "text/css");
-        return httpd_resp_send(req, (const char*)start_ptr, size);
+        extern const uint8_t _binary_vision_css_start[] asm("_binary_vision_css_start");
+        extern const uint8_t _binary_vision_css_end[] asm("_binary_vision_css_end");
+        size_t len = _binary_vision_css_end - _binary_vision_css_start;
+        ESP_LOGI(TAG, "发送vision.css, 大小: %d字节", (int)len);
+        return httpd_resp_send(req, (const char*)_binary_vision_css_start, len);
     }
     
-    // 文件未找到
+    // 如果没有找到匹配的CSS文件
+    ESP_LOGW(TAG, "未找到CSS文件: %s", filename);
     httpd_resp_send_404(req);
     return ESP_OK;
 }
 
-// 处理JS文件请求
+// 处理JavaScript文件请求
 esp_err_t WebContent::HandleJsFile(httpd_req_t* req) {
     const char* uri = req->uri;
     ESP_LOGI(TAG, "处理JS文件请求: %s", uri);
     
-    // 提取文件名 - 例如从 "/js/api_client.js" 提取 "api_client.js"
+    // 提取文件名 - 例如从 "/js/app.js" 提取 "app.js"
     const char* filename = strrchr(uri, '/');
     if (!filename) {
+        ESP_LOGE(TAG, "无法从URI中提取文件名: %s", uri);
         httpd_resp_send_404(req);
         return ESP_OK;
     }
     filename++; // 跳过'/'字符
     
-    // 使用dlsym查找符号
-    void* start_ptr = nullptr;
-    void* end_ptr = nullptr;
+    // 构建符合ESP-IDF嵌入文件命名规范的符号名
+    char sym_name[64] = {0};
+    strncpy(sym_name, filename, sizeof(sym_name) - 1);
     
-    #pragma GCC diagnostic push
-    #pragma GCC diagnostic ignored "-Wpedantic"
-    // 这里使用一个技巧来检查嵌入文件是否存在
-    // 由于我们不能在运行时构建符号名，我们需要为每个文件添加明确的处理
+    // 将.替换为_
+    for (char* p = sym_name; *p; ++p) {
+        if (*p == '.') *p = '_';
+    }
     
+    char start_sym[80];
+    char end_sym[80];
+    snprintf(start_sym, sizeof(start_sym), "_binary_%s_start", sym_name);
+    snprintf(end_sym, sizeof(end_sym), "_binary_%s_end", sym_name);
+    
+    ESP_LOGI(TAG, "尝试加载JS文件: %s, 查找符号: %s", filename, start_sym);
+    
+    // 设置内容类型为JavaScript
+    httpd_resp_set_type(req, "application/javascript");
+    
+    // 尝试使用常见的JS文件名模式
     if (strcmp(filename, "api_client.js") == 0) {
-        extern const uint8_t api_client_js_start[] asm("_binary_api_client_js_start");
-        extern const uint8_t api_client_js_end[] asm("_binary_api_client_js_end");
-        start_ptr = (void*)api_client_js_start;
-        end_ptr = (void*)api_client_js_end;
+        extern const uint8_t _binary_api_client_js_start[] asm("_binary_api_client_js_start");
+        extern const uint8_t _binary_api_client_js_end[] asm("_binary_api_client_js_end");
+        size_t len = _binary_api_client_js_end - _binary_api_client_js_start;
+        ESP_LOGI(TAG, "发送api_client.js, 大小: %d字节", (int)len);
+        return httpd_resp_send(req, (const char*)_binary_api_client_js_start, len);
     } 
     else if (strcmp(filename, "index.js") == 0) {
-        extern const uint8_t index_js_start[] asm("_binary_index_js_start");
-        extern const uint8_t index_js_end[] asm("_binary_index_js_end");
-        start_ptr = (void*)index_js_start;
-        end_ptr = (void*)index_js_end;
+        extern const uint8_t _binary_index_js_start[] asm("_binary_index_js_start");
+        extern const uint8_t _binary_index_js_end[] asm("_binary_index_js_end");
+        size_t len = _binary_index_js_end - _binary_index_js_start;
+        ESP_LOGI(TAG, "发送index.js, 大小: %d字节", (int)len);
+        return httpd_resp_send(req, (const char*)_binary_index_js_start, len);
     }
     else if (strcmp(filename, "move.js") == 0) {
-        extern const uint8_t move_js_start[] asm("_binary_move_js_start");
-        extern const uint8_t move_js_end[] asm("_binary_move_js_end");
-        start_ptr = (void*)move_js_start;
-        end_ptr = (void*)move_js_end;
+        extern const uint8_t _binary_move_js_start[] asm("_binary_move_js_start");
+        extern const uint8_t _binary_move_js_end[] asm("_binary_move_js_end");
+        size_t len = _binary_move_js_end - _binary_move_js_start;
+        ESP_LOGI(TAG, "发送move.js, 大小: %d字节", (int)len);
+        return httpd_resp_send(req, (const char*)_binary_move_js_start, len);
     }
     else if (strcmp(filename, "ai.js") == 0) {
-        extern const uint8_t ai_js_start[] asm("_binary_ai_js_start");
-        extern const uint8_t ai_js_end[] asm("_binary_ai_js_end");
-        start_ptr = (void*)ai_js_start;
-        end_ptr = (void*)ai_js_end;
+        extern const uint8_t _binary_ai_js_start[] asm("_binary_ai_js_start");
+        extern const uint8_t _binary_ai_js_end[] asm("_binary_ai_js_end");
+        size_t len = _binary_ai_js_end - _binary_ai_js_start;
+        ESP_LOGI(TAG, "发送ai.js, 大小: %d字节", (int)len);
+        return httpd_resp_send(req, (const char*)_binary_ai_js_start, len);
     }
     else if (strcmp(filename, "vision.js") == 0) {
-        extern const uint8_t vision_js_start[] asm("_binary_vision_js_start");
-        extern const uint8_t vision_js_end[] asm("_binary_vision_js_end");
-        start_ptr = (void*)vision_js_start;
-        end_ptr = (void*)vision_js_end;
-    }
-    else if (strcmp(filename, "location.js") == 0) {
-        extern const uint8_t location_js_start[] asm("_binary_location_js_start");
-        extern const uint8_t location_js_end[] asm("_binary_location_js_end");
-        start_ptr = (void*)location_js_start;
-        end_ptr = (void*)location_js_end;
-    }
-    else if (strcmp(filename, "servo_control.js") == 0) {
-        extern const uint8_t servo_control_js_start[] asm("_binary_servo_control_js_start");
-        extern const uint8_t servo_control_js_end[] asm("_binary_servo_control_js_end");
-        start_ptr = (void*)servo_control_js_start;
-        end_ptr = (void*)servo_control_js_end;
-    }
-    else if (strcmp(filename, "device_config.js") == 0) {
-        extern const uint8_t device_config_js_start[] asm("_binary_device_config_js_start");
-        extern const uint8_t device_config_js_end[] asm("_binary_device_config_js_end");
-        start_ptr = (void*)device_config_js_start;
-        end_ptr = (void*)device_config_js_end;
-    }
-    #pragma GCC diagnostic pop
-    
-    if (start_ptr && end_ptr) {
-        size_t size = (uint8_t*)end_ptr - (uint8_t*)start_ptr;
-        httpd_resp_set_type(req, "application/javascript");
-        return httpd_resp_send(req, (const char*)start_ptr, size);
+        extern const uint8_t _binary_vision_js_start[] asm("_binary_vision_js_start");
+        extern const uint8_t _binary_vision_js_end[] asm("_binary_vision_js_end");
+        size_t len = _binary_vision_js_end - _binary_vision_js_start;
+        ESP_LOGI(TAG, "发送vision.js, 大小: %d字节", (int)len);
+        return httpd_resp_send(req, (const char*)_binary_vision_js_start, len);
     }
     
-    // 文件未找到
+    // 如果没有找到匹配的JS文件
+    ESP_LOGW(TAG, "未找到JS文件: %s", filename);
     httpd_resp_send_404(req);
     return ESP_OK;
-}
-
-// 为保持向后兼容而提供的常量别名
-extern "C" {
-    // ... existing code ...
 } 

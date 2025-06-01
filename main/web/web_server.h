@@ -146,11 +146,14 @@ public:
     int GetActiveWebSocketClientCount() const;
 
     // 向后兼容方法
-    bool IsUriRegistered(const char* uri);
+    bool IsUriRegistered(const char* uri) const;
     void RegisterUri(const char* uri, httpd_method_t method, esp_err_t (*handler)(httpd_req_t *req), void* user_ctx = nullptr);
     void RegisterWebSocket(const char* uri, WebSocketMessageCallback callback);
     bool HasWebSocketCallback() const;
     void CallWebSocketCallback(int client_index, const PSRAMString& message);
+
+    // 检查特定URI是否已注册处理器
+    bool HasUriHandler(const PSRAMString& uri) const;
 
     // 静态HTTP处理器函数
     static esp_err_t RootHandler(httpd_req_t *req);

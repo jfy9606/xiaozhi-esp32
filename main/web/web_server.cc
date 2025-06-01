@@ -366,6 +366,69 @@ void WebServer::RegisterDefaultHandlers() {
     // Register API status endpoint directly
     RegisterHttpHandler("/api/status", HTTP_GET, SystemStatusHandler);
     ESP_LOGI(TAG, "注册系统状态API处理器: /api/status");
+    
+    // 处理favicon.ico
+    RegisterHttpHandler("/favicon.ico", HTTP_GET, WebContent::HandleStaticFile);
+    ESP_LOGI(TAG, "注册favicon.ico处理器");
+    
+    // 添加处理CSS和JS的通用处理器
+    RegisterHttpHandler("/css/*", HTTP_GET, WebContent::HandleCssFile);
+    ESP_LOGI(TAG, "注册CSS文件处理器: /css/*");
+    
+    RegisterHttpHandler("/js/*", HTTP_GET, WebContent::HandleJsFile);
+    ESP_LOGI(TAG, "注册JS文件处理器: /js/*");
+    
+    // 添加通用静态资源处理器 - 捕获所有未明确处理的请求，放在最后
+    RegisterHttpHandler("/*", HTTP_GET, [](httpd_req_t *req) {
+        const char *uri = req->uri;
+        ESP_LOGI("StaticHandler", "处理静态资源请求: %s", uri);
+        
+        // 获取MIME类型
+        const char *content_type = "text/plain";
+        if (strstr(uri, ".html") || strstr(uri, ".htm")) {
+            content_type = "text/html";
+        } else if (strstr(uri, ".css")) {
+            content_type = "text/css";
+        } else if (strstr(uri, ".js")) {
+            content_type = "application/javascript";
+        } else if (strstr(uri, ".png")) {
+            content_type = "image/png";
+        } else if (strstr(uri, ".jpg") || strstr(uri, ".jpeg")) {
+            content_type = "image/jpeg";
+        } else if (strstr(uri, ".ico")) {
+            content_type = "image/x-icon";
+        } else if (strstr(uri, ".svg")) {
+            content_type = "image/svg+xml";
+        } else if (strstr(uri, ".json")) {
+            content_type = "application/json";
+        }
+        
+        // 设置响应类型
+        httpd_resp_set_type(req, content_type);
+        
+        // 为不同类型的文件设置缓存控制
+        if (strstr(uri, ".css") || strstr(uri, ".js")) {
+            // CSS和JS文件可以缓存1小时
+            httpd_resp_set_hdr(req, "Cache-Control", "max-age=3600");
+        } else if (strstr(uri, ".png") || strstr(uri, ".jpg") || strstr(uri, ".jpeg") || strstr(uri, ".ico") || strstr(uri, ".svg")) {
+            // 图片可以缓存1天
+            httpd_resp_set_hdr(req, "Cache-Control", "max-age=86400");
+        } else {
+            // HTML等其他文件不缓存
+            httpd_resp_set_hdr(req, "Cache-Control", "no-cache, no-store, must-revalidate");
+        }
+        
+        // 转发到专用处理器
+        if (strstr(uri, ".css")) {
+            return WebContent::HandleCssFile(req);
+        } else if (strstr(uri, ".js")) {
+            return WebContent::HandleJsFile(req);
+        } else {
+            // 尝试使用通用静态文件处理器
+            return WebContent::HandleStaticFile(req);
+        }
+    });
+    ESP_LOGI(TAG, "注册通用静态资源处理器: /*");
 }
 
 void WebServer::RegisterHttpHandler(const PSRAMString& path, httpd_method_t method, HttpRequestHandler handler) {
@@ -1647,7 +1710,7 @@ bool WebServer::StartWebComponents() {
 // ================ 向后兼容方法实现 ================
 
 // 判断URI是否已注册 (向后兼容)
-bool WebServer::IsUriRegistered(const char* uri) {
+bool WebServer::IsUriRegistered(const char* uri) const {
     PSRAMString uri_str(uri);
     // 检查具体URI是否在http_handlers_中已注册
     if (http_handlers_.find(uri_str) != http_handlers_.end()) {
@@ -2833,4 +2896,11 @@ bool WebServer::TestLocationHandlers() {
     return all_tests_passed;
 }
 #endif // CONFIG_WEB_SERVER_ENABLE_SELF_TEST
+
+// 检查特定URI是否已注册处理器
+bool WebServer::HasUriHandler(const PSRAMString& uri) const {
+    return IsUriRegistered(uri.c_str());
+}
+
+// 检查URI是否已经注册 (原有的向后兼容方法)
 
