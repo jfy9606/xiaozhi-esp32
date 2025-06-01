@@ -3,6 +3,7 @@
 
 #include <driver/gpio.h>
 #include <driver/i2c_master.h>
+#include "ext/include/i2c_utils.h"  // 添加I2C工具头文件
 #include "sdkconfig.h"
 
 // 板级配置结构体，用于存储板子的引脚配置
@@ -282,11 +283,12 @@ board_config_t* board_config_get(void);  // 新增的函数，供内部使用
 #endif
 #endif
 
+// 使用i2c_utils.h中定义的地址代替本地定义
 #ifndef PCA9548A_I2C_ADDR
 #ifdef CONFIG_PCA9548A_I2C_ADDR
 #define PCA9548A_I2C_ADDR           CONFIG_PCA9548A_I2C_ADDR
 #else
-#define PCA9548A_I2C_ADDR           0x70  // Default address
+#define PCA9548A_I2C_ADDR           I2C_ADDR_PCA9548A_BASE  // 使用i2c_utils.h中定义的地址
 #endif
 #endif
 

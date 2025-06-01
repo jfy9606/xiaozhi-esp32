@@ -4,7 +4,7 @@
  * 
  * 该文件定义了与LU9685-20CU 16通道PWM/舵机控制器通信的API。
  * LU9685-20CU基于STC8H微控制器，支持I2C和UART通信，最高支持300Hz PWM频率。
- * 默认I2C地址为0x80，连接在PCA9548A的通道1上。
+ * 默认I2C地址为0x40（7位格式，对应8位格式的0x80），连接在PCA9548A的通道1上。
  */
 
 #pragma once
@@ -13,6 +13,7 @@
 #include <stdbool.h>
 #include "esp_err.h"
 #include "driver/i2c_master.h"
+#include "i2c_utils.h"  // 添加I2C工具头文件
 
 #ifdef __cplusplus
 extern "C" {

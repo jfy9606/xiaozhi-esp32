@@ -600,10 +600,12 @@ menu "组件管理器"
 
         config LU9685_I2C_ADDR
             hex "LU9685-20CU I2C地址"
-            default 0x80
+            default 0x40
             depends on ENABLE_LU9685
             help
-                LU9685-20CU的I2C地址，默认为0x80。
+                LU9685-20CU的I2C地址，默认为0x40（7位地址格式）。
+                注意：ESP-IDF要求使用7位I2C地址格式，而非8位格式。
+                如果设备数据手册提供的是8位地址(如0x80)，请除以2或右移一位(>>1)转换为7位地址(0x40)。
 
         config LU9685_PCA9548A_CHANNEL
             int "LU9685-20CU连接的PCA9548A通道"

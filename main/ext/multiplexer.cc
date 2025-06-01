@@ -667,40 +667,49 @@ pca9548a_handle_t pca9548a_get_handle(void)
 esp_err_t pca9548a_select_channel(uint8_t channel)
 {
     if (!g_pca9548a_initialized || pca9548a_handle == NULL) {
-        ESP_LOGI(TAG, "PCA9548A not initialized, cannot select channel");
-        return ESP_OK; // 返回OK让应用继续运行，而不是报错
+        ESP_LOGE(TAG, "PCA9548A not initialized, cannot select channel");
+        return ESP_ERR_INVALID_STATE; // 修改为返回错误代码而非ESP_OK
     }
     
-    ESP_LOGD(TAG, "Selecting PCA9548A channel: 0x%02X", channel);
+    ESP_LOGI(TAG, "Selecting PCA9548A channel: 0x%02X", channel);
     
     esp_err_t ret = pca9548a_select_channels(pca9548a_handle, channel);
     if (ret != ESP_OK) {
-        ESP_LOGI(TAG, "Failed to select channel: %s", esp_err_to_name(ret));
-        return ESP_OK; // 返回OK让应用继续运行
+        ESP_LOGE(TAG, "Failed to select channel: %s", esp_err_to_name(ret));
+        return ret; // 修改为返回实际错误代码
     }
     
     // Read back the selected channels to confirm
     uint8_t current_channel;
     ret = pca9548a_get_selected_channels(pca9548a_handle, &current_channel);
     if (ret == ESP_OK) {
-        ESP_LOGD(TAG, "Current PCA9548A channel: 0x%02X", current_channel);
+        ESP_LOGI(TAG, "Current PCA9548A channel: 0x%02X", current_channel);
         if (current_channel != channel) {
-            ESP_LOGI(TAG, "PCA9548A channel mismatch: requested=0x%02X, actual=0x%02X", 
+            ESP_LOGE(TAG, "PCA9548A channel mismatch: requested=0x%02X, actual=0x%02X", 
                     channel, current_channel);
             // 尝试再次设置通道
             ret = pca9548a_select_channels(pca9548a_handle, channel);
             if (ret != ESP_OK) {
-                ESP_LOGI(TAG, "Failed to re-select channel: %s", esp_err_to_name(ret));
+                ESP_LOGE(TAG, "Failed to re-select channel: %s", esp_err_to_name(ret));
+                return ret; // 修改为返回错误代码
+            }
+            
+            // 再次验证通道
+            ret = pca9548a_get_selected_channels(pca9548a_handle, &current_channel);
+            if (ret != ESP_OK || current_channel != channel) {
+                ESP_LOGE(TAG, "Channel verification failed after retry");
+                return ESP_ERR_INVALID_RESPONSE; // 通道切换失败
             }
         }
     } else {
-        ESP_LOGI(TAG, "Failed to read current PCA9548A channel: %s", esp_err_to_name(ret));
+        ESP_LOGE(TAG, "Failed to read current PCA9548A channel: %s", esp_err_to_name(ret));
+        return ret; // 返回错误代码
     }
     
     // 添加短暂延时以确保通道切换完成
-    vTaskDelay(pdMS_TO_TICKS(2));
+    vTaskDelay(pdMS_TO_TICKS(10)); // 增加延时确保稳定
     
-    return ESP_OK; // 始终返回OK让应用继续运行
+    return ESP_OK; // 只有切换成功才返回ESP_OK
 }
 
 // 选择级联复用器路径
