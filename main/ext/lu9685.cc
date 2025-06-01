@@ -63,14 +63,14 @@ lu9685_handle_t lu9685_init(const lu9685_config_t *config)
         ESP_LOGE(TAG, "配置为NULL");
         return NULL;
     }
-    
+
     // 分配内存
     lu9685_dev_t *dev = (lu9685_dev_t *)malloc(sizeof(lu9685_dev_t));
     if (dev == NULL) {
         ESP_LOGE(TAG, "内存分配失败");
         return NULL;
     }
-    
+
     // 复制配置
     dev->i2c_port = config->i2c_port;
     dev->i2c_addr = config->i2c_addr;
@@ -104,24 +104,24 @@ lu9685_handle_t lu9685_init(const lu9685_config_t *config)
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "LU9685设备探测失败(0x%02X), %s", dev->i2c_addr, esp_err_to_name(ret));
         free(dev);
-        return NULL;
-    }
-    
+            return NULL;
+        }
+        
     // 复位LU9685
     ret = lu9685_reset(dev);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "LU9685重置失败: %s", esp_err_to_name(ret));
         free(dev);
-        return NULL;
-    }
+            return NULL;
+        }
     
     // 唤醒LU9685
     ret = lu9685_set_sleep_mode(dev, false);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "LU9685唤醒失败: %s", esp_err_to_name(ret));
         free(dev);
-        return NULL;
-    }
+            return NULL;
+        }
     
     // 设置PWM频率
     ret = lu9685_set_frequency(dev, dev->pwm_freq);
@@ -167,7 +167,7 @@ esp_err_t lu9685_deinit(lu9685_handle_t *handle)
     
     free(dev);
     *handle = NULL;
-
+    
     return ESP_OK;
 }
 
@@ -366,7 +366,7 @@ esp_err_t lu9685_set_frequency(lu9685_handle_t handle, uint16_t freq_hz)
         ESP_LOGE(TAG, "Invalid LU9685 handle");
         return ESP_ERR_INVALID_ARG;
     }
-    
+
     // 限制频率范围
     if (freq_hz < 24) {
         freq_hz = 24;  // 最小频率24Hz
@@ -590,7 +590,7 @@ esp_err_t lu9685_set_all_pwm(lu9685_handle_t handle, uint16_t on_value, uint16_t
     
     // 删除临时设备
     i2c_master_bus_rm_device(dev_handle);
-
+    
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "设置所有PWM通道失败：%s", esp_err_to_name(ret));
     }
@@ -673,7 +673,7 @@ esp_err_t lu9685_set_sleep_mode(lu9685_handle_t handle, bool sleep)
         ESP_LOGE(TAG, "设置睡眠模式失败：%s", esp_err_to_name(ret));
         return ret;
     }
-
+    
     // 如果从睡眠模式唤醒，等待500us
     if (!sleep) {
         esp_rom_delay_us(500);

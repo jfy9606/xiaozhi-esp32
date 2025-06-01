@@ -41,7 +41,7 @@ static esp_err_t select_pcf8575_channel(pcf8575_dev_t *dev)
         ESP_LOGE(TAG, "PCA9548A未初始化，无法选择通道");
         return ESP_ERR_INVALID_STATE;
     }
-    
+
     // 使用PCA9548A选择通道
     uint8_t channel_mask = (1 << dev->pca9548a_channel);
     esp_err_t ret = pca9548a_select_channel(channel_mask);
@@ -49,7 +49,7 @@ static esp_err_t select_pcf8575_channel(pcf8575_dev_t *dev)
         ESP_LOGE(TAG, "PCA9548A选择通道 %d 失败: %s", dev->pca9548a_channel, esp_err_to_name(ret));
         return ret;
     }
-    
+
     // 通道选择后短暂延时以稳定
     vTaskDelay(pdMS_TO_TICKS(1));
     return ESP_OK;
@@ -72,8 +72,8 @@ esp_err_t pcf8575_read_ports(pcf8575_handle_t handle, uint16_t *value) {
     // 如果启用了多路复用器，先选择正确的通道
     if (dev->use_pca9548a) {
         esp_err_t ret = select_pcf8575_channel(dev);
-        if (ret != ESP_OK) {
-            return ret;
+    if (ret != ESP_OK) {
+        return ret;
         }
     }
     
@@ -97,7 +97,7 @@ esp_err_t pcf8575_read_ports(pcf8575_handle_t handle, uint16_t *value) {
         ESP_LOGE(TAG, "无法创建I2C设备: %s", esp_err_to_name(ret));
         return ret;
     }
-
+    
     // 读取数据
     ret = i2c_master_receive(dev_handle, data, sizeof(data), dev->i2c_timeout_ms);
 
@@ -130,9 +130,9 @@ esp_err_t pcf8575_write_ports(pcf8575_handle_t handle, uint16_t value) {
     // 如果启用了多路复用器，先选择正确的通道
     if (dev->use_pca9548a) {
         esp_err_t ret = select_pcf8575_channel(dev);
-        if (ret != ESP_OK) {
-            return ret;
-        }
+    if (ret != ESP_OK) {
+        return ret;
+    }
     }
     
     // 准备发送数据 - 低字节在前，高字节在后
@@ -157,7 +157,7 @@ esp_err_t pcf8575_write_ports(pcf8575_handle_t handle, uint16_t value) {
         ESP_LOGE(TAG, "无法创建I2C设备: %s", esp_err_to_name(ret));
         return ret;
     }
-
+    
     // 发送数据
     ret = i2c_master_transmit(dev_handle, data, sizeof(data), dev->i2c_timeout_ms);
 
@@ -238,7 +238,7 @@ esp_err_t pcf8575_delete(pcf8575_handle_t *handle) {
     if (!handle || !(*handle)) {
         return ESP_ERR_INVALID_ARG;
     }
-
+    
     pcf8575_dev_t *dev = static_cast<pcf8575_dev_t*>(*handle);
     free(dev);
     *handle = NULL;
@@ -260,7 +260,7 @@ esp_err_t pcf8575_set_level(pcf8575_handle_t handle, int pin, uint32_t level)
         ESP_LOGE(TAG, "Invalid arguments");
         return ESP_ERR_INVALID_ARG;
     }
-
+    
     pcf8575_dev_t *dev = static_cast<pcf8575_dev_t*>(handle);
     
     // 选择PCA9548A通道（如果启用）
@@ -270,7 +270,7 @@ esp_err_t pcf8575_set_level(pcf8575_handle_t handle, int pin, uint32_t level)
             return ret;
         }
     }
-
+    
     // 更新输出状态
     if (level) {
         dev->output_state |= (1 << pin);  // 设置为高电平
@@ -330,7 +330,7 @@ esp_err_t pcf8575_get_level(pcf8575_handle_t handle, int pin, uint32_t *level)
         ESP_LOGE(TAG, "Invalid arguments");
         return ESP_ERR_INVALID_ARG;
     }
-
+    
     pcf8575_dev_t *dev = static_cast<pcf8575_dev_t*>(handle);
     
     // 选择PCA9548A通道（如果启用）
@@ -589,4 +589,4 @@ esp_err_t pcf8575_get_all(pcf8575_handle_t handle, uint16_t *value)
 esp_err_t pcf8575_set_all(pcf8575_handle_t handle, uint16_t value)
 {
     return pcf8575_write_ports(handle, value);
-}
+} 

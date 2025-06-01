@@ -52,14 +52,201 @@ document.addEventListener('DOMContentLoaded', function() {
         console.log('正在创建WebSocket连接...');
 
         try {
-            // 确保使用正确的WebSocket URL
-            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            // 使用API客户端连接到正确的WebSocket端点
+            if (!window.xiaozhi || !window.xiaozhi.api) {
+                console.error('API客户端未初始化');
+                return;
+            }
             
-            // 使用当前主机的地址
-            const wsUrl = `${protocol}//${window.location.host}/ws`;
-            console.log(`连接到WebSocket: ${wsUrl}`);
+            // 连接到传感器数据WebSocket
+            wsConnection = window.xiaozhi.api.connectSensorData({
+                onOpen: function() {
+                    console.log('WebSocket连接已建立');
+                    reconnectAttempt = 0;
+                    reconnectInterval = 1000;
+                    reconnecting = false;
 
-            wsConnection = new WebSocket(wsUrl);
+                    // 记录连接时间
+                    lastPongTime = Date.now();
+
+                    // 发送欢迎消息
+                    try {
+                        const helloMsg = {
+                            type: "hello", 
+                            client: "web_controller", 
+                            version: "1.0"
+                        };
+                        window.xiaozhi.api.sendWebSocketMessage('/sensor', helloMsg);
+                        console.log('发送hello消息');
+                    } catch (e) {
+                        console.error('发送欢迎消息失败:', e);
+                    }
+
+                    // 设置定期心跳
+                    heartbeatInterval = setInterval(function() {
+                        if (wsConnection && wsConnection.readyState === WebSocket.OPEN) {
+                            try {
+                                // 发送正确格式的ping消息
+                                const pingMsg = {type: "ping"};
+                                window.xiaozhi.api.sendWebSocketMessage('/sensor', pingMsg);
+
+                                // 检查是否收到了pong响应
+                                const currentTime = Date.now();
+                                if (currentTime - lastPongTime > 10000) { // 10秒没有收到pong
+                                    console.warn('WebSocket心跳超时，尝试重连');
+                                    wsConnection.close();
+                                    connectWebSocket();
+                                }
+                            } catch (e) {
+                                console.error('发送心跳失败:', e);
+                                wsConnection.close();
+                            }
+                        }
+                    }, 5000); // 每5秒发送一次心跳
+                    
+                    // 增加活跃度保持机制 - 每15秒发送一个活跃信号
+                    setInterval(function() {
+                        if (wsConnection && wsConnection.readyState === WebSocket.OPEN) {
+                            try {
+                                // 发送活跃保持消息
+                                const keepAliveMsg = {
+                                    type: "keep_alive", 
+                                    client: "web_controller", 
+                                    timestamp: Date.now()
+                                };
+                                window.xiaozhi.api.sendWebSocketMessage('/sensor', keepAliveMsg);
+                                console.log('发送活跃保持消息');
+                            } catch (e) {
+                                console.error('发送活跃保持消息失败:', e);
+                            }
+                        }
+                    }, 15000); // 每15秒发送一次活跃信号，比心跳更长周期
+
+                    // 更新UI状态
+                    document.getElementById('connection-status').classList.add('connected');
+                    document.getElementById('connection-text').innerText = '已连接';
+                },
+                onMessage: function(data) {
+                    // 处理来自服务器的消息
+                    try {
+                        // 检查消息类型
+                        if (data.type === "pong") {
+                            // 收到心跳响应，更新时间戳
+                            lastPongTime = Date.now();
+                        } else if (data.type === "hello_response") {
+                            // 收到欢迎消息
+                            console.log('收到欢迎消息:', data.message);
+                            if (data.status === "ok") {
+                                // 连接成功，更新UI
+                                document.getElementById('connection-status').classList.add('connected');
+                                document.getElementById('connection-text').innerText = '已连接';
+                            }
+                        } else if (data.type === "car_control_ack" || data.type === "joystick_ack") {
+                            // 收到控制命令确认
+                            console.log('控制命令已确认:', data.status);
+                            
+                            // 处理错误响应
+                            if (data.status === "error" && data.message) {
+                                // 显示障碍物警告
+                                showWarningAlert(data.message);
+                            }
+                        } else if (data.type === "camera_status") {
+                            // 处理摄像头状态消息
+                            console.log('收到摄像头状态:', data);
+                            // 如果收到摄像头状态消息，可以更新UI
+                            if(data.streaming === true) {
+                                console.log('摄像头正在流式传输');
+                                // 可以添加代码更新UI显示摄像头状态
+                            } else if(data.streaming === false) {
+                                console.log('摄像头停止流式传输');
+                                // 可以添加代码更新UI显示摄像头状态
+                            }
+                        } else if (data.type === "ultrasonic_data") {
+                            // 处理超声波数据
+                            console.log('收到超声波数据:', data);
+                            updateUltrasonicDisplay(data);
+                            // 更新活跃时间
+                            lastPongTime = Date.now();
+                        } else if (data.type === "servo_data") {
+                            // 处理舵机状态数据
+                            console.log('收到舵机数据:', data);
+                            updateServoStatus(data);
+                            // 更新活跃时间
+                            lastPongTime = Date.now();
+                        } else if (data.type === "status") {
+                            // 更新连接状态指示
+                            if (data.status === 'connected' || data.status === 'ap_only') {
+                                document.getElementById('connection-status').classList.add('connected');
+                                document.getElementById('connection-text').innerText = data.status === 'connected' 
+                                    ? `已连接 (${data.ip || ''}, RSSI: ${data.rssi || ''}dBm)` 
+                                    : `AP模式 (${data.ap_ip || ''})`;
+                            }
+                        } else if (data.type === "status_response") {
+                            // 处理系统状态数据，更新超声波显示
+                            if (data.sensors && data.sensors.ultrasonic) {
+                                updateUltrasonicDisplay(data.sensors.ultrasonic);
+                            }
+                            // 作为活跃响应处理
+                            lastPongTime = Date.now();
+                            // 更新系统状态信息（可选）
+                            console.log('收到系统状态数据，已处理');
+                        } else if (data.type === "car_servo_ack") {
+                            // 处理舵机命令确认
+                            console.log('舵机命令已确认:', data);
+                            if (data.status === "error" && data.message) {
+                                // 显示舵机错误
+                                showServoError(data.message || "舵机控制失败");
+                            }
+                        } else if (data.type === "keep_alive_ack") {
+                            // 处理保活消息确认
+                            console.log('保活消息已确认');
+                            lastPongTime = Date.now();
+                        } else {
+                            console.log('收到未知类型消息:', data);
+                        }
+                    } catch (err) {
+                        console.error('处理WebSocket消息时出错:', err);
+                    }
+                },
+                onClose: function(event) {
+                    console.log('WebSocket连接已关闭', event.code, event.reason);
+
+                    // 清除心跳
+                    if (heartbeatInterval) {
+                        clearInterval(heartbeatInterval);
+                        heartbeatInterval = null;
+                    }
+
+                    // 更新UI状态
+                    document.getElementById('connection-status').classList.remove('connected');
+                    document.getElementById('connection-text').innerText = '已断开';
+
+                    // 尝试重连
+                    if (!reconnecting && reconnectAttempt < maxReconnectAttempts) {
+                        reconnecting = true;
+                        // 使用指数退避策略，但限制最大延迟为30秒
+                        const delay = Math.min(30000, reconnectInterval * Math.pow(1.5, reconnectAttempt));
+                        console.log(`尝试在 ${delay}ms 后重新连接... (尝试 ${reconnectAttempt + 1}/${maxReconnectAttempts})`);
+
+                        setTimeout(function() {
+                            reconnectAttempt++;
+                            connectWebSocket();
+                        }, delay);
+                    } else if (reconnectAttempt >= maxReconnectAttempts) {
+                        console.log('已达到最大重连次数，停止重连');
+                        document.getElementById('connection-text').innerText = '连接失败';
+                    }
+                },
+                onError: function(error) {
+                    console.error('WebSocket错误:', error);
+                    document.getElementById('connection-status').classList.remove('connected');
+                    document.getElementById('connection-text').innerText = '连接错误';
+                },
+                autoReconnect: false // 我们自己处理重连
+            });
+
+            // 保存到window对象，允许其他组件访问
+            window.wsConnection = wsConnection;
 
             // 保存到window对象，允许其他组件访问
             window.wsConnection = wsConnection;
@@ -610,7 +797,11 @@ document.addEventListener('DOMContentLoaded', function() {
                 };
                 
                 try {
-                    wsConnection.send(JSON.stringify(controlMsg));
+                    if (window.xiaozhi && window.xiaozhi.api) {
+                        window.xiaozhi.api.sendWebSocketMessage('/sensor', controlMsg);
+                    } else {
+                        wsConnection.send(JSON.stringify(controlMsg));
+                    }
                     console.log('发送控制命令:', speed, turn);
                 } catch (e) {
                     console.error('发送控制命令失败:', e);
@@ -637,7 +828,11 @@ document.addEventListener('DOMContentLoaded', function() {
             };
             
             try {
-                wsConnection.send(JSON.stringify(stopMsg));
+                if (window.xiaozhi && window.xiaozhi.api) {
+                    window.xiaozhi.api.sendWebSocketMessage('/sensor', stopMsg);
+                } else {
+                    wsConnection.send(JSON.stringify(stopMsg));
+                }
                 console.log('发送停止命令');
             } catch (e) {
                 console.error('发送停止命令失败:', e);
@@ -707,6 +902,12 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // 发送舵机控制命令
         const sendServoCommand = debounce(function(type, value) {
+            if (!window.xiaozhi || !window.xiaozhi.api) {
+                console.error('API客户端未初始化，无法发送舵机命令');
+                showServoError('API客户端未初始化');
+                return;
+            }
+            
             if (wsConnection && wsConnection.readyState === WebSocket.OPEN) {
                 const servoMsg = {
                     type: 'car_servo_control',
@@ -716,7 +917,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 };
                 
                 try {
-                    wsConnection.send(JSON.stringify(servoMsg));
+                    window.xiaozhi.api.sendWebSocketMessage('/sensor', servoMsg);
                     console.log(`发送${type}舵机控制命令:`, value);
                 } catch (e) {
                     console.error('发送舵机命令失败:', e);
@@ -839,7 +1040,11 @@ document.addEventListener('DOMContentLoaded', function() {
             };
             
             try {
-                wsConnection.send(JSON.stringify(statusRequest));
+                if (window.xiaozhi && window.xiaozhi.api) {
+                    window.xiaozhi.api.sendWebSocketMessage('/sensor', statusRequest);
+                } else {
+                    wsConnection.send(JSON.stringify(statusRequest));
+                }
                 console.log('请求系统状态');
             } catch (e) {
                 console.error('请求系统状态失败:', e);
@@ -887,4 +1092,4 @@ document.addEventListener('DOMContentLoaded', function() {
     // 连接WebSocket并初始化摇杆
     connectWebSocket();
     initJoystick();
-}); 
+});
