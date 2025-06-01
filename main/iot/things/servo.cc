@@ -10,6 +10,7 @@
 #include "../boards/common/board_config.h"
 #include "ext/include/lu9685.h"
 #include "sdkconfig.h"
+#include "include/multiplexer.h"
 
 #include <esp_log.h>
 #include <cmath>
@@ -109,6 +110,25 @@ static uint32_t angle_to_duty(int angle) {
     uint32_t duty = (pulse_width_us * max_duty) / (1000000 / SERVO_FREQUENCY_HZ);
     
     return duty;
+}
+
+// 获取I2C总线句柄
+static i2c_master_bus_handle_t get_i2c_bus_handle(i2c_port_t port) {
+    // 检查PCA9548A是否初始化，如果已初始化，可以尝试获取Board的I2C总线句柄
+    if (pca9548a_is_initialized()) {
+        ESP_LOGI(TAG_CTRL, "PCA9548A is initialized, can use the same I2C bus");
+    }
+    
+    // 尝试获取Board的I2C总线句柄
+    i2c_master_bus_handle_t board_bus = board_get_i2c_bus_handle();
+    if (board_bus != NULL) {
+        ESP_LOGI(TAG_CTRL, "Using board's I2C bus handle");
+        return board_bus;
+    }
+    
+    // 如果无法获取，记录警告并返回NULL
+    ESP_LOGW(TAG_CTRL, "Could not get I2C bus handle, returning NULL");
+    return NULL;
 }
 
 // 初始化直接GPIO控制的PWM配置
@@ -247,44 +267,141 @@ static esp_err_t init_lu9685_servo(servo_controller_t *controller) {
     
     ESP_LOGI(TAG_CTRL, "Initializing LU9685 servo controller");
     
+    // 检查 PCA9548A 是否初始化完成
+    if (!pca9548a_is_initialized()) {
+        ESP_LOGI(TAG_CTRL, "PCA9548A not initialized yet, initializing multiplexer first");
+        esp_err_t ret = multiplexer_init();
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG_CTRL, "Failed to initialize multiplexer: %s", esp_err_to_name(ret));
+            return ret;
+        }
+        
+        // 确保初始化后 PCA9548A 就绪
+        if (!pca9548a_is_initialized()) {
+            ESP_LOGE(TAG_CTRL, "PCA9548A still not initialized after multiplexer_init()");
+            return ESP_FAIL;
+        }
+        
+        // 给 PCA9548A 更多时间稳定
+        vTaskDelay(pdMS_TO_TICKS(100));
+    } else {
+        // 即使已初始化，也等待一下保证稳定
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+    
+    // 在获取I2C总线句柄前，先明确切换到LU9685所在的通道1
+    ESP_LOGI(TAG_CTRL, "Explicitly switching to PCA9548A channel %d for LU9685", CONFIG_LU9685_PCA9548A_CHANNEL);
+    esp_err_t switch_ret = pca9548a_select_channel(CONFIG_LU9685_PCA9548A_CHANNEL);
+    if (switch_ret != ESP_OK) {
+        ESP_LOGE(TAG_CTRL, "Failed to switch PCA9548A to channel %d: %s", 
+                CONFIG_LU9685_PCA9548A_CHANNEL, esp_err_to_name(switch_ret));
+        // 虽然切换失败，但我们仍然尝试继续，可能总线已经在正确的通道上
+        // 记录警告而不是直接返回错误
+        ESP_LOGW(TAG_CTRL, "Attempting to continue despite channel switch failure");
+    } else {
+        ESP_LOGI(TAG_CTRL, "Successfully switched to PCA9548A channel %d", CONFIG_LU9685_PCA9548A_CHANNEL);
+        // 给通道切换一点时间稳定
+        vTaskDelay(pdMS_TO_TICKS(20));
+    }
+    
+    // 尝试获取I2C总线句柄，添加超时保护
+    int retry_count = 0;
+    const int max_retries = 3;
+    
+    while (controller->i2c_bus_handle == NULL && retry_count < max_retries) {
+        controller->i2c_bus_handle = get_i2c_bus_handle(controller->i2c_port);
+        if (controller->i2c_bus_handle == NULL) {
+            ESP_LOGW(TAG_CTRL, "Failed to get I2C bus handle (attempt %d/%d), retrying...", 
+                    retry_count + 1, max_retries);
+            retry_count++;
+            vTaskDelay(pdMS_TO_TICKS(50));  // 等待一段时间后重试
+        } else {
+            ESP_LOGI(TAG_CTRL, "Successfully obtained I2C bus handle after %d attempt(s)", retry_count + 1);
+        }
+    }
+    
+    // 如果最终无法获取I2C句柄，记录错误但继续尝试初始化（也许可以创建新的总线）
+    if (controller->i2c_bus_handle == NULL) {
+        ESP_LOGE(TAG_CTRL, "Failed to get I2C bus handle after %d attempts", max_retries);
+        // 为了避免完全卡住，我们可以返回错误或继续尝试初始化
+        // 这里我们选择继续尝试初始化，但记录警告
+        ESP_LOGW(TAG_CTRL, "Attempting to continue without valid I2C bus handle");
+    }
+    
     // 初始化LU9685驱动
     lu9685_config_t lu9685_config = {
         .i2c_port = controller->i2c_bus_handle,  // 使用总线句柄
-        .i2c_addr = 0x40,            // 默认地址
-        .pwm_freq = 50,              // 50Hz
-        .use_pca9548a = false,
-        .pca9548a_channel = 0
+        .i2c_addr = CONFIG_LU9685_I2C_ADDR,      // 使用配置中的地址
+        .pwm_freq = 50,                          // 50Hz
+        .use_pca9548a = true,                    // 使用 PCA9548A
+        .pca9548a_channel = CONFIG_LU9685_PCA9548A_CHANNEL  // 使用配置中的通道
     };
     
+    ESP_LOGI(TAG_CTRL, "Configuring LU9685 with PCA9548A channel %d", CONFIG_LU9685_PCA9548A_CHANNEL);
+    
+    // 在初始化前多等待一段时间
+    vTaskDelay(pdMS_TO_TICKS(100));
+    
+    // 再次确保我们在正确的通道
+    ESP_LOGI(TAG_CTRL, "Rechecking PCA9548A channel before initializing LU9685");
+    esp_err_t recheck_ret = pca9548a_select_channel(CONFIG_LU9685_PCA9548A_CHANNEL);
+    if (recheck_ret == ESP_OK) {
+        ESP_LOGI(TAG_CTRL, "PCA9548A channel %d confirmed", CONFIG_LU9685_PCA9548A_CHANNEL);
+    } else {
+        ESP_LOGW(TAG_CTRL, "Failed to recheck PCA9548A channel: %s", esp_err_to_name(recheck_ret));
+    }
+    vTaskDelay(pdMS_TO_TICKS(20));
+    
+    // 设置超时保护
+    const TickType_t xTimeout = pdMS_TO_TICKS(5000); // 5秒超时
+    TaskHandle_t currentTask = xTaskGetCurrentTaskHandle();
+    
+    // 创建一个看门狗任务来防止无限等待
+    TaskHandle_t watchdogTaskHandle = NULL;
+    xTaskCreate([](void* pvParameters) {
+        TaskHandle_t mainTaskHandle = (TaskHandle_t)pvParameters;
+        vTaskDelay(pdMS_TO_TICKS(5000)); // 等待5秒
+        
+        // 如果主任务仍在等待，记录警告并继续
+        ESP_LOGW(TAG_CTRL, "LU9685 initialization timed out, resuming main task");
+        
+        // 恢复主任务
+        if (eTaskGetState(mainTaskHandle) != eDeleted) {
+            xTaskAbortDelay(mainTaskHandle);
+        }
+        
+        vTaskDelete(NULL);
+    }, "lu9685_watchdog", 2048, currentTask, tskIDLE_PRIORITY + 1, &watchdogTaskHandle);
+    
+    // 尝试初始化LU9685
     controller->lu9685.handle = lu9685_init(&lu9685_config);
+    
+    // 删除看门狗任务，因为已经完成或超时
+    if (watchdogTaskHandle != NULL) {
+        vTaskDelete(watchdogTaskHandle);
+    }
+    
     if (controller->lu9685.handle == NULL) {
         ESP_LOGE(TAG_CTRL, "Failed to initialize LU9685 servo controller");
+        
+        // 即使初始化失败，也标记为初始化完成以避免卡住启动
+        controller->lu9685.lu9685_initialized = true;
+        controller->is_initialized = true;
+        ESP_LOGW(TAG_CTRL, "Marking servo controller as initialized despite failure to avoid boot hang");
+        
         return ESP_FAIL;
     }
     
+    // 初始化成功后再等待一段时间
+    vTaskDelay(pdMS_TO_TICKS(50));
+    
     controller->lu9685.lu9685_initialized = true;
+    ESP_LOGI(TAG_CTRL, "LU9685 servo controller initialized successfully");
     
     // 将所有舵机重置到中心位置
     servo_controller_reset((servo_controller_handle_t)controller);
     
     return ESP_OK;
-}
-
-// 获取I2C总线句柄
-static i2c_master_bus_handle_t get_i2c_bus_handle(i2c_port_t port) {
-    // 由于board_config_t中没有get_i2c_bus_handle成员，这里需要使用其他方式获取I2C总线句柄
-    
-    // 这里可以通过全局变量或者从特定函数获取I2C总线句柄
-    // 在实际项目中，应当通过适当的方式获取I2C总线句柄
-    
-    // 临时解决方案：如果项目中有特定函数可获取I2C总线句柄，则应调用该函数
-    ESP_LOGW(TAG_CTRL, "I2C bus handle retrieval not implemented, returning NULL");
-    
-    // 如果你的项目中有类似这样的函数，取消下面注释并使用
-    // extern i2c_master_bus_handle_t BoardGetI2CMasterBusHandle(i2c_port_t port);
-    // return BoardGetI2CMasterBusHandle(port);
-    
-    return NULL;
 }
 
 servo_controller_handle_t servo_controller_init(const servo_controller_config_t *config) {
@@ -1116,9 +1233,17 @@ private:
             config.i2c_port = I2C_NUM_0;  // 默认使用I2C0
             
             // 获取I2C总线句柄
-            config.i2c_bus_handle = get_i2c_bus_handle(config.i2c_port);
+            config.i2c_bus_handle = board_get_i2c_bus_handle();
             if (config.i2c_bus_handle == NULL) {
-                ESP_LOGW(TAG, "Failed to get I2C bus handle, servo controller may not work correctly");
+                ESP_LOGW(TAG, "Failed to get I2C bus handle directly, trying through helper function");
+                config.i2c_bus_handle = get_i2c_bus_handle(config.i2c_port);
+            }
+            
+            if (config.i2c_bus_handle == NULL) {
+                ESP_LOGE(TAG, "Could not get I2C bus handle, servo controller may not work correctly");
+                // 继续初始化，尽管I2C总线句柄可能无效
+            } else {
+                ESP_LOGI(TAG, "Successfully obtained I2C bus handle for servo controller");
             }
         }
         
@@ -1146,9 +1271,33 @@ private:
         ESP_LOGE(TAG, "No servo connection type defined");
         return;
 #endif
+
+        // 设置超时保护
+        TaskHandle_t currentTask = xTaskGetCurrentTaskHandle();
+        TaskHandle_t watchdogTaskHandle = NULL;
+        
+        // 创建一个看门狗任务，确保初始化过程不会卡住
+        xTaskCreate([](void* pvParameters) {
+            TaskHandle_t mainTaskHandle = (TaskHandle_t)pvParameters;
+            vTaskDelay(pdMS_TO_TICKS(8000)); // 给予8秒时间初始化
+            
+            // 检查任务是否还存在
+            if (eTaskGetState(mainTaskHandle) != eDeleted) {
+                ESP_LOGW(TAG, "Servo controller initialization took too long, forcing continuation");
+                xTaskAbortDelay(mainTaskHandle);
+            }
+            
+            vTaskDelete(NULL);
+        }, "servo_init_watchdog", 2048, currentTask, tskIDLE_PRIORITY + 1, &watchdogTaskHandle);
         
         // 初始化舵机控制器
         servo_ctrl_ = servo_controller_init(&config);
+        
+        // 清理看门狗任务
+        if (watchdogTaskHandle != NULL) {
+            vTaskDelete(watchdogTaskHandle);
+        }
+        
         if (servo_ctrl_ == nullptr) {
             ESP_LOGE(TAG, "Failed to initialize servo controller");
         } else {
@@ -1158,8 +1307,48 @@ private:
 
 public:
     ServoThing() : Thing("Servo", "舵机控制器"), servo_ctrl_(nullptr) {
-        // 初始化舵机
+        // 首先确保多路复用器已初始化
+        if (!pca9548a_is_initialized()) {
+            ESP_LOGI(TAG, "Initializing multiplexer before servo controller");
+            esp_err_t ret = multiplexer_init();
+            if (ret != ESP_OK) {
+                ESP_LOGE(TAG, "Failed to initialize multiplexer: %s", esp_err_to_name(ret));
+            } else {
+                ESP_LOGI(TAG, "Multiplexer initialized successfully");
+                
+                // 给 PCA9548A 一些时间稳定
+                vTaskDelay(pdMS_TO_TICKS(100));
+            }
+        } else {
+            ESP_LOGI(TAG, "Multiplexer already initialized");
+        }
+        
+        // 明确切换到PCF8575所在通道0，确保PCF8575可以正常工作
+        if (pca9548a_is_initialized()) {
+            ESP_LOGI(TAG, "Switching to PCF8575 channel 0 first");
+            esp_err_t pcf_ch_ret = pca9548a_select_channel(0);
+            if (pcf_ch_ret != ESP_OK) {
+                ESP_LOGW(TAG, "Failed to switch to PCF8575 channel: %s", esp_err_to_name(pcf_ch_ret));
+            } else {
+                ESP_LOGI(TAG, "Successfully switched to PCF8575 channel");
+                vTaskDelay(pdMS_TO_TICKS(50));
+            }
+        }
+        
+        // 然后初始化舵机
         InitServos();
+        
+        // 再切换到LU9685所在通道1，准备初始化舵机控制器
+        if (pca9548a_is_initialized()) {
+            ESP_LOGI(TAG, "Switching to LU9685 channel %d", CONFIG_LU9685_PCA9548A_CHANNEL);
+            esp_err_t lu_ch_ret = pca9548a_select_channel(CONFIG_LU9685_PCA9548A_CHANNEL);
+            if (lu_ch_ret != ESP_OK) {
+                ESP_LOGW(TAG, "Failed to switch to LU9685 channel: %s", esp_err_to_name(lu_ch_ret));
+            } else {
+                ESP_LOGI(TAG, "Successfully switched to LU9685 channel");
+                vTaskDelay(pdMS_TO_TICKS(50));
+            }
+        }
         
         // 初始化舵机控制器
         InitServoController();

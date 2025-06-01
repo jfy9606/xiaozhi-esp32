@@ -7,6 +7,7 @@
 #include <udp.h>
 #include <string>
 #include <driver/i2c_master.h>
+#include <vector>
 
 #include "led/led.h"
 #include "backlight.h"
@@ -60,5 +61,16 @@ public:
 void* create_board() { \
     return new BOARD_CLASS_NAME(); \
 }
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+// 全局函数用于获取I2C总线句柄
+i2c_master_bus_handle_t board_get_i2c_bus_handle(void);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // BOARD_H

@@ -39,9 +39,21 @@ typedef struct {
     int cam_led_pin;
 } board_config_t;
 
-// 获取板级配置
-board_config_t* board_get_config(void);
+#ifdef __cplusplus
+extern "C" {
+#endif
 
+// 板级配置获取函数
+board_config_t* board_get_config(void);
+board_config_t* board_config_get(void);  // 新增的函数，供内部使用
+
+#ifdef __cplusplus
+}
+#endif
+
+// 根据电机连接方式选择定义
+#if defined(CONFIG_MOTOR_CONNECTION_DIRECT)
+// 直接连接模式下的引脚定义
 // Default motor pins - using Kconfig values or fallback to defaults
 #ifndef MOTOR_ENA_PIN
 #ifdef CONFIG_MOTOR_ENA_PIN
@@ -91,11 +103,147 @@ board_config_t* board_get_config(void);
 #endif
 #endif
 
+#elif defined(CONFIG_MOTOR_CONNECTION_PCF8575)
+// PCF8575连接模式下只定义ENA/ENB引脚
+#ifndef MOTOR_ENA_PIN
+#ifdef CONFIG_MOTOR_ENA_PIN
+#define MOTOR_ENA_PIN             CONFIG_MOTOR_ENA_PIN
+#else
+#define MOTOR_ENA_PIN             2  // Default ENA pin
+#endif
+#endif
+
+#ifndef MOTOR_ENB_PIN
+#ifdef CONFIG_MOTOR_ENB_PIN
+#define MOTOR_ENB_PIN             CONFIG_MOTOR_ENB_PIN
+#else
+#define MOTOR_ENB_PIN             1  // Default ENB pin
+#endif
+#endif
+#else
+// 默认定义所有引脚以保持兼容性
+#ifndef MOTOR_ENA_PIN
+#ifdef CONFIG_MOTOR_ENA_PIN
+#define MOTOR_ENA_PIN             CONFIG_MOTOR_ENA_PIN
+#else
+#define MOTOR_ENA_PIN             2  // Default ENA pin
+#endif
+#endif
+
+#ifndef MOTOR_ENB_PIN
+#ifdef CONFIG_MOTOR_ENB_PIN
+#define MOTOR_ENB_PIN             CONFIG_MOTOR_ENB_PIN
+#else
+#define MOTOR_ENB_PIN             1  // Default ENB pin
+#endif
+#endif
+
+#ifndef MOTOR_IN1_PIN
+#ifdef CONFIG_MOTOR_IN1_PIN
+#define MOTOR_IN1_PIN             CONFIG_MOTOR_IN1_PIN
+#else
+#define MOTOR_IN1_PIN             47  // Default IN1 pin
+#endif
+#endif
+
+#ifndef MOTOR_IN2_PIN
+#ifdef CONFIG_MOTOR_IN2_PIN
+#define MOTOR_IN2_PIN             CONFIG_MOTOR_IN2_PIN
+#else
+#define MOTOR_IN2_PIN             21  // Default IN2 pin
+#endif
+#endif
+
+#ifndef MOTOR_IN3_PIN
+#ifdef CONFIG_MOTOR_IN3_PIN
+#define MOTOR_IN3_PIN             CONFIG_MOTOR_IN3_PIN
+#else
+#define MOTOR_IN3_PIN             20  // Default IN3 pin
+#endif
+#endif
+
+#ifndef MOTOR_IN4_PIN
+#ifdef CONFIG_MOTOR_IN4_PIN
+#define MOTOR_IN4_PIN             CONFIG_MOTOR_IN4_PIN
+#else
+#define MOTOR_IN4_PIN             19  // Default IN4 pin
+#endif
+#endif
+#endif
+
 #ifndef SERVO_COUNT
 #ifdef CONFIG_SERVO_COUNT
 #define SERVO_COUNT               CONFIG_SERVO_COUNT
 #else
 #define SERVO_COUNT               4  // Default servo count
+#endif
+#endif
+
+// 根据舵机连接方式选择定义
+#if !defined(CONFIG_SERVO_CONNECTION_LU9685)
+// 直接连接模式或未定义模式下的引脚定义
+#ifndef SERVO_PIN_1
+#ifdef CONFIG_SERVO_PIN_1
+#define SERVO_PIN_1               CONFIG_SERVO_PIN_1
+#else
+#define SERVO_PIN_1               -1  // 默认不设置
+#endif
+#endif
+
+#ifndef SERVO_PIN_2
+#ifdef CONFIG_SERVO_PIN_2
+#define SERVO_PIN_2               CONFIG_SERVO_PIN_2
+#else
+#define SERVO_PIN_2               -1  // 默认不设置
+#endif
+#endif
+
+#ifndef SERVO_PIN_3
+#ifdef CONFIG_SERVO_PIN_3
+#define SERVO_PIN_3               CONFIG_SERVO_PIN_3
+#else
+#define SERVO_PIN_3               -1  // 默认不设置
+#endif
+#endif
+
+#ifndef SERVO_PIN_4
+#ifdef CONFIG_SERVO_PIN_4
+#define SERVO_PIN_4               CONFIG_SERVO_PIN_4
+#else
+#define SERVO_PIN_4               -1  // 默认不设置
+#endif
+#endif
+
+#ifndef SERVO_PIN_5
+#ifdef CONFIG_SERVO_PIN_5
+#define SERVO_PIN_5               CONFIG_SERVO_PIN_5
+#else
+#define SERVO_PIN_5               -1  // 默认不设置
+#endif
+#endif
+
+#ifndef SERVO_PIN_6
+#ifdef CONFIG_SERVO_PIN_6
+#define SERVO_PIN_6               CONFIG_SERVO_PIN_6
+#else
+#define SERVO_PIN_6               -1  // 默认不设置
+#endif
+#endif
+
+#ifndef SERVO_PIN_7
+#ifdef CONFIG_SERVO_PIN_7
+#define SERVO_PIN_7               CONFIG_SERVO_PIN_7
+#else
+#define SERVO_PIN_7               -1  // 默认不设置
+#endif
+#endif
+
+#ifndef SERVO_PIN_8
+#ifdef CONFIG_SERVO_PIN_8
+#define SERVO_PIN_8               CONFIG_SERVO_PIN_8
+#else
+#define SERVO_PIN_8               -1  // 默认不设置
+#endif
 #endif
 #endif
 

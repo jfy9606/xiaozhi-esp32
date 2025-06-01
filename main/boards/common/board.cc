@@ -3,13 +3,31 @@
 #include "settings.h"
 #include "display/display.h"
 #include "assets/lang_config.h"
+#include "board_config.h"
 
 #include <esp_log.h>
 #include <esp_ota_ops.h>
 #include <esp_chip_info.h>
 #include <esp_random.h>
+#include <cstdlib>
 
 #define TAG "Board"
+
+namespace iot {
+
+board_config_t* board_get_config() {
+    // 为避免循环引用，不再调用同名函数
+    // 直接返回原始board_config_get函数的结果
+    extern board_config_t* board_config_get(void);
+    return board_config_get();
+}
+
+} // namespace iot
+
+// 全局C函数，用于获取I2C总线句柄
+extern "C" i2c_master_bus_handle_t board_get_i2c_bus_handle(void) {
+    return Board::GetInstance().GetDisplayI2CBusHandle();
+}
 
 Board::Board() {
     Settings settings("board", true);

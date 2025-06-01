@@ -67,12 +67,13 @@ if(CONFIG_ENABLE_WEB_SERVER AND CONFIG_ENABLE_WEB_CONTENT)
     # CSS文件列表
     file(GLOB CSS_FILES "${CMAKE_CURRENT_SOURCE_DIR}/assets/html/css/*.css")
     
-    # 检查文件是否存在
+    # 检查HTML文件是否存在并添加到EMBED_FILES
     foreach(HTML_FILE ${HTML_FILES})
         if(NOT EXISTS ${HTML_FILE})
             message(WARNING "HTML文件不存在: ${HTML_FILE}")
         else()
             message(STATUS "找到HTML文件: ${HTML_FILE}")
+            list(APPEND EMBED_FILES ${HTML_FILE})
         endif()
     endforeach()
     
@@ -83,8 +84,6 @@ if(CONFIG_ENABLE_WEB_SERVER AND CONFIG_ENABLE_WEB_CONTENT)
         else()
             get_filename_component(JS_FILENAME ${JS_FILE} NAME)
             message(STATUS "找到JavaScript文件: ${JS_FILE} -> ${JS_FILENAME}")
-            
-            # 为了避免嵌入文件符号名不匹配，不设置自定义名称，使用ESP-IDF默认的命名
             list(APPEND EMBED_FILES ${JS_FILE})
         endif()
     endforeach()
@@ -96,15 +95,9 @@ if(CONFIG_ENABLE_WEB_SERVER AND CONFIG_ENABLE_WEB_CONTENT)
         else()
             get_filename_component(CSS_FILENAME ${CSS_FILE} NAME)
             message(STATUS "找到CSS文件: ${CSS_FILE} -> ${CSS_FILENAME}")
-            
-            # 为了避免嵌入文件符号名不匹配，不设置自定义名称，使用ESP-IDF默认的命名
             list(APPEND EMBED_FILES ${CSS_FILE})
         endif()
     endforeach()
-    
-    list(APPEND EMBED_FILES ${HTML_FILES})
-    list(APPEND EMBED_FILES ${JS_FILES})
-    list(APPEND EMBED_FILES ${CSS_FILES})
     
     # 显示嵌入文件的统计信息
     list(LENGTH JS_FILES JS_FILES_LENGTH)
