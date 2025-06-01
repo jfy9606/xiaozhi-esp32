@@ -813,39 +813,39 @@ esp_err_t WebContent::HandleCssFile(httpd_req_t* req) {
     
     // 尝试使用常见的CSS文件名模式
     if (strcmp(filename, "common.css") == 0) {
-        extern const uint8_t _binary_common_css_start[] asm("_binary_common_css_start");
-        extern const uint8_t _binary_common_css_end[] asm("_binary_common_css_end");
-        size_t len = _binary_common_css_end - _binary_common_css_start;
+        extern const uint8_t _binary_main_assets_html_css_common_css_start[] asm("_binary_main_assets_html_css_common_css_start");
+        extern const uint8_t _binary_main_assets_html_css_common_css_end[] asm("_binary_main_assets_html_css_common_css_end");
+        size_t len = _binary_main_assets_html_css_common_css_end - _binary_main_assets_html_css_common_css_start;
         ESP_LOGI(TAG, "发送common.css, 大小: %d字节", (int)len);
-        return httpd_resp_send(req, (const char*)_binary_common_css_start, len);
-    } 
+        return httpd_resp_send(req, (const char*)_binary_main_assets_html_css_common_css_start, len);
+    }
     else if (strcmp(filename, "index.css") == 0) {
-        extern const uint8_t _binary_index_css_start[] asm("_binary_index_css_start");
-        extern const uint8_t _binary_index_css_end[] asm("_binary_index_css_end");
-        size_t len = _binary_index_css_end - _binary_index_css_start;
+        extern const uint8_t _binary_main_assets_html_css_index_css_start[] asm("_binary_main_assets_html_css_index_css_start");
+        extern const uint8_t _binary_main_assets_html_css_index_css_end[] asm("_binary_main_assets_html_css_index_css_end");
+        size_t len = _binary_main_assets_html_css_index_css_end - _binary_main_assets_html_css_index_css_start;
         ESP_LOGI(TAG, "发送index.css, 大小: %d字节", (int)len);
-        return httpd_resp_send(req, (const char*)_binary_index_css_start, len);
+        return httpd_resp_send(req, (const char*)_binary_main_assets_html_css_index_css_start, len);
     }
     else if (strcmp(filename, "move.css") == 0) {
-        extern const uint8_t _binary_move_css_start[] asm("_binary_move_css_start");
-        extern const uint8_t _binary_move_css_end[] asm("_binary_move_css_end");
-        size_t len = _binary_move_css_end - _binary_move_css_start;
+        extern const uint8_t _binary_main_assets_html_css_move_css_start[] asm("_binary_main_assets_html_css_move_css_start");
+        extern const uint8_t _binary_main_assets_html_css_move_css_end[] asm("_binary_main_assets_html_css_move_css_end");
+        size_t len = _binary_main_assets_html_css_move_css_end - _binary_main_assets_html_css_move_css_start;
         ESP_LOGI(TAG, "发送move.css, 大小: %d字节", (int)len);
-        return httpd_resp_send(req, (const char*)_binary_move_css_start, len);
+        return httpd_resp_send(req, (const char*)_binary_main_assets_html_css_move_css_start, len);
     }
     else if (strcmp(filename, "ai.css") == 0) {
-        extern const uint8_t _binary_ai_css_start[] asm("_binary_ai_css_start");
-        extern const uint8_t _binary_ai_css_end[] asm("_binary_ai_css_end");
-        size_t len = _binary_ai_css_end - _binary_ai_css_start;
+        extern const uint8_t _binary_main_assets_html_css_ai_css_start[] asm("_binary_main_assets_html_css_ai_css_start");
+        extern const uint8_t _binary_main_assets_html_css_ai_css_end[] asm("_binary_main_assets_html_css_ai_css_end");
+        size_t len = _binary_main_assets_html_css_ai_css_end - _binary_main_assets_html_css_ai_css_start;
         ESP_LOGI(TAG, "发送ai.css, 大小: %d字节", (int)len);
-        return httpd_resp_send(req, (const char*)_binary_ai_css_start, len);
+        return httpd_resp_send(req, (const char*)_binary_main_assets_html_css_ai_css_start, len);
     }
     else if (strcmp(filename, "vision.css") == 0) {
-        extern const uint8_t _binary_vision_css_start[] asm("_binary_vision_css_start");
-        extern const uint8_t _binary_vision_css_end[] asm("_binary_vision_css_end");
-        size_t len = _binary_vision_css_end - _binary_vision_css_start;
+        extern const uint8_t _binary_main_assets_html_css_vision_css_start[] asm("_binary_main_assets_html_css_vision_css_start");
+        extern const uint8_t _binary_main_assets_html_css_vision_css_end[] asm("_binary_main_assets_html_css_vision_css_end");
+        size_t len = _binary_main_assets_html_css_vision_css_end - _binary_main_assets_html_css_vision_css_start;
         ESP_LOGI(TAG, "发送vision.css, 大小: %d字节", (int)len);
-        return httpd_resp_send(req, (const char*)_binary_vision_css_start, len);
+        return httpd_resp_send(req, (const char*)_binary_main_assets_html_css_vision_css_start, len);
     }
     
     // 如果没有找到匹配的CSS文件
@@ -889,39 +889,39 @@ esp_err_t WebContent::HandleJsFile(httpd_req_t* req) {
     
     // 尝试使用常见的JS文件名模式
     if (strcmp(filename, "api_client.js") == 0) {
-        extern const uint8_t _binary_api_client_js_start[] asm("_binary_api_client_js_start");
-        extern const uint8_t _binary_api_client_js_end[] asm("_binary_api_client_js_end");
-        size_t len = _binary_api_client_js_end - _binary_api_client_js_start;
+        extern const uint8_t _binary_main_assets_html_js_api_client_js_start[] asm("_binary_main_assets_html_js_api_client_js_start");
+        extern const uint8_t _binary_main_assets_html_js_api_client_js_end[] asm("_binary_main_assets_html_js_api_client_js_end");
+        size_t len = _binary_main_assets_html_js_api_client_js_end - _binary_main_assets_html_js_api_client_js_start;
         ESP_LOGI(TAG, "发送api_client.js, 大小: %d字节", (int)len);
-        return httpd_resp_send(req, (const char*)_binary_api_client_js_start, len);
-    } 
+        return httpd_resp_send(req, (const char*)_binary_main_assets_html_js_api_client_js_start, len);
+    }
     else if (strcmp(filename, "index.js") == 0) {
-        extern const uint8_t _binary_index_js_start[] asm("_binary_index_js_start");
-        extern const uint8_t _binary_index_js_end[] asm("_binary_index_js_end");
-        size_t len = _binary_index_js_end - _binary_index_js_start;
+        extern const uint8_t _binary_main_assets_html_js_index_js_start[] asm("_binary_main_assets_html_js_index_js_start");
+        extern const uint8_t _binary_main_assets_html_js_index_js_end[] asm("_binary_main_assets_html_js_index_js_end");
+        size_t len = _binary_main_assets_html_js_index_js_end - _binary_main_assets_html_js_index_js_start;
         ESP_LOGI(TAG, "发送index.js, 大小: %d字节", (int)len);
-        return httpd_resp_send(req, (const char*)_binary_index_js_start, len);
+        return httpd_resp_send(req, (const char*)_binary_main_assets_html_js_index_js_start, len);
     }
     else if (strcmp(filename, "move.js") == 0) {
-        extern const uint8_t _binary_move_js_start[] asm("_binary_move_js_start");
-        extern const uint8_t _binary_move_js_end[] asm("_binary_move_js_end");
-        size_t len = _binary_move_js_end - _binary_move_js_start;
+        extern const uint8_t _binary_main_assets_html_js_move_js_start[] asm("_binary_main_assets_html_js_move_js_start");
+        extern const uint8_t _binary_main_assets_html_js_move_js_end[] asm("_binary_main_assets_html_js_move_js_end");
+        size_t len = _binary_main_assets_html_js_move_js_end - _binary_main_assets_html_js_move_js_start;
         ESP_LOGI(TAG, "发送move.js, 大小: %d字节", (int)len);
-        return httpd_resp_send(req, (const char*)_binary_move_js_start, len);
+        return httpd_resp_send(req, (const char*)_binary_main_assets_html_js_move_js_start, len);
     }
     else if (strcmp(filename, "ai.js") == 0) {
-        extern const uint8_t _binary_ai_js_start[] asm("_binary_ai_js_start");
-        extern const uint8_t _binary_ai_js_end[] asm("_binary_ai_js_end");
-        size_t len = _binary_ai_js_end - _binary_ai_js_start;
+        extern const uint8_t _binary_main_assets_html_js_ai_js_start[] asm("_binary_main_assets_html_js_ai_js_start");
+        extern const uint8_t _binary_main_assets_html_js_ai_js_end[] asm("_binary_main_assets_html_js_ai_js_end");
+        size_t len = _binary_main_assets_html_js_ai_js_end - _binary_main_assets_html_js_ai_js_start;
         ESP_LOGI(TAG, "发送ai.js, 大小: %d字节", (int)len);
-        return httpd_resp_send(req, (const char*)_binary_ai_js_start, len);
+        return httpd_resp_send(req, (const char*)_binary_main_assets_html_js_ai_js_start, len);
     }
     else if (strcmp(filename, "vision.js") == 0) {
-        extern const uint8_t _binary_vision_js_start[] asm("_binary_vision_js_start");
-        extern const uint8_t _binary_vision_js_end[] asm("_binary_vision_js_end");
-        size_t len = _binary_vision_js_end - _binary_vision_js_start;
+        extern const uint8_t _binary_main_assets_html_js_vision_js_start[] asm("_binary_main_assets_html_js_vision_js_start");
+        extern const uint8_t _binary_main_assets_html_js_vision_js_end[] asm("_binary_main_assets_html_js_vision_js_end");
+        size_t len = _binary_main_assets_html_js_vision_js_end - _binary_main_assets_html_js_vision_js_start;
         ESP_LOGI(TAG, "发送vision.js, 大小: %d字节", (int)len);
-        return httpd_resp_send(req, (const char*)_binary_vision_js_start, len);
+        return httpd_resp_send(req, (const char*)_binary_main_assets_html_js_vision_js_start, len);
     }
     
     // 如果没有找到匹配的JS文件

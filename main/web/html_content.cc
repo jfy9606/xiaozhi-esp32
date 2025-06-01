@@ -11,17 +11,17 @@
 #define HTML_STR(x) #x
 
 // 声明外部嵌入的HTML文件
-extern const uint8_t index_html_start[] asm("_binary_index_html_start");
-extern const uint8_t index_html_end[] asm("_binary_index_html_end");
+extern const uint8_t index_html_start[] asm("_binary_main_assets_html_index_html_start");
+extern const uint8_t index_html_end[] asm("_binary_main_assets_html_index_html_end");
 
-extern const uint8_t move_html_start[] asm("_binary_move_html_start");
-extern const uint8_t move_html_end[] asm("_binary_move_html_end");
+extern const uint8_t move_html_start[] asm("_binary_main_assets_html_move_html_start");
+extern const uint8_t move_html_end[] asm("_binary_main_assets_html_move_html_end");
 
-extern const uint8_t ai_html_start[] asm("_binary_ai_html_start");
-extern const uint8_t ai_html_end[] asm("_binary_ai_html_end");
+extern const uint8_t ai_html_start[] asm("_binary_main_assets_html_ai_html_start");
+extern const uint8_t ai_html_end[] asm("_binary_main_assets_html_ai_html_end");
 
-extern const uint8_t vision_html_start[] asm("_binary_vision_html_start");
-extern const uint8_t vision_html_end[] asm("_binary_vision_html_end");
+extern const uint8_t vision_html_start[] asm("_binary_main_assets_html_vision_html_start");
+extern const uint8_t vision_html_end[] asm("_binary_main_assets_html_vision_html_end");
 
 // HTML内容大小
 static size_t index_html_size = 0;
