@@ -269,6 +269,28 @@ bool WebServer::Start() {
         }
     }
     
+    // 注册一个.html重定向处理器，将带.html后缀的URL重定向到不带后缀的URL
+    RegisterHttpHandler("/*.html", HTTP_GET, [](httpd_req_t* req) -> esp_err_t {
+        const char* uri = req->uri;
+        ESP_LOGI(TAG, "处理.html重定向: %s", uri);
+        
+        // 创建无后缀的URL (去掉.html)
+        PSRAMString noSuffixUrl(uri);
+        size_t dotPos = noSuffixUrl.find(".html");
+        if (dotPos != PSRAMString::npos) {
+            noSuffixUrl = noSuffixUrl.substr(0, dotPos);
+        }
+        
+        ESP_LOGI(TAG, "重定向到: %s", noSuffixUrl.c_str());
+        
+        // 设置重定向头
+        httpd_resp_set_status(req, "302 Found");
+        httpd_resp_set_hdr(req, "Location", noSuffixUrl.c_str());
+        httpd_resp_send(req, NULL, 0);
+        return ESP_OK;
+    });
+    ESP_LOGI(TAG, "注册.html重定向处理器: /*.html");
+    
     if (!has_registered_all) {
         ESP_LOGW(TAG, "某些URI处理器注册失败，但服务器仍然启动");
     }
@@ -524,8 +546,14 @@ esp_err_t WebServer::RootHandler(httpd_req_t *req) {
     const char* html_content = get_index_html_content();
     size_t len = get_index_html_size();
     
-    ESP_LOGI(TAG, "Serving index.html, size: %d bytes", len);
-    return SendHttpResponse(req, "text/html", html_content, len);
+    // 增加详细日志
+    ESP_LOGI(TAG, "处理主页请求: %s, 内容大小: %d bytes", req->uri, len);
+    
+    // 设置必要的HTTP头
+    httpd_resp_set_type(req, "text/html");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-cache, no-store, must-revalidate");
+    
+    return httpd_resp_send(req, html_content, len);
 #else
     // 当Web内容未启用时，返回一个简单的消息
     const char* message = "<html><body><h1>Web Content Disabled</h1>"
@@ -537,7 +565,12 @@ esp_err_t WebServer::RootHandler(httpd_req_t *req) {
         "</ul>"
         "</body></html>";
     ESP_LOGI(TAG, "Web content disabled, serving status page");
-    return SendHttpResponse(req, "text/html", message, strlen(message));
+    
+    // 设置必要的HTTP头
+    httpd_resp_set_type(req, "text/html");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-cache, no-store, must-revalidate");
+    
+    return httpd_resp_send(req, message, strlen(message));
 #endif
 }
 
@@ -548,8 +581,14 @@ esp_err_t WebServer::VisionHandler(httpd_req_t *req) {
     const char* html_content = get_vision_html_content();
     size_t len = get_vision_html_size();
     
-    ESP_LOGI(TAG, "Serving vision.html, size: %d bytes", len);
-    return SendHttpResponse(req, "text/html", html_content, len);
+    // 增加详细日志
+    ESP_LOGI(TAG, "处理视觉页面请求: %s, 内容大小: %d bytes", req->uri, len);
+    
+    // 设置必要的HTTP头
+    httpd_resp_set_type(req, "text/html");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-cache, no-store, must-revalidate");
+    
+    return httpd_resp_send(req, html_content, len);
 #else
     // 当视觉内容未启用时，返回一个简单的消息
     const char* message = "<html><body><h1>Vision Content Disabled</h1>"
@@ -557,7 +596,12 @@ esp_err_t WebServer::VisionHandler(httpd_req_t *req) {
         "<p>API endpoints are still available at /api/vision/*</p>"
         "</body></html>";
     ESP_LOGI(TAG, "Vision content disabled, serving simple message");
-    return SendHttpResponse(req, "text/html", message, strlen(message));
+    
+    // 设置必要的HTTP头
+    httpd_resp_set_type(req, "text/html");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-cache, no-store, must-revalidate");
+    
+    return httpd_resp_send(req, message, strlen(message));
 #endif
 }
 
@@ -565,11 +609,17 @@ esp_err_t WebServer::VisionHandler(httpd_req_t *req) {
 esp_err_t WebServer::CarHandler(httpd_req_t *req) {
 #if defined(CONFIG_ENABLE_MOTOR_CONTROLLER)
     // 获取电机控制相关的HTML内容
-            const char* html_content = get_vehicle_html_content();
-        size_t len = get_vehicle_html_size();
+    const char* html_content = get_vehicle_html_content();
+    size_t len = get_vehicle_html_size();
     
-        ESP_LOGI(TAG, "Serving car.html, size: %d bytes", len);
-    return SendHttpResponse(req, "text/html", html_content, len);
+    // 增加详细日志
+    ESP_LOGI(TAG, "处理小车控制页面请求: %s, 内容大小: %d bytes", req->uri, len);
+    
+    // 设置必要的HTTP头
+    httpd_resp_set_type(req, "text/html");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-cache, no-store, must-revalidate");
+    
+    return httpd_resp_send(req, html_content, len);
 #else
     // 当小车控制内容未启用时，返回一个简单的消息
     const char* message = "<html><body><h1>Car Control Disabled</h1>"
@@ -578,7 +628,12 @@ esp_err_t WebServer::CarHandler(httpd_req_t *req) {
         "<p>WebSocket commands for car control are supported.</p>"
         "</body></html>";
     ESP_LOGI(TAG, "Car content disabled, serving simple message");
-    return SendHttpResponse(req, "text/html", message, strlen(message));
+    
+    // 设置必要的HTTP头
+    httpd_resp_set_type(req, "text/html");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-cache, no-store, must-revalidate");
+    
+    return httpd_resp_send(req, message, strlen(message));
 #endif
 }
 
@@ -589,8 +644,14 @@ esp_err_t WebServer::AIHandler(httpd_req_t *req) {
     const char* html_content = get_ai_html_content();
     size_t len = get_ai_html_size();
     
-    ESP_LOGI(TAG, "Serving ai.html, size: %d bytes", len);
-    return SendHttpResponse(req, "text/html", html_content, len);
+    // 增加详细日志
+    ESP_LOGI(TAG, "处理AI页面请求: %s, 内容大小: %d bytes", req->uri, len);
+    
+    // 设置必要的HTTP头
+    httpd_resp_set_type(req, "text/html");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-cache, no-store, must-revalidate");
+    
+    return httpd_resp_send(req, html_content, len);
 #else
     // 当AI内容未启用时，返回一个简单的消息
     const char* message = "<html><body><h1>AI Control Disabled</h1>"
@@ -599,29 +660,44 @@ esp_err_t WebServer::AIHandler(httpd_req_t *req) {
         "<p>WebSocket commands for AI control are supported.</p>"
         "</body></html>";
     ESP_LOGI(TAG, "AI content disabled, serving simple message");
-    return SendHttpResponse(req, "text/html", message, strlen(message));
+    
+    // 设置必要的HTTP头
+    httpd_resp_set_type(req, "text/html");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-cache, no-store, must-revalidate");
+    
+    return httpd_resp_send(req, message, strlen(message));
 #endif
 }
 
 // 位置定位页面处理器
 esp_err_t WebServer::LocationHandler(httpd_req_t *req) {
-    ESP_LOGI(TAG, "Location page request: %s", req->uri);
+    ESP_LOGI(TAG, "处理位置页面请求: %s", req->uri);
     
     // 获取位置页面HTML内容
 #if CONFIG_ENABLE_WEB_CONTENT && CONFIG_ENABLE_LOCATION_CONTROLLER
     const char* html_content = get_location_html_content();
     size_t len = get_location_html_size();
     
-    ESP_LOGI(TAG, "Serving location.html, size: %zu bytes", len);
-    return SendHttpResponse(req, "text/html", html_content, len);
+    ESP_LOGI(TAG, "提供位置页面, 内容大小: %zu bytes", len);
+    
+    // 设置必要的HTTP头
+    httpd_resp_set_type(req, "text/html");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-cache, no-store, must-revalidate");
+    
+    return httpd_resp_send(req, html_content, len);
 #else
     // 当Web内容未启用时，返回一个简单的消息
     const char* message = "<html><body><h1>Location Tracking Disabled</h1>"
         "<p>The location tracking web interface is not enabled in this build.</p>"
         "<p>API endpoints are still available at /api/location/*</p>"
         "</body></html>";
-    ESP_LOGI(TAG, "Location content disabled, serving simple message");
-    return SendHttpResponse(req, "text/html", message, strlen(message));
+    ESP_LOGI(TAG, "位置内容已禁用，提供简单消息");
+    
+    // 设置必要的HTTP头
+    httpd_resp_set_type(req, "text/html");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-cache, no-store, must-revalidate");
+    
+    return httpd_resp_send(req, message, strlen(message));
 #endif
 }
 

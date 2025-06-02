@@ -884,6 +884,15 @@ esp_err_t WebContent::HandleCssFile(httpd_req_t* req) {
     // 设置内容类型为CSS
     httpd_resp_set_type(req, "text/css");
     
+    // 设置缓存控制 - CSS文件可以缓存1小时
+    httpd_resp_set_hdr(req, "Cache-Control", "max-age=3600");
+    
+    // 构建文件名对应的二进制标识符
+    char binary_start_name[64];
+    char binary_end_name[64];
+    snprintf(binary_start_name, sizeof(binary_start_name), "_binary_%s_start", filename);
+    snprintf(binary_end_name, sizeof(binary_end_name), "_binary_%s_end", filename);
+    
     // 尝试使用常见的CSS文件名模式
     if (strcmp(filename, "common.css") == 0) {
         extern const uint8_t _binary_common_css_start[] asm("_binary_common_css_start");
@@ -920,6 +929,31 @@ esp_err_t WebContent::HandleCssFile(httpd_req_t* req) {
         ESP_LOGI(TAG, "发送vision.css, 大小: %d字节", (int)len);
         return httpd_resp_send(req, (const char*)_binary_vision_css_start, len);
     }
+    else if (strcmp(filename, "main.css") == 0) {
+        extern const uint8_t _binary_main_css_start[] asm("_binary_main_css_start");
+        extern const uint8_t _binary_main_css_end[] asm("_binary_main_css_end");
+        size_t len = _binary_main_css_end - _binary_main_css_start;
+        ESP_LOGI(TAG, "发送main.css, 大小: %d字节", (int)len);
+        return httpd_resp_send(req, (const char*)_binary_main_css_start, len);
+    }
+    else if (strcmp(filename, "bootstrap.min.css") == 0) {
+        // 安全检查 - 尝试访问嵌入式资源前检查是否存在
+        #ifdef _binary_bootstrap_min_css_start
+        extern const uint8_t _binary_bootstrap_min_css_start[] asm("_binary_bootstrap_min_css_start");
+        extern const uint8_t _binary_bootstrap_min_css_end[] asm("_binary_bootstrap_min_css_end");
+        size_t len = _binary_bootstrap_min_css_end - _binary_bootstrap_min_css_start;
+        ESP_LOGI(TAG, "发送bootstrap.min.css, 大小: %d字节", (int)len);
+        return httpd_resp_send(req, (const char*)_binary_bootstrap_min_css_start, len);
+        #else
+        // bootstrap.min.css不可用，发送简单的默认样式
+        ESP_LOGW(TAG, "bootstrap.min.css未嵌入到固件中，发送基本样式");
+        const char* basic_css = "/* Basic styles */\n"
+                               "body { font-family: Arial, sans-serif; margin: 0; padding: 20px; }\n"
+                               "button { padding: 8px 16px; margin: 5px; cursor: pointer; }\n"
+                               ".container { max-width: 1200px; margin: 0 auto; }\n";
+        return httpd_resp_send(req, basic_css, strlen(basic_css));
+        #endif
+    }
     
     // 如果没有找到匹配的CSS文件
     ESP_LOGW(TAG, "未找到CSS文件: %s", filename);
@@ -946,6 +980,9 @@ esp_err_t WebContent::HandleJsFile(httpd_req_t* req) {
     // 设置内容类型为JavaScript
     httpd_resp_set_type(req, "application/javascript");
     
+    // 设置缓存控制 - JS文件可以缓存1小时
+    httpd_resp_set_hdr(req, "Cache-Control", "max-age=3600");
+    
     // 尝试使用常见的JS文件名模式
     if (strcmp(filename, "api_client.js") == 0) {
         extern const uint8_t _binary_api_client_js_start[] asm("_binary_api_client_js_start");
@@ -954,12 +991,25 @@ esp_err_t WebContent::HandleJsFile(httpd_req_t* req) {
         ESP_LOGI(TAG, "发送api_client.js, 大小: %d字节", (int)len);
         return httpd_resp_send(req, (const char*)_binary_api_client_js_start, len);
     }
-    else if (strcmp(filename, "index.js") == 0) {
-        extern const uint8_t _binary_index_js_start[] asm("_binary_index_js_start");
-        extern const uint8_t _binary_index_js_end[] asm("_binary_index_js_end");
-        size_t len = _binary_index_js_end - _binary_index_js_start;
-        ESP_LOGI(TAG, "发送index.js, 大小: %d字节", (int)len);
-        return httpd_resp_send(req, (const char*)_binary_index_js_start, len);
+    else if (strcmp(filename, "common.js") == 0) {
+        #ifdef _binary_common_js_start
+        extern const uint8_t _binary_common_js_start[] asm("_binary_common_js_start");
+        extern const uint8_t _binary_common_js_end[] asm("_binary_common_js_end");
+        size_t len = _binary_common_js_end - _binary_common_js_start;
+        ESP_LOGI(TAG, "发送common.js, 大小: %d字节", (int)len);
+        return httpd_resp_send(req, (const char*)_binary_common_js_start, len);
+        #else
+        // common.js不可用，发送最小化的替代脚本
+        ESP_LOGW(TAG, "common.js未嵌入到固件中，发送基本脚本");
+        const char* basic_js = "// Basic common functionality\n"
+                              "function getApiUrl(path) {\n"
+                              "  return '/api/' + path;\n"
+                              "}\n\n"
+                              "function showMessage(msg, type) {\n"
+                              "  console.log(type + ': ' + msg);\n"
+                              "}\n";
+        return httpd_resp_send(req, basic_js, strlen(basic_js));
+        #endif
     }
     else if (strcmp(filename, "vehicle.js") == 0) {
         extern const uint8_t _binary_vehicle_js_start[] asm("_binary_vehicle_js_start");
@@ -981,6 +1031,39 @@ esp_err_t WebContent::HandleJsFile(httpd_req_t* req) {
         size_t len = _binary_vision_js_end - _binary_vision_js_start;
         ESP_LOGI(TAG, "发送vision.js, 大小: %d字节", (int)len);
         return httpd_resp_send(req, (const char*)_binary_vision_js_start, len);
+    }
+    else if (strcmp(filename, "bootstrap.bundle.min.js") == 0) {
+        #ifdef _binary_bootstrap_bundle_min_js_start
+        extern const uint8_t _binary_bootstrap_bundle_min_js_start[] asm("_binary_bootstrap_bundle_min_js_start");
+        extern const uint8_t _binary_bootstrap_bundle_min_js_end[] asm("_binary_bootstrap_bundle_min_js_end");
+        size_t len = _binary_bootstrap_bundle_min_js_end - _binary_bootstrap_bundle_min_js_start;
+        ESP_LOGI(TAG, "发送bootstrap.bundle.min.js, 大小: %d字节", (int)len);
+        return httpd_resp_send(req, (const char*)_binary_bootstrap_bundle_min_js_start, len);
+        #else
+        // bootstrap.bundle.min.js不可用，发送最小化的替代脚本
+        ESP_LOGW(TAG, "bootstrap.bundle.min.js未嵌入到固件中，发送基本脚本");
+        const char* basic_js = "// Minimal Bootstrap functionality\n"
+                              "const bootstrap = {\n"
+                              "  Modal: { getInstance: function() { return null; } },\n"
+                              "  Tooltip: { getInstance: function() { return null; } },\n"
+                              "  Popover: { getInstance: function() { return null; } }\n"
+                              "};\n";
+        return httpd_resp_send(req, basic_js, strlen(basic_js));
+        #endif
+    }
+    else if (strcmp(filename, "index.js") == 0) {
+        extern const uint8_t _binary_index_js_start[] asm("_binary_index_js_start");
+        extern const uint8_t _binary_index_js_end[] asm("_binary_index_js_end");
+        size_t len = _binary_index_js_end - _binary_index_js_start;
+        ESP_LOGI(TAG, "发送index.js, 大小: %d字节", (int)len);
+        return httpd_resp_send(req, (const char*)_binary_index_js_start, len);
+    }
+    else if (strcmp(filename, "location.js") == 0) {
+        extern const uint8_t _binary_location_js_start[] asm("_binary_location_js_start");
+        extern const uint8_t _binary_location_js_end[] asm("_binary_location_js_end");
+        size_t len = _binary_location_js_end - _binary_location_js_start;
+        ESP_LOGI(TAG, "发送location.js, 大小: %d字节", (int)len);
+        return httpd_resp_send(req, (const char*)_binary_location_js_start, len);
     }
     
     // 如果没有找到匹配的JS文件
