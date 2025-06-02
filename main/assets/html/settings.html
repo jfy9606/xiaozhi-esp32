@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>设置 - 小智ESP32</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="icon" href="favicon.ico" type="image/x-icon">
+</head>
+<body>
+    <header class="header">
+        <div class="container header-inner">
+            <h1>小智ESP32</h1>
+            <nav class="nav">
+                <ul class="nav">
+                    <li class="nav-item"><a class="nav-link" href="index.html">首页</a></li>
+                    <li class="nav-item"><a class="nav-link" href="vehicle.html">车辆控制</a></li>
+                    <li class="nav-item"><a class="nav-link" href="location.html">位置追踪</a></li>
+                    <li class="nav-item"><a class="nav-link" href="ai.html">AI对话</a></li>
+                    <li class="nav-item"><a class="nav-link" href="settings.html">设置</a></li>
+                </ul>
+            </nav>
+        </div>
+    </header>
+
+    <div class="status-bar">
+        <div class="container">
+            <div id="connection-status" class="status-indicator status-disconnected">未连接</div>
+        </div>
+    </div>
+
+    <main class="container">
+        <h2 class="mb-3">系统设置</h2>
+
+        <div class="tabs">
+            <button class="tab-button active" data-tab="system">系统</button>
+            <button class="tab-button" data-tab="vehicle">车辆</button>
+            <button class="tab-button" data-tab="camera">摄像头</button>
+            <button class="tab-button" data-tab="ai">AI</button>
+            <button class="tab-button" data-tab="network">网络</button>
+        </div>
+
+        <!-- 系统设置 -->
+        <div id="system-tab" class="tab-content active">
+            <div class="card">
+                <div class="card-header">系统信息</div>
+                <div class="card-body">
+                    <table class="info-table">
+                        <tbody id="system-info">
+                            <tr>
+                                <td>设备名称</td>
+                                <td>--</td>
+                            </tr>
+                            <tr>
+                                <td>固件版本</td>
+                                <td>--</td>
+                            </tr>
+                            <tr>
+                                <td>硬件型号</td>
+                                <td>--</td>
+                            </tr>
+                            <tr>
+                                <td>MAC地址</td>
+                                <td>--</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    
+                    <div class="form-group mt-3">
+                        <label for="device-name">设备名称</label>
+                        <input type="text" id="device-name" class="form-control" placeholder="ESP32设备">
+                    </div>
+                    
+                    <div class="mt-3">
+                        <button id="reboot-btn" class="btn btn-warning">重启设备</button>
+                        <button id="restore-btn" class="btn btn-danger">恢复出厂设置</button>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card mt-3">
+                <div class="card-header">固件更新</div>
+                <div class="card-body">
+                    <div class="form-group">
+                        <label for="firmware-file">选择固件文件</label>
+                        <input type="file" id="firmware-file" class="form-control" accept=".bin">
+                    </div>
+                    
+                    <div id="upload-progress" class="progress mt-3 hidden">
+                        <div class="progress-bar" role="progressbar" style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
+                    </div>
+                    
+                    <button id="upload-btn" class="btn btn-primary mt-3">上传固件</button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 车辆设置 -->
+        <div id="vehicle-tab" class="tab-content">
+            <div class="card">
+                <div class="card-header">电机设置</div>
+                <div class="card-body">
+                    <div class="form-group">
+                        <label for="motor-max-speed">最大速度 (%)</label>
+                        <input type="range" id="motor-max-speed" class="form-control" min="20" max="100" value="100">
+                        <span id="motor-max-speed-value">100%</span>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>电机校准</label>
+                        <div class="row">
+                            <div class="col">
+                                <label for="motor-left-trim">左电机微调</label>
+                                <input type="range" id="motor-left-trim" class="form-control" min="-20" max="20" value="0">
+                                <span id="motor-left-trim-value">0</span>
+                            </div>
+                            <div class="col">
+                                <label for="motor-right-trim">右电机微调</label>
+                                <input type="range" id="motor-right-trim" class="form-control" min="-20" max="20" value="0">
+                                <span id="motor-right-trim-value">0</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card mt-3">
+                <div class="card-header">舵机设置</div>
+                <div class="card-body">
+                    <div class="form-group">
+                        <label for="servo-pan-min">水平舵机最小角度</label>
+                        <input type="range" id="servo-pan-min" class="form-control" min="0" max="90" value="0">
+                        <span id="servo-pan-min-value">0°</span>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="servo-pan-max">水平舵机最大角度</label>
+                        <input type="range" id="servo-pan-max" class="form-control" min="90" max="180" value="180">
+                        <span id="servo-pan-max-value">180°</span>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="servo-tilt-min">垂直舵机最小角度</label>
+                        <input type="range" id="servo-tilt-min" class="form-control" min="0" max="90" value="0">
+                        <span id="servo-tilt-min-value">0°</span>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="servo-tilt-max">垂直舵机最大角度</label>
+                        <input type="range" id="servo-tilt-max" class="form-control" min="90" max="180" value="180">
+                        <span id="servo-tilt-max-value">180°</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card mt-3">
+                <div class="card-header">传感器设置</div>
+                <div class="card-body">
+                    <div class="form-group">
+                        <label for="ultrasonic-threshold">超声波避障阈值 (cm)</label>
+                        <input type="number" id="ultrasonic-threshold" class="form-control" min="5" max="100" value="20">
+                    </div>
+                    
+                    <div class="form-group">
+                        <div class="checkbox">
+                            <label>
+                                <input type="checkbox" id="enable-obstacle-avoidance" checked> 启用超声波避障
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 摄像头设置 -->
+        <div id="camera-tab" class="tab-content">
+            <div class="card">
+                <div class="card-header">摄像头设置</div>
+                <div class="card-body">
+                    <div class="form-group">
+                        <label for="camera-resolution">默认分辨率</label>
+                        <select id="camera-resolution" class="form-control">
+                            <option value="320x240">QVGA (320x240)</option>
+                            <option value="640x480" selected>VGA (640x480)</option>
+                            <option value="800x600">SVGA (800x600)</option>
+                            <option value="1280x720">HD (1280x720)</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="camera-quality">JPEG质量 (1-100)</label>
+                        <input type="range" id="camera-quality" class="form-control" min="1" max="100" value="80">
+                        <span id="camera-quality-value">80</span>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="camera-brightness">亮度</label>
+                        <input type="range" id="camera-brightness" class="form-control" min="-2" max="2" step="0.1" value="0">
+                        <span id="camera-brightness-value">0</span>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="camera-contrast">对比度</label>
+                        <input type="range" id="camera-contrast" class="form-control" min="-2" max="2" step="0.1" value="0">
+                        <span id="camera-contrast-value">0</span>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="camera-saturation">饱和度</label>
+                        <input type="range" id="camera-saturation" class="form-control" min="-2" max="2" step="0.1" value="0">
+                        <span id="camera-saturation-value">0</span>
+                    </div>
+                    
+                    <div class="form-group">
+                        <div class="checkbox">
+                            <label>
+                                <input type="checkbox" id="camera-hmirror"> 水平镜像
+                            </label>
+                        </div>
+                        <div class="checkbox">
+                            <label>
+                                <input type="checkbox" id="camera-vflip"> 垂直翻转
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card mt-3">
+                <div class="card-header">视觉识别设置</div>
+                <div class="card-body">
+                    <div class="form-group">
+                        <label for="detection-model">识别模型</label>
+                        <select id="detection-model" class="form-control">
+                            <option value="yolo">YOLOv5 (推荐)</option>
+                            <option value="mobilenet">MobileNetSSD</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="detection-confidence">置信度阈值</label>
+                        <input type="range" id="detection-confidence" class="form-control" min="0.1" max="0.9" step="0.05" value="0.5">
+                        <span id="detection-confidence-value">0.5</span>
+                    </div>
+                    
+                    <div class="form-group">
+                        <div class="checkbox">
+                            <label>
+                                <input type="checkbox" id="enable-detection"> 启用对象检测
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- AI设置 -->
+        <div id="ai-tab" class="tab-content">
+            <div class="card">
+                <div class="card-header">AI模型设置</div>
+                <div class="card-body">
+                    <div class="form-group">
+                        <label for="ai-model">AI模型类型</label>
+                        <select id="ai-model" class="form-control">
+                            <option value="local">本地模型</option>
+                            <option value="openai">OpenAI API</option>
+                            <option value="azure">Azure OpenAI API</option>
+                        </select>
+                    </div>
+                    
+                    <div id="api-settings">
+                        <div class="form-group">
+                            <label for="api-key">API密钥</label>
+                            <input type="password" id="api-key" class="form-control" placeholder="API密钥">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="api-endpoint">API端点</label>
+                            <input type="text" id="api-endpoint" class="form-control" placeholder="https://api.openai.com/v1">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="api-model-name">模型名称</label>
+                            <input type="text" id="api-model-name" class="form-control" value="gpt-3.5-turbo" placeholder="gpt-3.5-turbo">
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card mt-3">
+                <div class="card-header">语音识别设置</div>
+                <div class="card-body">
+                    <div class="form-group">
+                        <label for="speech-recognition-language">语音识别语言</label>
+                        <select id="speech-recognition-language" class="form-control">
+                            <option value="zh-CN" selected>中文（简体）</option>
+                            <option value="en-US">英语（美国）</option>
+                            <option value="ja-JP">日语</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <div class="checkbox">
+                            <label>
+                                <input type="checkbox" id="enable-continuous-recognition"> 启用连续识别
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 网络设置 -->
+        <div id="network-tab" class="tab-content">
+            <div class="card">
+                <div class="card-header">WiFi设置</div>
+                <div class="card-body">
+                    <div class="form-group">
+                        <label for="current-wifi">当前Wi-Fi</label>
+                        <input type="text" id="current-wifi" class="form-control" readonly>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="wifi-ssid">Wi-Fi名称</label>
+                        <input type="text" id="wifi-ssid" class="form-control" placeholder="输入WiFi名称">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="wifi-password">Wi-Fi密码</label>
+                        <input type="password" id="wifi-password" class="form-control" placeholder="输入WiFi密码">
+                    </div>
+                    
+                    <button id="connect-wifi-btn" class="btn btn-primary">连接</button>
+                    <button id="scan-wifi-btn" class="btn btn-outline-primary">扫描网络</button>
+                </div>
+            </div>
+            
+            <div class="card mt-3">
+                <div class="card-header">热点设置</div>
+                <div class="card-body">
+                    <div class="form-group">
+                        <label for="ap-ssid">热点名称</label>
+                        <input type="text" id="ap-ssid" class="form-control" placeholder="ESP32_AP">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="ap-password">热点密码</label>
+                        <input type="password" id="ap-password" class="form-control" placeholder="至少8位密码">
+                    </div>
+                    
+                    <div class="form-group">
+                        <div class="checkbox">
+                            <label>
+                                <input type="checkbox" id="enable-ap"> 启用热点模式
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <button id="update-ap-btn" class="btn btn-primary">更新热点设置</button>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card mt-3">
+            <div class="card-body text-center">
+                <button id="save-settings-btn" class="btn btn-success btn-lg">保存所有设置</button>
+                <button id="reset-settings-btn" class="btn btn-outline-danger">重置设置</button>
+            </div>
+        </div>
+    </main>
+
+    <footer class="footer">
+        <div class="container">
+            <p>小智ESP32车辆控制系统 &copy; 2023</p>
+        </div>
+    </footer>
+
+    <script src="js/main.js"></script>
+    <script src="js/settings-module.js"></script>
+</body>
+</html> 

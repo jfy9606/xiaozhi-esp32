@@ -1,4 +1,4 @@
-#include "move_content.h"
+#include "vehicle_content.h"
 #include <esp_log.h>
 #include <esp_http_server.h>
 #include <cJSON.h>
@@ -6,31 +6,31 @@
 #include <algorithm>
 #include <string>
 
-#define TAG "MoveContent"
+#define TAG "VehicleContent"
 
 // Web路由处理函数
-static MoveContent* g_move_content = nullptr;
+static VehicleContent* g_vehicle_content = nullptr;
 
-MoveContent::MoveContent(WebServer* server) 
+VehicleContent::VehicleContent(WebServer* server) 
     : WebContent(server), running_(false), server_(server) {
-    g_move_content = this;
+    g_vehicle_content = this;
 }
 
-MoveContent::~MoveContent() {
+VehicleContent::~VehicleContent() {
     if (running_) {
         Stop();
     }
-    g_move_content = nullptr;
+    g_vehicle_content = nullptr;
 }
 
-bool MoveContent::Start() {
+bool VehicleContent::Start() {
     if (running_) {
-        ESP_LOGW(TAG, "Move content already running");
+        ESP_LOGW(TAG, "Vehicle content already running");
         return true;
     }
     
     if (!server_) {
-        ESP_LOGW(TAG, "WebServer not available, cannot start MoveContent");
+        ESP_LOGW(TAG, "WebServer not available, cannot start VehicleContent");
         return false;
     }
     
@@ -44,24 +44,24 @@ bool MoveContent::Start() {
     xTaskCreate(ServoDataTask, "servo_data_task", 4096, server_, 5, nullptr);
     
     running_ = true;
-    ESP_LOGI(TAG, "Move content started");
+    ESP_LOGI(TAG, "Vehicle content started");
     return true;
 }
 
-void MoveContent::Stop() {
+void VehicleContent::Stop() {
     running_ = false;
-    ESP_LOGI(TAG, "Move content stopped");
+    ESP_LOGI(TAG, "Vehicle content stopped");
 }
 
-bool MoveContent::IsRunning() const {
+bool VehicleContent::IsRunning() const {
     return running_;
 }
 
-const char* MoveContent::GetName() const {
-    return "MoveContent";
+const char* VehicleContent::GetName() const {
+    return "VehicleContent";
 }
 
-void MoveContent::HandleWebSocketMessage(int client_index, const PSRAMString& message) {
+void VehicleContent::HandleWebSocketMessage(int client_index, const PSRAMString& message) {
     if (!running_) {
         return;
     }
@@ -151,17 +151,17 @@ void MoveContent::HandleWebSocketMessage(int client_index, const PSRAMString& me
     cJSON_Delete(root);
 }
 
-void MoveContent::InitHandlers() {
+void VehicleContent::InitHandlers() {
     if (!server_) {
         ESP_LOGW(TAG, "WebServer not available");
         return;
     }
     
-    ESP_LOGI(TAG, "Registering Move HTTP handlers");
+    ESP_LOGI(TAG, "Registering Vehicle HTTP handlers");
 
-    // 注册/move端点处理函数
-    server_->RegisterHttpHandler("/move", HTTP_GET, 
-        [](httpd_req_t* req) { return HandleMove(req); });
+    // 注册/vehicle端点处理函数
+    server_->RegisterHttpHandler("/vehicle", HTTP_GET, 
+        [](httpd_req_t* req) { return HandleVehicle(req); });
     
     // 注册/servo端点处理函数
     server_->RegisterHttpHandler("/servo", HTTP_GET, 
@@ -172,31 +172,31 @@ void MoveContent::InitHandlers() {
     // 注册WebSocket消息处理
     server_->RegisterWebSocketHandler("car_control", 
         [](int client_index, const PSRAMString& message, const PSRAMString& type) {
-            if (g_move_content) {
-                g_move_content->HandleWebSocketMessage(client_index, message);
+            if (g_vehicle_content) {
+                g_vehicle_content->HandleWebSocketMessage(client_index, message);
             }
         });
     
     server_->RegisterWebSocketHandler("joystick", 
         [](int client_index, const PSRAMString& message, const PSRAMString& type) {
-            if (g_move_content) {
-                g_move_content->HandleWebSocketMessage(client_index, message);
+            if (g_vehicle_content) {
+                g_vehicle_content->HandleWebSocketMessage(client_index, message);
             }
         });
     
     server_->RegisterWebSocketHandler("servo_control", 
         [](int client_index, const PSRAMString& message, const PSRAMString& type) {
-            if (g_move_content) {
-                g_move_content->HandleWebSocketMessage(client_index, message);
+            if (g_vehicle_content) {
+                g_vehicle_content->HandleWebSocketMessage(client_index, message);
             }
         });
     
     // 已经不需要再注册HTML内容，web_server.cc会自动处理
-    ESP_LOGI(TAG, "Move handlers initialized");
+    ESP_LOGI(TAG, "Vehicle handlers initialized");
 }
 
-esp_err_t MoveContent::HandleMove(httpd_req_t *req) {
-    ESP_LOGI(TAG, "Move control request received");
+esp_err_t VehicleContent::HandleVehicle(httpd_req_t *req) {
+    ESP_LOGI(TAG, "Vehicle control request received");
     
     char*  buf;
     size_t buf_len;
@@ -264,7 +264,7 @@ esp_err_t MoveContent::HandleMove(httpd_req_t *req) {
     return ESP_OK;
 }
 
-esp_err_t MoveContent::HandleServo(httpd_req_t *req) {
+esp_err_t VehicleContent::HandleServo(httpd_req_t *req) {
     ESP_LOGI(TAG, "Servo control request received");
     
     char*  buf;
@@ -314,7 +314,7 @@ esp_err_t MoveContent::HandleServo(httpd_req_t *req) {
     return ESP_OK;
 }
 
-void MoveContent::SendUltrasonicData(WebServer* server, iot::Thing* thing) {
+void VehicleContent::SendUltrasonicData(WebServer* server, iot::Thing* thing) {
     if (!server || !thing) {
         return;
     }
@@ -387,7 +387,7 @@ void MoveContent::SendUltrasonicData(WebServer* server, iot::Thing* thing) {
     cJSON_Delete(root);
 }
 
-void MoveContent::SendServoData(WebServer* server, iot::Thing* thing) {
+void VehicleContent::SendServoData(WebServer* server, iot::Thing* thing) {
     if (!server || !thing) {
         return;
     }
@@ -451,7 +451,7 @@ void MoveContent::SendServoData(WebServer* server, iot::Thing* thing) {
     cJSON_Delete(root);
 }
 
-void MoveContent::UltrasonicDataTask(void* pvParameters) {
+void VehicleContent::UltrasonicDataTask(void* pvParameters) {
     WebServer* server = (WebServer*)pvParameters;
     auto& thing_manager = iot::ThingManager::GetInstance();
     
@@ -467,7 +467,7 @@ void MoveContent::UltrasonicDataTask(void* pvParameters) {
     }
 }
 
-void MoveContent::ServoDataTask(void* pvParameters) {
+void VehicleContent::ServoDataTask(void* pvParameters) {
     WebServer* server = (WebServer*)pvParameters;
     auto& thing_manager = iot::ThingManager::GetInstance();
     
@@ -483,16 +483,16 @@ void MoveContent::ServoDataTask(void* pvParameters) {
     }
 }
 
-void InitMoveComponents(WebServer* server) {
-    ESP_LOGI(TAG, "Initializing Move components");
+void InitVehicleComponents(WebServer* server) {
+    ESP_LOGI(TAG, "Initializing Vehicle components");
     
-    static MoveContent* content = new MoveContent(server);
+    static VehicleContent* content = new VehicleContent(server);
     
     if (!content->Start()) {
-        ESP_LOGE(TAG, "Failed to start Move content");
+        ESP_LOGE(TAG, "Failed to start Vehicle content");
         delete content;
         return;
     }
     
-    ESP_LOGI(TAG, "Move components initialized");
+    ESP_LOGI(TAG, "Vehicle components initialized");
 } 

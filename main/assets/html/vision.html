@@ -1,40 +1,41 @@
 <!DOCTYPE html>
-<html>
+<html lang="zh-CN">
     <head>
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-        <title>ESP32 摄像头设置</title>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>ESP32 摄像头控制</title>
         <link rel='stylesheet' href='https://fonts.googleapis.com/css2?family=Roboto:wght@400;500&display=swap'>
         <link rel='stylesheet' href='https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css'>
         <link rel="stylesheet" href="css/common.css">
         <link rel="stylesheet" href="css/vision.css">
+        <link rel="stylesheet" href="css/vision-ext.css">
     </head>
     <body>
         <div class="container">
             <div class="header">
-                <h1>ESP32 摄像头设置</h1>
+                <h1>ESP32 摄像头控制</h1>
+                <p>适用于支持摄像头的各种ESP32开发板</p>
             </div>
             
-            <div class="main-content">
-                <div id="sidebar">
-                    <div id="logo">
-                        <label for="nav-toggle-cb" id="nav-toggle">
-                            <i class="fas fa-cog"></i> 摄像头参数设置
-                        </label>
+            <div class="flex-container">
+                <div id="camera-container" class="camera-section">
+                    <!-- 摄像头视图会在这里展示 -->
+                </div>
+                
+                <div id="basic-controls-container" class="controls-section">
+                    <!-- 基本控制面板会在这里展示 -->
                     </div>
-                    <input type="checkbox" id="nav-toggle-cb" class="hidden" checked="checked">
-                    <nav id="menu">
-                        <!-- XCLK设置 -->
-                        <div class="input-group" id="set-xclk-group">
-                            <label for="set-xclk"><i class="fas fa-clock"></i> XCLK MHz</label>
-                            <div class="text">
-                                <input id="xclk" type="text" minlength="1" maxlength="2" size="2" value="20">
                             </div>
-                            <button class="inline-button" id="set-xclk">设置</button>
+            
+            <div class="tabs" id="settings-tabs">
+                <div class="tab-label active" data-tab="basic-settings">基本设置</div>
+                <div class="tab-label" data-tab="advanced-settings">高级设置</div>
+                <div class="tab-label" data-tab="expert-settings">专家设置</div>
                         </div>
                         
-                        <!-- 分辨率 -->
-                        <div class="input-group" id="framesize-group">
+            <div id="basic-settings" class="tab-content active">
+                <!-- 基本设置会在这里展示 -->
+                <div class="control-group">
                             <label for="framesize"><i class="fas fa-expand"></i> 分辨率</label>
                             <select id="framesize" class="default-action">
                                 <option value="15">UXGA(1600x1200)</option>
@@ -42,7 +43,7 @@
                                 <option value="13">HD(1280x720)</option>
                                 <option value="12">XGA(1024x768)</option>
                                 <option value="11">SVGA(800x600)</option>
-                                <option value="10">VGA(640x480)</option>
+                        <option value="10" selected="selected">VGA(640x480)</option>
                                 <option value="9">HVGA(480x320)</option>
                                 <option value="8">CIF(400x296)</option>
                                 <option value="6">QVGA(320x240)</option>
@@ -55,40 +56,14 @@
                             </select>
                         </div>
                         
-                        <!-- 图像质量 -->
-                        <div class="input-group" id="quality-group">
+                <div class="control-group">
                             <label for="quality"><i class="fas fa-image"></i> 图像质量</label>
                             <div class="range-min">4</div>
                             <input type="range" id="quality" min="4" max="63" value="10" class="default-action">
                             <div class="range-max">63</div>
                         </div>
                         
-                        <!-- 亮度 -->
-                        <div class="input-group" id="brightness-group">
-                            <label for="brightness"><i class="fas fa-sun"></i> 亮度</label>
-                            <div class="range-min">-2</div>
-                            <input type="range" id="brightness" min="-2" max="2" value="0" class="default-action">
-                            <div class="range-max">2</div>
-                        </div>
-                        
-                        <!-- 对比度 -->
-                        <div class="input-group" id="contrast-group">
-                            <label for="contrast"><i class="fas fa-adjust"></i> 对比度</label>
-                            <div class="range-min">-2</div>
-                            <input type="range" id="contrast" min="-2" max="2" value="0" class="default-action">
-                            <div class="range-max">2</div>
-                        </div>
-                        
-                        <!-- 饱和度 -->
-                        <div class="input-group" id="saturation-group">
-                            <label for="saturation"><i class="fas fa-palette"></i> 饱和度</label>
-                            <div class="range-min">-2</div>
-                            <input type="range" id="saturation" min="-2" max="2" value="0" class="default-action">
-                            <div class="range-max">2</div>
-                        </div>
-                        
-                        <!-- 特殊效果 -->
-                        <div class="input-group" id="special_effect-group">
+                <div class="control-group">
                             <label for="special_effect"><i class="fas fa-magic"></i> 特殊效果</label>
                             <select id="special_effect" class="default-action">
                                 <option value="0" selected="selected">无效果</option>
@@ -100,9 +75,27 @@
                                 <option value="6">复古</option>
                             </select>
                         </div>
-                        
-                        <!-- AWB -->
-                        <div class="input-group" id="awb-group">
+            </div>
+            
+            <div id="advanced-settings" class="tab-content">
+                <!-- 高级设置 -->
+                <div class="control-group">
+                    <label for="hmirror"><i class="fas fa-arrows-alt-h"></i> 水平镜像</label>
+                    <div class="switch">
+                        <input id="hmirror" type="checkbox" class="default-action">
+                        <label class="slider" for="hmirror"></label>
+                    </div>
+                </div>
+                
+                <div class="control-group">
+                    <label for="vflip"><i class="fas fa-arrows-alt-v"></i> 垂直翻转</label>
+                    <div class="switch">
+                        <input id="vflip" type="checkbox" class="default-action">
+                        <label class="slider" for="vflip"></label>
+                    </div>
+                </div>
+                
+                <div class="control-group">
                             <label for="awb"><i class="fas fa-balance-scale"></i> 自动白平衡</label>
                             <div class="switch">
                                 <input id="awb" type="checkbox" class="default-action" checked="checked">
@@ -110,8 +103,7 @@
                             </div>
                         </div>
                         
-                        <!-- AWB 增益 -->
-                        <div class="input-group" id="awb_gain-group">
+                <div class="control-group">
                             <label for="awb_gain"><i class="fas fa-sliders-h"></i> AWB 增益</label>
                             <div class="switch">
                                 <input id="awb_gain" type="checkbox" class="default-action" checked="checked">
@@ -119,8 +111,7 @@
                             </div>
                         </div>
                         
-                        <!-- WB 模式 -->
-                        <div class="input-group" id="wb_mode-group">
+                <div class="control-group">
                             <label for="wb_mode"><i class="fas fa-lightbulb"></i> 白平衡模式</label>
                             <select id="wb_mode" class="default-action">
                                 <option value="0" selected="selected">自动</option>
@@ -131,8 +122,7 @@
                             </select>
                         </div>
                         
-                        <!-- AEC 传感器 -->
-                        <div class="input-group" id="aec-group">
+                <div class="control-group">
                             <label for="aec"><i class="fas fa-microchip"></i> 自动曝光(传感器)</label>
                             <div class="switch">
                                 <input id="aec" type="checkbox" class="default-action" checked="checked">
@@ -140,8 +130,7 @@
                             </div>
                         </div>
                         
-                        <!-- AEC DSP -->
-                        <div class="input-group" id="aec2-group">
+                <div class="control-group">
                             <label for="aec2"><i class="fas fa-microchip"></i> 自动曝光(DSP)</label>
                             <div class="switch">
                                 <input id="aec2" type="checkbox" class="default-action" checked="checked">
@@ -149,24 +138,21 @@
                             </div>
                         </div>
                         
-                        <!-- AE 级别 -->
-                        <div class="input-group" id="ae_level-group">
+                <div class="control-group">
                             <label for="ae_level"><i class="fas fa-layer-group"></i> AE 级别</label>
                             <div class="range-min">-2</div>
                             <input type="range" id="ae_level" min="-2" max="2" value="0" class="default-action">
                             <div class="range-max">2</div>
                         </div>
                         
-                        <!-- 曝光值 -->
-                        <div class="input-group" id="aec_value-group">
+                <div class="control-group">
                             <label for="aec_value"><i class="fas fa-hourglass-half"></i> 曝光值</label>
                             <div class="range-min">0</div>
                             <input type="range" id="aec_value" min="0" max="1200" value="204" class="default-action">
                             <div class="range-max">1200</div>
                         </div>
                         
-                        <!-- AGC -->
-                        <div class="input-group" id="agc-group">
+                <div class="control-group">
                             <label for="agc"><i class="fas fa-tachometer-alt"></i> 自动增益控制</label>
                             <div class="switch">
                                 <input id="agc" type="checkbox" class="default-action" checked="checked">
@@ -174,24 +160,32 @@
                             </div>
                         </div>
                         
-                        <!-- 增益 -->
-                        <div class="input-group hidden" id="agc_gain-group">
+                <div class="control-group" id="agc_gain-group">
                             <label for="agc_gain"><i class="fas fa-sort-amount-up"></i> 增益</label>
                             <div class="range-min">1x</div>
                             <input type="range" id="agc_gain" min="0" max="30" value="5" class="default-action">
                             <div class="range-max">31x</div>
                         </div>
                         
-                        <!-- 增益上限 -->
-                        <div class="input-group" id="gainceiling-group">
+                <div class="control-group">
                             <label for="gainceiling"><i class="fas fa-arrow-up"></i> 增益上限</label>
                             <div class="range-min">2x</div>
                             <input type="range" id="gainceiling" min="0" max="6" value="0" class="default-action">
                             <div class="range-max">128x</div>
                         </div>
-                        
-                        <!-- BPC -->
-                        <div class="input-group" id="bpc-group">
+            </div>
+            
+            <div id="expert-settings" class="tab-content">
+                <!-- 专家设置 -->
+                <div class="control-group" id="set-xclk-group">
+                    <label for="set-xclk"><i class="fas fa-clock"></i> XCLK MHz</label>
+                    <div class="text">
+                        <input id="xclk" type="text" minlength="1" maxlength="2" size="2" value="20">
+                    </div>
+                    <button class="inline-button" id="set-xclk">设置</button>
+                </div>
+                
+                <div class="control-group">
                             <label for="bpc"><i class="fas fa-eraser"></i> 坏点校正</label>
                             <div class="switch">
                                 <input id="bpc" type="checkbox" class="default-action">
@@ -199,8 +193,7 @@
                             </div>
                         </div>
                         
-                        <!-- WPC -->
-                        <div class="input-group" id="wpc-group">
+                <div class="control-group">
                             <label for="wpc"><i class="fas fa-eraser"></i> 白点校正</label>
                             <div class="switch">
                                 <input id="wpc" type="checkbox" class="default-action" checked="checked">
@@ -208,8 +201,7 @@
                             </div>
                         </div>
                         
-                        <!-- Raw GMA -->
-                        <div class="input-group" id="raw_gma-group">
+                <div class="control-group">
                             <label for="raw_gma"><i class="fas fa-adjust"></i> Raw GMA</label>
                             <div class="switch">
                                 <input id="raw_gma" type="checkbox" class="default-action" checked="checked">
@@ -217,8 +209,7 @@
                             </div>
                         </div>
                         
-                        <!-- 镜头校正 -->
-                        <div class="input-group" id="lenc-group">
+                <div class="control-group">
                             <label for="lenc"><i class="fas fa-bullseye"></i> 镜头校正</label>
                             <div class="switch">
                                 <input id="lenc" type="checkbox" class="default-action" checked="checked">
@@ -226,26 +217,7 @@
                             </div>
                         </div>
                         
-                        <!-- 水平镜像 -->
-                        <div class="input-group" id="hmirror-group">
-                            <label for="hmirror"><i class="fas fa-arrows-alt-h"></i> 水平镜像</label>
-                            <div class="switch">
-                                <input id="hmirror" type="checkbox" class="default-action" checked="checked">
-                                <label class="slider" for="hmirror"></label>
-                            </div>
-                        </div>
-                        
-                        <!-- 垂直翻转 -->
-                        <div class="input-group" id="vflip-group">
-                            <label for="vflip"><i class="fas fa-arrows-alt-v"></i> 垂直翻转</label>
-                            <div class="switch">
-                                <input id="vflip" type="checkbox" class="default-action" checked="checked">
-                                <label class="slider" for="vflip"></label>
-                            </div>
-                        </div>
-                        
-                        <!-- DCW -->
-                        <div class="input-group" id="dcw-group">
+                <div class="control-group">
                             <label for="dcw"><i class="fas fa-compress-arrows-alt"></i> 缩放功能(DCW)</label>
                             <div class="switch">
                                 <input id="dcw" type="checkbox" class="default-action" checked="checked">
@@ -253,8 +225,7 @@
                             </div>
                         </div>
                         
-                        <!-- 色彩条 -->
-                        <div class="input-group" id="colorbar-group">
+                <div class="control-group">
                             <label for="colorbar"><i class="fas fa-table"></i> 色彩条</label>
                             <div class="switch">
                                 <input id="colorbar" type="checkbox" class="default-action">
@@ -262,29 +233,9 @@
                             </div>
                         </div>
                         
-                        <!-- LED亮度 -->
-                        <div class="input-group" id="led-group">
-                            <label for="led_intensity"><i class="fas fa-lightbulb"></i> LED亮度</label>
-                            <div class="range-min">0</div>
-                            <input type="range" id="led_intensity" min="0" max="255" value="0" class="default-action">
-                            <div class="range-max">255</div>
-                        </div>
-                        
-                        <!-- 按钮 -->
-                        <section id="buttons">
-                            <button id="get-still"><i class="fas fa-camera"></i> 拍照</button>
-                            <button id="toggle-stream"><i class="fas fa-video"></i> 开始视频流</button>
-                        </section>
-                        
-                        <!-- 高级设置 -->
-                        <input type="checkbox" id="advanced-toggle" class="toggle-section-button">
-                        <div class="section-title"><i class="fas fa-cogs"></i> 高级设置</div>
-                        <div class="toggle-section">
                             <!-- 寄存器设置 -->
-                            <input type="checkbox" id="nav-toggle-reg" class="toggle-section-button">
                             <div class="section-title"><i class="fas fa-microchip"></i> 寄存器设置</div>
-                            <div class="toggle-section">
-                                <div class="input-group" id="set-reg-group">
+                <div class="control-group" id="set-reg-group">
                                     <label for="set-reg">寄存器，掩码，值</label>
                                     <div class="text">
                                         <input id="reg-addr" type="text" minlength="4" maxlength="6" size="6" value="0x111">
@@ -297,8 +248,7 @@
                                     </div>
                                     <button class="inline-button" id="set-reg">设置</button>
                                 </div>
-                                <hr>
-                                <div class="input-group" id="get-reg-group">
+                <div class="control-group" id="get-reg-group">
                                     <label for="get-reg">寄存器，掩码</label>
                                     <div class="text">
                                         <input id="get-reg-addr" type="text" minlength="4" maxlength="6" size="6" value="0x111">
@@ -308,104 +258,16 @@
                                     </div>
                                     <button class="inline-button" id="get-reg">读取</button>
                                 </div>
-                                <div class="input-group">
+                <div class="control-group">
                                     <label for="get-reg-value">值</label>
                                     <div class="text">
                                         <span id="get-reg-value">0x1234</span>
                                     </div>
-                                </div>
-                            </div>
-                            
-                            <!-- 时钟设置 -->
-                            <input type="checkbox" id="nav-toggle-2640pll" class="toggle-section-button">
-                            <div class="section-title"><i class="fas fa-clock"></i> 时钟设置</div>
-                            <div class="toggle-section">
-                                <div class="input-group">
-                                    <label for="2640pll1">时钟2倍频</label>
-                                    <div class="switch">
-                                        <input id="2640pll1" type="checkbox" class="reg-action" reg="0x111" offset="7" mask="0x01">
-                                        <label class="slider" for="2640pll1"></label>
-                                    </div>
-                                </div>
-                                <div class="input-group">
-                                    <label for="2640pll3">时钟分频</label>
-                                    <div class="text">
-                                        0<input id="2640pll3" type="text" minlength="1" maxlength="2" size="2" value="1" class="reg-action" reg="0x111" offset="0" mask="0x3f">63
-                                    </div>
-                                </div>
-                                <div class="input-group">
-                                    <label for="2640pll5">自动PCLK</label>
-                                    <div class="switch">
-                                        <input id="2640pll5" type="checkbox" class="reg-action" reg="0xd3" offset="7" mask="0x01">
-                                        <label class="slider" for="2640pll5"></label>
-                                    </div>
-                                </div>
-                                <div class="input-group">
-                                    <label for="2640pll4">PCLK分频</label>
-                                    <div class="text">
-                                        0<input id="2640pll4" type="text" minlength="1" maxlength="3" size="3" value="4" class="reg-action" reg="0xd3" offset="0" mask="0x7f">127
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            <!-- 窗口设置 -->
-                            <input type="checkbox" id="nav-toggle-win" class="toggle-section-button">
-                            <div class="section-title"><i class="fas fa-crop-alt"></i> 窗口设置</div>
-                            <div class="toggle-section">
-                                <div class="input-group">
-                                    <label for="start-x">传感器分辨率</label>
-                                    <select id="start-x">
-                                        <option value="2">CIF (400x296)</option>
-                                        <option value="1">SVGA (800x600)</option>
-                                        <option value="0" selected="selected">UXGA (1600x1200)</option>
-                                    </select>
-                                </div>
-                                <div class="input-group" id="set-offset-res-group">
-                                    <label for="offset-x">偏移</label>
-                                    <div class="text">
-                                        X:<input id="offset-x" type="text" minlength="1" maxlength="3" size="6" value="400">
-                                    </div>
-                                    <div class="text">
-                                        Y:<input id="offset-y" type="text" minlength="1" maxlength="3" size="6" value="300">
-                                    </div>
-                                </div>
-                                <div class="input-group" id="set-total-res-group">
-                                    <label for="total-x">窗口大小</label>
-                                    <div class="text">
-                                        X:<input id="total-x" type="text" minlength="1" maxlength="4" size="6" value="800">
-                                    </div>
-                                    <div class="text">
-                                        Y:<input id="total-y" type="text" minlength="1" maxlength="4" size="6" value="600">
-                                    </div>
-                                </div>
-                                <div class="input-group" id="set-output-res-group">
-                                    <label for="output-x">输出大小</label>
-                                    <div class="text">
-                                        X:<input id="output-x" type="text" minlength="1" maxlength="4" size="6" value="320">
-                                    </div>
-                                    <div class="text">
-                                        Y:<input id="output-y" type="text" minlength="1" maxlength="4" size="6" value="240">
-                                    </div>
-                                </div>
-                                <button id="set-resolution"><i class="fas fa-save"></i> 设置分辨率</button>
-                            </div>
-                        </div>
-                    </nav>
-                </div>
-                
-                <div id="content">
-                    <figure>
-                        <div id="stream-container" class="image-container hidden">
-                            <a id="save-still" href="#" class="button save" download="capture.jpg"><i class="fas fa-download"></i> 保存</a>
-                            <div class="close" id="close-stream">×</div>
-                            <img id="stream" src="" crossorigin>
-                        </div>
-                    </figure>
                 </div>
             </div>
         </div>
 
-        <!-- 引入JavaScript脚本 -->
-        <script src="js/vision.js"></script>
+        <script src="js/vision_integration.js"></script>
+        <script src="js/vision-ext.js"></script>
     </body>
 </html>

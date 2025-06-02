@@ -1,5 +1,4 @@
-#ifndef _COMPONENTS_H_
-#define _COMPONENTS_H_
+#pragma once
 
 #include <string>
 #include <functional>
@@ -18,14 +17,35 @@ enum ComponentType {
     COMPONENT_TYPE_LOCATION = 7    // 位置定位相关组件
 };
 
-// 组件接口基类
+/**
+ * Base interface for all components
+ */
 class Component {
 public:
     virtual ~Component() = default;
-    virtual bool Start() = 0;
-    virtual void Stop() = 0;
-    virtual bool IsRunning() const = 0;
+    
+    /**
+     * Get component name
+     * @return Component name
+     */
     virtual const char* GetName() const = 0;
+    
+    /**
+     * Start the component
+     * @return true if started successfully
+     */
+    virtual bool Start() = 0;
+    
+    /**
+     * Stop the component
+     */
+    virtual void Stop() = 0;
+    
+    /**
+     * Check if component is running
+     * @return true if running
+     */
+    virtual bool IsRunning() const = 0;
     
     // 新增：获取组件类型
     virtual ComponentType GetType() const { return COMPONENT_TYPE_GENERIC; }
@@ -39,17 +59,37 @@ protected:
     bool is_initialized_ = false;
 };
 
-// 组件管理器
+/**
+ * Component Manager singleton to manage system components
+ */
 class ComponentManager {
 public:
-    static ComponentManager& GetInstance() {
-        static ComponentManager instance;
-        return instance;
-    }
-
-    // 删除拷贝构造函数和赋值运算符
-    ComponentManager(const ComponentManager&) = delete;
-    ComponentManager& operator=(const ComponentManager&) = delete;
+    /**
+     * Get singleton instance
+     * @return ComponentManager singleton instance
+     */
+    static ComponentManager& GetInstance();
+    
+    /**
+     * Register a component
+     * @param component Component to register
+     * @return true if registered successfully
+     */
+    bool RegisterComponent(Component* component);
+    
+    /**
+     * Unregister a component
+     * @param component Component to unregister
+     * @return true if unregistered successfully
+     */
+    bool UnregisterComponent(Component* component);
+    
+    /**
+     * Get a component by name
+     * @param name Component name
+     * @return Component pointer or nullptr if not found
+     */
+    Component* GetComponent(const char* name);
 
     // 启动所有组件
     void StartAll();
@@ -62,15 +102,6 @@ public:
     
     // 停止指定类型的组件
     void StopComponentsByType(ComponentType type);
-    
-    // 注册组件
-    void RegisterComponent(Component* component);
-    
-    // 卸载组件
-    void UnregisterComponent(Component* component);
-    
-    // 获取组件
-    Component* GetComponent(const char* name);
     
     // 获取指定类型的组件列表
     std::vector<Component*> GetComponentsByType(ComponentType type);
@@ -131,10 +162,10 @@ public:
 
 private:
     ComponentManager() = default;
-    ~ComponentManager();
+    ~ComponentManager() = default;
+    ComponentManager(const ComponentManager&) = delete;
+    ComponentManager& operator=(const ComponentManager&) = delete;
 
     // 保存所有注册的组件
     std::vector<Component*> components_;
 };
-
-#endif // _COMPONENTS_H_ 

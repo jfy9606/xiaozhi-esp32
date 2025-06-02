@@ -1,0 +1,190 @@
+/* 车辆控制样式 */
+.vehicle-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 20px;
+}
+
+.control-panel {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+    max-width: 600px;
+    margin-bottom: 20px;
+}
+
+.joystick-container {
+    position: relative;
+    width: 200px;
+    height: 200px;
+    border-radius: 50%;
+    background-color: #f0f0f0;
+    margin: 20px auto;
+    touch-action: none;
+    user-select: none;
+}
+
+.joystick-knob {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    background-color: #3498db;
+    cursor: pointer;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+}
+
+.control-buttons {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    width: 100%;
+    max-width: 300px;
+    margin: 20px auto;
+}
+
+.control-button {
+    padding: 15px 0;
+    text-align: center;
+    background-color: #3498db;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 16px;
+    transition: background-color 0.2s;
+}
+
+.control-button:hover {
+    background-color: #2980b9;
+}
+
+.control-button:active {
+    background-color: #1c6ea4;
+}
+
+.control-button.forward {
+    grid-column: 2;
+    grid-row: 1;
+}
+
+.control-button.left {
+    grid-column: 1;
+    grid-row: 2;
+}
+
+.control-button.stop {
+    grid-column: 2;
+    grid-row: 2;
+    background-color: #e74c3c;
+}
+
+.control-button.stop:hover {
+    background-color: #c0392b;
+}
+
+.control-button.right {
+    grid-column: 3;
+    grid-row: 2;
+}
+
+.control-button.backward {
+    grid-column: 2;
+    grid-row: 3;
+}
+
+.speed-control {
+    width: 100%;
+    max-width: 300px;
+    margin: 20px auto;
+}
+
+.speed-slider {
+    width: 100%;
+    height: 20px;
+}
+
+.status-panel {
+    margin-top: 20px;
+    padding: 15px;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    width: 100%;
+    max-width: 600px;
+}
+
+.status-panel h3 {
+    margin-top: 0;
+    margin-bottom: 10px;
+}
+
+.status-item {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 5px;
+}
+
+.status-label {
+    font-weight: bold;
+}
+
+.obstacle-indicator {
+    display: inline-block;
+    width: 15px;
+    height: 15px;
+    border-radius: 50%;
+    margin-right: 5px;
+    background-color: #2ecc71;
+}
+
+.obstacle-indicator.detected {
+    background-color: #e74c3c;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+    .joystick-container {
+        width: 150px;
+        height: 150px;
+    }
+    
+    .joystick-knob {
+        width: 45px;
+        height: 45px;
+    }
+    
+    .control-buttons {
+        max-width: 250px;
+    }
+    
+    .control-button {
+        padding: 12px 0;
+        font-size: 14px;
+    }
+}
+
+@media (max-width: 480px) {
+    .joystick-container {
+        width: 120px;
+        height: 120px;
+    }
+    
+    .joystick-knob {
+        width: 36px;
+        height: 36px;
+    }
+    
+    .control-buttons {
+        max-width: 200px;
+    }
+    
+    .control-button {
+        padding: 10px 0;
+        font-size: 12px;
+    }
+} 

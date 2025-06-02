@@ -298,3 +298,127 @@ std::string Esp32Camera::Explain(const std::string& question) {
     ESP_LOGI(TAG, "Explain image size=%dx%d, compressed size=%d, question=%s\n%s", fb_->width, fb_->height, total_sent, question.c_str(), result.c_str());
     return result;
 }
+
+bool Esp32Camera::SetFlashLevel(int level) {
+    if (flash_pin_ < 0) {
+        ESP_LOGE(TAG, "Camera does not have flash");
+        return false;
+    }
+    
+    // 限制范围在0-255
+    level = level < 0 ? 0 : (level > 255 ? 255 : level);
+    
+    if (level > 0) {
+        // 这里应该使用PWM控制闪光灯亮度，简化为开关控制
+        gpio_set_level((gpio_num_t)flash_pin_, 1);
+        ESP_LOGI(TAG, "Camera flash set to ON");
+    } else {
+        gpio_set_level((gpio_num_t)flash_pin_, 0);
+        ESP_LOGI(TAG, "Camera flash set to OFF");
+    }
+    
+    return true;
+}
+
+bool Esp32Camera::SetBrightness(int brightness) {
+    sensor_t *s = esp_camera_sensor_get();
+    if (s == nullptr) {
+        ESP_LOGE(TAG, "Failed to get camera sensor");
+        return false;
+    }
+    
+    // 限制范围在-2到2
+    brightness = brightness < -2 ? -2 : (brightness > 2 ? 2 : brightness);
+    
+    esp_err_t err = s->set_brightness(s, brightness);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to set brightness: %d", err);
+        return false;
+    }
+    
+    brightness_ = brightness;
+    ESP_LOGI(TAG, "Camera brightness set to: %d", brightness);
+    return true;
+}
+
+bool Esp32Camera::SetContrast(int contrast) {
+    sensor_t *s = esp_camera_sensor_get();
+    if (s == nullptr) {
+        ESP_LOGE(TAG, "Failed to get camera sensor");
+        return false;
+    }
+    
+    // 限制范围在-2到2
+    contrast = contrast < -2 ? -2 : (contrast > 2 ? 2 : contrast);
+    
+    esp_err_t err = s->set_contrast(s, contrast);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to set contrast: %d", err);
+        return false;
+    }
+    
+    contrast_ = contrast;
+    ESP_LOGI(TAG, "Camera contrast set to: %d", contrast);
+    return true;
+}
+
+bool Esp32Camera::SetSaturation(int saturation) {
+    sensor_t *s = esp_camera_sensor_get();
+    if (s == nullptr) {
+        ESP_LOGE(TAG, "Failed to get camera sensor");
+        return false;
+    }
+    
+    // 限制范围在-2到2
+    saturation = saturation < -2 ? -2 : (saturation > 2 ? 2 : saturation);
+    
+    esp_err_t err = s->set_saturation(s, saturation);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to set saturation: %d", err);
+        return false;
+    }
+    
+    saturation_ = saturation;
+    ESP_LOGI(TAG, "Camera saturation set to: %d", saturation);
+    return true;
+}
+
+bool Esp32Camera::StartStreaming() {
+    if (is_streaming_) {
+        ESP_LOGW(TAG, "Camera is already streaming");
+        return true;
+    }
+    
+    is_streaming_ = true;
+    ESP_LOGI(TAG, "Camera streaming started");
+    return true;
+}
+
+void Esp32Camera::StopStreaming() {
+    if (!is_streaming_) {
+        return;
+    }
+    
+    is_streaming_ = false;
+    ESP_LOGI(TAG, "Camera streaming stopped");
+}
+
+camera_fb_t* Esp32Camera::GetFrame() {
+    if (fb_ != nullptr) {
+        esp_camera_fb_return(fb_);
+        fb_ = nullptr;
+    }
+    
+    fb_ = esp_camera_fb_get();
+    return fb_;
+}
+
+void Esp32Camera::ReturnFrame(camera_fb_t* fb) {
+    if (fb != nullptr) {
+        esp_camera_fb_return(fb);
+    }
+    
+    if (fb == fb_) {
+        fb_ = nullptr;
+    }
+}

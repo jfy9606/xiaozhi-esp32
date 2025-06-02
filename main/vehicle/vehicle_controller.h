@@ -14,25 +14,25 @@
 #define MAX_SERVO_ANGLE 180
 
 // 移动控制器组件类型
-enum MoveControllerType {
-    MOVE_TYPE_MOTOR,      // 使用电机控制
-    MOVE_TYPE_SERVO,      // 使用舵机控制
-    MOVE_TYPE_HYBRID      // 混合控制（同时使用电机和舵机）
+enum VehicleControllerType {
+    VEHICLE_TYPE_MOTOR,      // 使用电机控制
+    VEHICLE_TYPE_SERVO,      // 使用舵机控制
+    VEHICLE_TYPE_HYBRID      // 混合控制（同时使用电机和舵机）
 };
 
-class MoveController : public Component {
+class VehicleController : public Component {
 public:
     // 构造函数 - 电机控制配置
-    MoveController(int ena_pin, int enb_pin, int in1_pin, int in2_pin, int in3_pin, int in4_pin);
+    VehicleController(int ena_pin, int enb_pin, int in1_pin, int in2_pin, int in3_pin, int in4_pin);
     
     // 构造函数 - 舵机控制配置
-    MoveController(int steering_servo_pin, int throttle_servo_pin = -1);
+    VehicleController(int steering_servo_pin, int throttle_servo_pin = -1);
     
     // 混合控制构造函数
-    MoveController(int ena_pin, int enb_pin, int in1_pin, int in2_pin, int in3_pin, int in4_pin,
+    VehicleController(int ena_pin, int enb_pin, int in1_pin, int in2_pin, int in3_pin, int in4_pin,
                   int steering_servo_pin, int throttle_servo_pin = -1);
     
-    virtual ~MoveController();
+    virtual ~VehicleController();
 
     // Component接口实现
     virtual bool Start() override;
@@ -65,14 +65,14 @@ public:
     int GetCurrentSpeed() const { return motor_speed_; }
     int GetDirectionX() const { return direction_x_; }
     int GetDirectionY() const { return direction_y_; }
-    MoveControllerType GetControllerType() const { return controller_type_; }
+    VehicleControllerType GetControllerType() const { return controller_type_; }
     
     // 获取舵机角度
     int GetSteeringAngle() const { return steering_angle_; }
     int GetThrottlePosition() const { return throttle_position_; }
 
 private:
-    MoveControllerType controller_type_;
+    VehicleControllerType controller_type_;
     
     // 电机控制引脚
     int ena_pin_;

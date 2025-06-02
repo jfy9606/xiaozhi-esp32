@@ -7,7 +7,9 @@
 #include <esp_wifi.h>
 #include "sdkconfig.h"
 #if CONFIG_ENABLE_WEB_CONTENT
-#include "web/html_content.h"
+#include "web/web_content.h"
+// Define VISION_HTML using the web_content function
+#define VISION_HTML get_vision_html_content()
 #endif
 
 #define TAG "VisionContent"
@@ -185,7 +187,7 @@ esp_err_t VisionContent::StreamHandler(httpd_req_t *req) {
     }
     
     // 设置视频流状态
-    vision->SetStreaming(true);
+    vision->StartStreaming();
     
     // 设置响应类型
     httpd_resp_set_type(req, _STREAM_CONTENT_TYPE);
@@ -270,7 +272,7 @@ esp_err_t VisionContent::StreamHandler(httpd_req_t *req) {
     }
     
     // 结束流媒体
-    vision->SetStreaming(false);
+    vision->StopStreaming();
     
     // 最后发送一个空块表示结束
     httpd_resp_send_chunk(req, NULL, 0);

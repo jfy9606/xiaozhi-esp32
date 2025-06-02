@@ -1,131 +1,467 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <meta charset='UTF-8'>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>ESP32S3 AI互动</title>
-  <link rel='stylesheet' href='https://fonts.googleapis.com/css2?family=Roboto:wght@400;500&display=swap'>
-  <link rel="stylesheet" href="css/common.css">
-  <link rel="stylesheet" href="css/ai.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Chat - ESP32 Vehicle Control System</title>
+    <link rel="stylesheet" href="css/bootstrap.min.css">
+    <link rel="stylesheet" href="css/main.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
 </head>
 <body>
-  <div class="container">
-    <h1>ESP32S3 AI互动</h1>
-    
-    <div class="tab-container">
-      <div class="tab-buttons">
-        <button class="tab-button active" data-tab="chat">聊天</button>
-        <button class="tab-button" data-tab="voice">语音控制</button>
-        <button class="tab-button" data-tab="settings">设置</button>
+    <div class="container-fluid">
+        <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+            <div class="container-fluid">
+                <a class="navbar-brand" href="#">
+                    <i class="bi bi-robot"></i> ESP32 Vehicle Control
+                </a>
+                <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+                <div class="collapse navbar-collapse" id="navbarNav">
+                    <ul class="navbar-nav">
+                        <li class="nav-item">
+                            <a class="nav-link" href="index.html">
+                                <i class="bi bi-house-door"></i> Home
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="vehicle.html">
+                                <i class="bi bi-car-front"></i> Vehicle Control
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="location.html">
+                                <i class="bi bi-geo-alt"></i> Location
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link active" href="ai.html">
+                                <i class="bi bi-chat-dots"></i> AI Chat
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="settings.html">
+                                <i class="bi bi-gear"></i> Settings
+                            </a>
+                        </li>
+                    </ul>
+                    <div class="ms-auto">
+                        <span class="badge bg-success" id="status-badge">Connected</span>
+                        <span class="badge bg-danger d-none" id="status-badge-disconnected">Disconnected</span>
+                    </div>
+                </div>
+            </div>
+        </nav>
+
+        <div class="row mt-4">
+            <div class="col-md-8">
+                <div class="card">
+                    <div class="card-header bg-primary text-white">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <i class="bi bi-chat-dots"></i> AI Assistant
+                            </div>
+                            <div>
+                                <button class="btn btn-sm btn-light" id="btn-clear-chat">
+                                    <i class="bi bi-trash"></i> Clear
+                                </button>
+                            </div>
+                        </div>
       </div>
-      
-      <!-- 聊天标签页 -->
-      <div id="chat-tab" class="tab-content active">
+                    <div class="card-body">
         <div class="chat-container" id="chat-container">
-          <div class="message ai-message">你好！我是ESP32S3小车的AI助手，有什么我可以帮助你的吗？</div>
+                            <div class="chat-message ai">
+                                <div class="message-content">
+                                    Hello! I'm your ESP32 AI assistant. How can I help you today?
+                                </div>
+                                <div class="message-time">
+                                    <small class="text-muted">Just now</small>
+                                </div>
+                            </div>
         </div>
-        
-        <div class="input-container">
-          <input type="text" class="message-input" id="message-input" placeholder="输入你的问题..." autofocus>
-          <button class="send-button" id="send-button">发送</button>
-          <button class="voice-button" id="voice-button" title="语音输入">
-            <svg xmlns='http://www.w3.org/2000/svg' width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
-              <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
-              <line x1="12" y1="19" x2="12" y2="23"></line>
-              <line x1="8" y1="23" x2="16" y2="23"></line>
-            </svg>
+                        <div class="chat-input-container">
+                            <input type="text" class="form-control" id="chat-input" placeholder="Type your message...">
+                            <button class="btn btn-primary" id="btn-send">
+                                <i class="bi bi-send"></i>
+                            </button>
+                            <button class="btn btn-outline-secondary" id="btn-mic">
+                                <i class="bi bi-mic"></i>
           </button>
         </div>
-        
-        <div class="status">
-          <p>连接状态: <span class="connection-status" id="connection-status"></span> <span id="connection-text">未连接</span></p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card">
+                    <div class="card-header bg-success text-white">
+                        <i class="bi bi-sliders"></i> Assistant Settings
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label for="ai-personality" class="form-label">Assistant Personality</label>
+                            <select class="form-select" id="ai-personality">
+                                <option value="helpful">Helpful</option>
+                                <option value="friendly">Friendly</option>
+                                <option value="technical">Technical</option>
+                                <option value="concise">Concise</option>
+                            </select>
         </div>
-        
-        <div class="sound-controls">
-          <div class="sound-toggle">
-            <span>声音总开关:</span>
-            <label class="toggle-switch">
-              <input type="checkbox" id="sound-toggle" checked>
-              <span class="toggle-slider"></span>
+                        <div class="mb-3">
+                            <label for="speech-rate" class="form-label d-flex justify-content-between">
+                                <span>Speech Rate</span>
+                                <span id="speech-rate-value">1.0</span>
             </label>
+                            <input type="range" class="form-range" id="speech-rate" min="0.5" max="2" step="0.1" value="1">
           </div>
-          <div class="sound-toggle">
-            <span>网页声音:</span>
-            <label class="toggle-switch">
-              <input type="checkbox" id="web-sound-toggle" checked>
-              <span class="toggle-slider"></span>
+                        <div class="mb-3">
+                            <label for="speech-pitch" class="form-label d-flex justify-content-between">
+                                <span>Speech Pitch</span>
+                                <span id="speech-pitch-value">1.0</span>
             </label>
+                            <input type="range" class="form-range" id="speech-pitch" min="0.5" max="2" step="0.1" value="1">
+                        </div>
+                        <div class="mb-3">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="toggle-speech" checked>
+                                <label class="form-check-label" for="toggle-speech">Text-to-Speech</label>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="toggle-voice-commands" checked>
+                                <label class="form-check-label" for="toggle-voice-commands">Enable Voice Commands</label>
           </div>
-          <div class="sound-toggle">
-            <span>ESP32喇叭:</span>
-            <label class="toggle-switch">
-              <input type="checkbox" id="speaker-sound-toggle" checked>
-              <span class="toggle-slider"></span>
-            </label>
           </div>
         </div>
       </div>
       
-      <!-- 语音控制标签页 -->
-      <div id="voice-tab" class="tab-content">
-        <h3>语音唤醒与控制</h3>
-        
-        <div class="wake-word-status">
-          <span class="wake-word-indicator" id="wake-word-indicator"></span>
-          <span id="wake-word-status-text">唤醒词检测已启用</span>
+                <div class="card mt-3">
+                    <div class="card-header bg-info text-white">
+                        <i class="bi bi-lightbulb"></i> Quick Commands
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="list-group list-group-flush">
+                            <button class="list-group-item list-group-item-action quick-command" data-command="What's the current status?">
+                                <i class="bi bi-info-circle"></i> System Status
+                            </button>
+                            <button class="list-group-item list-group-item-action quick-command" data-command="Start moving forward slowly">
+                                <i class="bi bi-arrow-up-circle"></i> Move Forward
+                            </button>
+                            <button class="list-group-item list-group-item-action quick-command" data-command="Stop the vehicle">
+                                <i class="bi bi-stop-circle"></i> Stop Vehicle
+                            </button>
+                            <button class="list-group-item list-group-item-action quick-command" data-command="Take a photo">
+                                <i class="bi bi-camera"></i> Take Photo
+                            </button>
+                            <button class="list-group-item list-group-item-action quick-command" data-command="What's in front of the vehicle?">
+                                <i class="bi bi-eye"></i> What's Ahead?
+                            </button>
+                            <button class="list-group-item list-group-item-action quick-command" data-command="Navigate back home">
+                                <i class="bi bi-house"></i> Go Home
+                            </button>
+                        </div>
+                    </div>
         </div>
         
-        <div class="voice-controls">
-          <button class="voice-control-button" id="enable-wake-word">启用唤醒词检测</button>
-          <button class="voice-control-button" id="disable-wake-word">禁用唤醒词检测</button>
-          <button class="voice-control-button" id="start-listening">开始语音识别</button>
-          <button class="voice-control-button" id="stop-listening">停止语音识别</button>
-          <button class="voice-control-button" id="test-tts">测试文本转语音</button>
+                <div class="card mt-3">
+                    <div class="card-header bg-secondary text-white">
+                        <i class="bi bi-mic-fill"></i> Voice Recognition Status
+                    </div>
+                    <div class="card-body">
+                        <div class="voice-status">
+                            <div id="voice-status-indicator" class="voice-status-indicator">
+                                <span class="voice-status-dot"></span>
+                                <span id="voice-status-text">Voice recognition ready</span>
+                            </div>
+                            <div id="voice-transcript" class="voice-transcript mt-2 d-none">
+                                <small class="text-muted">Heard: <span id="transcript-text"></span></small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
         
-        <div class="sound-controls">
-          <p><strong>最近一次识别结果:</strong> <span id="last-recognition-result">无</span></p>
-          <p><strong>当前状态:</strong> <span id="voice-state">空闲</span></p>
-        </div>
+        <footer class="mt-4 text-center text-muted">
+            <p>ESP32 Vehicle Control System &copy; 2023</p>
+        </footer>
       </div>
       
-      <!-- 设置标签页 -->
-      <div id="settings-tab" class="tab-content">
-        <div class="api-settings">
-          <h3>AI模型设置</h3>
-          <label for="api-key">API密钥:</label>
-          <input type="password" id="api-key" placeholder="输入您的API密钥">
-          
-          <label for="api-url">API端点URL:</label>
-          <input type="text" id="api-url" placeholder="https://api.example.com/v1">
-          
-          <label for="model-select">选择模型:</label>
-          <select id="model-select">
-            <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
-            <option value="gpt-4">GPT-4</option>
-            <option value="qwen-turbo">千问 Turbo</option>
-            <option value="custom">自定义...</option>
-          </select>
-          
-          <label for="voice-id">语音ID:</label>
-          <select id="voice-id">
-            <option value="zh-CN-XiaomoNeural">小墨 (普通话女声)</option>
-            <option value="zh-CN-YunxiNeural">云希 (普通话男声)</option>
-            <option value="zh-CN-XiaohanNeural">小涵 (普通话女声)</option>
-            <option value="en-US-AriaNeural">Aria (美式英语)</option>
-          </select>
-          
-          <button id="save-settings">保存设置</button>
+    <script src="js/jquery-3.6.0.min.js"></script>
+    <script src="js/bootstrap.bundle.min.js"></script>
+    <script src="js/main.js"></script>
+    <script>
+        $(document).ready(function() {
+            // Initialize variables
+            let recognition = null;
+            let speechSynthesis = window.speechSynthesis;
+            let isListening = false;
+            let isSpeaking = false;
+            
+            // Check if browser supports speech recognition
+            if ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window) {
+                const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+                recognition = new SpeechRecognition();
+                recognition.continuous = false;
+                recognition.interimResults = true;
+                recognition.lang = 'en-US';
+                
+                recognition.onstart = function() {
+                    isListening = true;
+                    $('#voice-status-indicator').addClass('active');
+                    $('#voice-status-text').text('Listening...');
+                    $('#btn-mic').addClass('btn-danger').removeClass('btn-outline-secondary');
+                    $('#btn-mic i').removeClass('bi-mic').addClass('bi-mic-fill');
+                };
+                
+                recognition.onresult = function(event) {
+                    const transcript = Array.from(event.results)
+                        .map(result => result[0])
+                        .map(result => result.transcript)
+                        .join('');
+                    
+                    $('#transcript-text').text(transcript);
+                    $('#voice-transcript').removeClass('d-none');
+                    
+                    if (event.results[0].isFinal) {
+                        $('#chat-input').val(transcript);
+                    }
+                };
+                
+                recognition.onend = function() {
+                    isListening = false;
+                    $('#voice-status-indicator').removeClass('active');
+                    $('#voice-status-text').text('Voice recognition ready');
+                    $('#btn-mic').removeClass('btn-danger').addClass('btn-outline-secondary');
+                    $('#btn-mic i').removeClass('bi-mic-fill').addClass('bi-mic');
+                    
+                    // If we have a transcript, send the message
+                    if ($('#chat-input').val().trim() !== '') {
+                        $('#btn-send').click();
+                    }
+                    
+                    setTimeout(function() {
+                        $('#voice-transcript').addClass('d-none');
+                    }, 5000);
+                };
+                
+                recognition.onerror = function(event) {
+                    isListening = false;
+                    $('#voice-status-indicator').removeClass('active').addClass('error');
+                    $('#voice-status-text').text('Error: ' + event.error);
+                    $('#btn-mic').removeClass('btn-danger').addClass('btn-outline-secondary');
+                    $('#btn-mic i').removeClass('bi-mic-fill').addClass('bi-mic');
+                    
+                    setTimeout(function() {
+                        $('#voice-status-indicator').removeClass('error');
+                        $('#voice-status-text').text('Voice recognition ready');
+                    }, 3000);
+                };
+            } else {
+                $('#btn-mic').prop('disabled', true);
+                $('#voice-status-text').text('Voice recognition not supported in this browser');
+                $('#toggle-voice-commands').prop('checked', false).prop('disabled', true);
+            }
+            
+            // WebSocket connection for real-time communication
+            const socket = new WebSocket(`ws://${window.location.host}/ws/ai`);
+            
+            socket.onopen = function() {
+                console.log('WebSocket connected');
+                $('#status-badge').removeClass('d-none');
+                $('#status-badge-disconnected').addClass('d-none');
+            };
+            
+            socket.onclose = function() {
+                console.log('WebSocket disconnected');
+                $('#status-badge').addClass('d-none');
+                $('#status-badge-disconnected').removeClass('d-none');
+            };
+            
+            socket.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+                
+                if (data.type === 'ai_response') {
+                    addMessage('ai', data.text);
+                    
+                    // Speak the response if text-to-speech is enabled
+                    if ($('#toggle-speech').is(':checked')) {
+                        speak(data.text);
+                    }
+                }
+            };
+            
+            // Send message function
+            function sendMessage(text) {
+                if (text.trim() === '') return;
+                
+                // Add message to chat
+                addMessage('user', text);
+                
+                // Clear input
+                $('#chat-input').val('');
+                
+                // Send message to server
+                if (socket.readyState === WebSocket.OPEN) {
+                    const message = {
+                        cmd: 'chat',
+                        text: text,
+                        personality: $('#ai-personality').val()
+                    };
+                    socket.send(JSON.stringify(message));
+                }
+            }
+            
+            // Add message to chat
+            function addMessage(type, text) {
+                const time = new Date().toLocaleTimeString();
+                const messageHtml = `
+                    <div class="chat-message ${type}">
+                        <div class="message-content">
+                            ${text}
         </div>
+                        <div class="message-time">
+                            <small class="text-muted">${time}</small>
       </div>
     </div>
-    
-    <a href="/" class="back-button">返回主页</a>
-  </div>
-
-  <!-- 引入API客户端库和页面脚本 -->
-  <script src="js/api_client.js"></script>
-  <script src="js/ai.js"></script>
+                `;
+                
+                $('#chat-container').append(messageHtml);
+                
+                // Scroll to bottom
+                const chatContainer = document.getElementById('chat-container');
+                chatContainer.scrollTop = chatContainer.scrollHeight;
+            }
+            
+            // Text to speech function
+            function speak(text) {
+                if (isSpeaking) {
+                    speechSynthesis.cancel();
+                }
+                
+                if ('speechSynthesis' in window) {
+                    const utterance = new SpeechSynthesisUtterance(text);
+                    utterance.rate = parseFloat($('#speech-rate').val());
+                    utterance.pitch = parseFloat($('#speech-pitch').val());
+                    utterance.lang = 'en-US';
+                    
+                    utterance.onstart = function() {
+                        isSpeaking = true;
+                    };
+                    
+                    utterance.onend = function() {
+                        isSpeaking = false;
+                    };
+                    
+                    speechSynthesis.speak(utterance);
+                }
+            }
+            
+            // Send button click
+            $('#btn-send').click(function() {
+                const text = $('#chat-input').val();
+                sendMessage(text);
+            });
+            
+            // Enter key press in input
+            $('#chat-input').keypress(function(e) {
+                if (e.which === 13) {
+                    $('#btn-send').click();
+                }
+            });
+            
+            // Microphone button click
+            $('#btn-mic').click(function() {
+                if (!recognition) return;
+                
+                if (isListening) {
+                    recognition.stop();
+                } else {
+                    recognition.start();
+                }
+            });
+            
+            // Clear chat button
+            $('#btn-clear-chat').click(function() {
+                $('#chat-container').empty();
+                addMessage('ai', 'Chat cleared. How can I help you?');
+            });
+            
+            // Speech rate slider
+            $('#speech-rate').on('input', function() {
+                const value = $(this).val();
+                $('#speech-rate-value').text(value);
+            });
+            
+            // Speech pitch slider
+            $('#speech-pitch').on('input', function() {
+                const value = $(this).val();
+                $('#speech-pitch-value').text(value);
+            });
+            
+            // Quick command buttons
+            $('.quick-command').click(function() {
+                const command = $(this).data('command');
+                $('#chat-input').val(command);
+                $('#btn-send').click();
+            });
+            
+            // Voice commands toggle
+            $('#toggle-voice-commands').change(function() {
+                if ($(this).is(':checked')) {
+                    $('#btn-mic').prop('disabled', false);
+                    $('#voice-status-text').text('Voice recognition ready');
+                } else {
+                    $('#btn-mic').prop('disabled', true);
+                    $('#voice-status-text').text('Voice commands disabled');
+                    if (isListening && recognition) {
+                        recognition.stop();
+                    }
+                }
+            });
+            
+            // Add some CSS for voice status
+            const style = document.createElement('style');
+            style.textContent = `
+                .voice-status-indicator {
+                    display: flex;
+                    align-items: center;
+                }
+                
+                .voice-status-dot {
+                    width: 12px;
+                    height: 12px;
+                    border-radius: 50%;
+                    background-color: #ccc;
+                    margin-right: 8px;
+                    transition: background-color 0.3s;
+                }
+                
+                .voice-status-indicator.active .voice-status-dot {
+                    background-color: #dc3545;
+                    animation: pulse 1.5s infinite;
+                }
+                
+                .voice-status-indicator.error .voice-status-dot {
+                    background-color: #dc3545;
+                }
+                
+                @keyframes pulse {
+                    0% { opacity: 1; }
+                    50% { opacity: 0.5; }
+                    100% { opacity: 1; }
+                }
+                
+                .voice-transcript {
+                    padding: 8px;
+                    background-color: #f8f9fa;
+                    border-radius: 4px;
+                    margin-top: 8px;
+                }
+            `;
+            document.head.appendChild(style);
+        });
+    </script>
 </body>
 </html>

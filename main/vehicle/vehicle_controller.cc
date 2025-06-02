@@ -1,4 +1,4 @@
-#include "move_controller.h"
+#include "vehicle_controller.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -41,11 +41,11 @@ extern "C" {
 #define MIN_PULSE_WIDTH_US    500                // 0.5ms - 对应0度
 #define MAX_PULSE_WIDTH_US    2500               // 2.5ms - 对应180度
 
-#define TAG "MoveController"
+#define TAG "VehicleController"
 
 // 电机控制构造函数
-MoveController::MoveController(int ena_pin, int enb_pin, int in1_pin, int in2_pin, int in3_pin, int in4_pin)
-    : controller_type_(MOVE_TYPE_MOTOR), 
+VehicleController::VehicleController(int ena_pin, int enb_pin, int in1_pin, int in2_pin, int in3_pin, int in4_pin)
+    : controller_type_(VEHICLE_TYPE_MOTOR), 
       ena_pin_(ena_pin), 
       enb_pin_(enb_pin), 
       in1_pin_(in1_pin), 
@@ -67,8 +67,8 @@ MoveController::MoveController(int ena_pin, int enb_pin, int in1_pin, int in2_pi
 }
 
 // 舵机控制构造函数
-MoveController::MoveController(int steering_servo_pin, int throttle_servo_pin)
-    : controller_type_(MOVE_TYPE_SERVO), 
+VehicleController::VehicleController(int steering_servo_pin, int throttle_servo_pin)
+    : controller_type_(VEHICLE_TYPE_SERVO), 
       ena_pin_(-1), 
       enb_pin_(-1), 
       in1_pin_(-1), 
@@ -90,9 +90,9 @@ MoveController::MoveController(int steering_servo_pin, int throttle_servo_pin)
 }
 
 // 混合控制构造函数
-MoveController::MoveController(int ena_pin, int enb_pin, int in1_pin, int in2_pin, int in3_pin, int in4_pin,
+VehicleController::VehicleController(int ena_pin, int enb_pin, int in1_pin, int in2_pin, int in3_pin, int in4_pin,
                              int steering_servo_pin, int throttle_servo_pin)
-    : controller_type_(MOVE_TYPE_HYBRID), 
+    : controller_type_(VEHICLE_TYPE_HYBRID), 
       ena_pin_(ena_pin), 
       enb_pin_(enb_pin), 
       in1_pin_(in1_pin), 
@@ -113,26 +113,26 @@ MoveController::MoveController(int ena_pin, int enb_pin, int in1_pin, int in2_pi
       throttle_position_(DEFAULT_SERVO_ANGLE) {
 }
 
-MoveController::~MoveController() {
+VehicleController::~VehicleController() {
     // 关闭电机和舵机
     if (this->IsRunning()) {
         this->Stop(true);
     }
 }
 
-bool MoveController::Start() {
+bool VehicleController::Start() {
     if (running_) {
-        ESP_LOGW(TAG, "Move controller already running");
+        ESP_LOGW(TAG, "Vehicle controller already running");
         return true;
     }
     
     // 输出控制器配置信息
-    if (controller_type_ == MOVE_TYPE_MOTOR || controller_type_ == MOVE_TYPE_HYBRID) {
+    if (controller_type_ == VEHICLE_TYPE_MOTOR || controller_type_ == VEHICLE_TYPE_HYBRID) {
         ESP_LOGI(TAG, "Motor pin configuration: ENA=%d, ENB=%d, IN1=%d, IN2=%d, IN3=%d, IN4=%d",
                  ena_pin_, enb_pin_, in1_pin_, in2_pin_, in3_pin_, in4_pin_);
     }
     
-    if (controller_type_ == MOVE_TYPE_SERVO || controller_type_ == MOVE_TYPE_HYBRID) {
+    if (controller_type_ == VEHICLE_TYPE_SERVO || controller_type_ == VEHICLE_TYPE_HYBRID) {
         ESP_LOGI(TAG, "Servo pin configuration: Steering=%d, Throttle=%d",
                  steering_servo_pin_, throttle_servo_pin_);
     }
@@ -141,7 +141,7 @@ bool MoveController::Start() {
     auto& thing_manager = iot::ThingManager::GetInstance();
     
     // 尝试初始化电机Thing
-    if (controller_type_ == MOVE_TYPE_MOTOR || controller_type_ == MOVE_TYPE_HYBRID) {
+    if (controller_type_ == VEHICLE_TYPE_MOTOR || controller_type_ == VEHICLE_TYPE_HYBRID) {
         iot::Thing* motor_thing = thing_manager.FindThingByName("Motor");
         if (!motor_thing) {
             ESP_LOGW(TAG, "Motor Thing not found, trying to register");
@@ -170,7 +170,7 @@ bool MoveController::Start() {
     }
     
     // 尝试初始化舵机Thing
-    if (controller_type_ == MOVE_TYPE_SERVO || controller_type_ == MOVE_TYPE_HYBRID) {
+    if (controller_type_ == VEHICLE_TYPE_SERVO || controller_type_ == VEHICLE_TYPE_HYBRID) {
         iot::Thing* servo_thing = thing_manager.FindThingByName("Servo");
         if (!servo_thing) {
             ESP_LOGW(TAG, "Servo Thing not found, trying to register");
@@ -199,30 +199,30 @@ bool MoveController::Start() {
     }
     
     running_ = true;
-    ESP_LOGI(TAG, "Move controller started");
+    ESP_LOGI(TAG, "Vehicle controller started");
     return true;
 }
 
 // Component接口实现的Stop方法
-void MoveController::Stop() {
+void VehicleController::Stop() {
     if (running_) {
         Stop(true);
         running_ = false;
-        ESP_LOGI(TAG, "Move controller stopped");
+        ESP_LOGI(TAG, "Vehicle controller stopped");
     }
 }
 
-bool MoveController::IsRunning() const {
+bool VehicleController::IsRunning() const {
     return running_;
 }
 
-const char* MoveController::GetName() const {
-    return "MoveController";
+const char* VehicleController::GetName() const {
+    return "VehicleController";
 }
 
-void MoveController::SetControlParams(float distance, int dirX, int dirY) {
+void VehicleController::SetControlParams(float distance, int dirX, int dirY) {
     if (!running_) {
-        ESP_LOGW(TAG, "Move controller not running");
+        ESP_LOGW(TAG, "Vehicle controller not running");
         return;
     }
 
@@ -231,7 +231,7 @@ void MoveController::SetControlParams(float distance, int dirX, int dirY) {
     direction_y_ = dirY;
     
     // 根据控制器类型调用不同的方法
-    if (controller_type_ == MOVE_TYPE_MOTOR || controller_type_ == MOVE_TYPE_HYBRID) {
+    if (controller_type_ == VEHICLE_TYPE_MOTOR || controller_type_ == VEHICLE_TYPE_HYBRID) {
         // 通过Motor Thing发送移动指令
         auto& thing_manager = iot::ThingManager::GetInstance();
         // 构造JSON命令
@@ -249,7 +249,7 @@ void MoveController::SetControlParams(float distance, int dirX, int dirY) {
         }
     }
     
-    if (controller_type_ == MOVE_TYPE_SERVO || controller_type_ == MOVE_TYPE_HYBRID) {
+    if (controller_type_ == VEHICLE_TYPE_SERVO || controller_type_ == VEHICLE_TYPE_HYBRID) {
         // 舵机控制逻辑 - 根据dirX控制转向舵机，根据dirY控制油门舵机
         
         // 将X方向映射到转向舵机角度范围 (-100到100) -> (0到180)
@@ -275,8 +275,8 @@ void MoveController::SetControlParams(float distance, int dirX, int dirY) {
 }
 
 // 电机控制方法
-void MoveController::Forward(int speed) {
-    if (!running_ || (controller_type_ != MOVE_TYPE_MOTOR && controller_type_ != MOVE_TYPE_HYBRID)) {
+void VehicleController::Forward(int speed) {
+    if (!running_ || (controller_type_ != VEHICLE_TYPE_MOTOR && controller_type_ != VEHICLE_TYPE_HYBRID)) {
         ESP_LOGW(TAG, "Cannot use Forward method with current configuration");
         return;
     }
@@ -299,8 +299,8 @@ void MoveController::Forward(int speed) {
     }
 }
 
-void MoveController::Backward(int speed) {
-    if (!running_ || (controller_type_ != MOVE_TYPE_MOTOR && controller_type_ != MOVE_TYPE_HYBRID)) {
+void VehicleController::Backward(int speed) {
+    if (!running_ || (controller_type_ != VEHICLE_TYPE_MOTOR && controller_type_ != VEHICLE_TYPE_HYBRID)) {
         ESP_LOGW(TAG, "Cannot use Backward method with current configuration");
         return;
     }
@@ -323,8 +323,8 @@ void MoveController::Backward(int speed) {
     }
 }
 
-void MoveController::TurnLeft(int speed) {
-    if (!running_ || (controller_type_ != MOVE_TYPE_MOTOR && controller_type_ != MOVE_TYPE_HYBRID)) {
+void VehicleController::TurnLeft(int speed) {
+    if (!running_ || (controller_type_ != VEHICLE_TYPE_MOTOR && controller_type_ != VEHICLE_TYPE_HYBRID)) {
         ESP_LOGW(TAG, "Cannot use TurnLeft method with current configuration");
         return;
     }
@@ -347,8 +347,8 @@ void MoveController::TurnLeft(int speed) {
     }
 }
 
-void MoveController::TurnRight(int speed) {
-    if (!running_ || (controller_type_ != MOVE_TYPE_MOTOR && controller_type_ != MOVE_TYPE_HYBRID)) {
+void VehicleController::TurnRight(int speed) {
+    if (!running_ || (controller_type_ != VEHICLE_TYPE_MOTOR && controller_type_ != VEHICLE_TYPE_HYBRID)) {
         ESP_LOGW(TAG, "Cannot use TurnRight method with current configuration");
         return;
     }
@@ -372,14 +372,14 @@ void MoveController::TurnRight(int speed) {
 }
 
 // 重载方法，带参数的实现
-void MoveController::Stop(bool brake) {
+void VehicleController::Stop(bool brake) {
     if (!running_) {
-        ESP_LOGW(TAG, "Move controller not running");
+        ESP_LOGW(TAG, "Vehicle controller not running");
         return;
     }
     
     // 停止电机
-    if (controller_type_ == MOVE_TYPE_MOTOR || controller_type_ == MOVE_TYPE_HYBRID) {
+    if (controller_type_ == VEHICLE_TYPE_MOTOR || controller_type_ == VEHICLE_TYPE_HYBRID) {
         auto& thing_manager = iot::ThingManager::GetInstance();
         // 构造JSON命令
         char command[128];
@@ -397,7 +397,7 @@ void MoveController::Stop(bool brake) {
     }
     
     // 舵机回中
-    if (controller_type_ == MOVE_TYPE_SERVO || controller_type_ == MOVE_TYPE_HYBRID) {
+    if (controller_type_ == VEHICLE_TYPE_SERVO || controller_type_ == VEHICLE_TYPE_HYBRID) {
         if (steering_servo_pin_ >= 0) {
             SetSteeringAngle(DEFAULT_SERVO_ANGLE);
         }
@@ -408,11 +408,11 @@ void MoveController::Stop(bool brake) {
     }
     
     running_ = false;
-    ESP_LOGI(TAG, "Move controller stopped");
+    ESP_LOGI(TAG, "Vehicle controller stopped");
 }
 
-void MoveController::SetSpeed(int speed) {
-    if (!running_ || (controller_type_ != MOVE_TYPE_MOTOR && controller_type_ != MOVE_TYPE_HYBRID)) {
+void VehicleController::SetSpeed(int speed) {
+    if (!running_ || (controller_type_ != VEHICLE_TYPE_MOTOR && controller_type_ != VEHICLE_TYPE_HYBRID)) {
         ESP_LOGW(TAG, "Cannot set motor speed with current configuration");
         return;
     }
@@ -436,8 +436,8 @@ void MoveController::SetSpeed(int speed) {
 }
 
 // 舵机控制方法
-void MoveController::SetSteeringAngle(int angle) {
-    if (!running_ || (controller_type_ != MOVE_TYPE_SERVO && controller_type_ != MOVE_TYPE_HYBRID) || 
+void VehicleController::SetSteeringAngle(int angle) {
+    if (!running_ || (controller_type_ != VEHICLE_TYPE_SERVO && controller_type_ != VEHICLE_TYPE_HYBRID) || 
         steering_servo_pin_ < 0) {
         ESP_LOGW(TAG, "Cannot set steering angle with current configuration");
         return;
@@ -466,8 +466,8 @@ void MoveController::SetSteeringAngle(int angle) {
     }
 }
 
-void MoveController::SetThrottlePosition(int position) {
-    if (!running_ || (controller_type_ != MOVE_TYPE_SERVO && controller_type_ != MOVE_TYPE_HYBRID) || 
+void VehicleController::SetThrottlePosition(int position) {
+    if (!running_ || (controller_type_ != VEHICLE_TYPE_SERVO && controller_type_ != VEHICLE_TYPE_HYBRID) || 
         throttle_servo_pin_ < 0) {
         ESP_LOGW(TAG, "Cannot set throttle position with current configuration");
         return;
@@ -496,8 +496,8 @@ void MoveController::SetThrottlePosition(int position) {
     }
 }
 
-void MoveController::InitGPIO() {
-    if (controller_type_ != MOVE_TYPE_MOTOR && controller_type_ != MOVE_TYPE_HYBRID) {
+void VehicleController::InitGPIO() {
+    if (controller_type_ != VEHICLE_TYPE_MOTOR && controller_type_ != VEHICLE_TYPE_HYBRID) {
         return;
     }
     
@@ -524,8 +524,8 @@ void MoveController::InitGPIO() {
     gpio_set_level((gpio_num_t)enb_pin_, HIGH);
 }
 
-void MoveController::InitServos() {
-    if (controller_type_ != MOVE_TYPE_SERVO && controller_type_ != MOVE_TYPE_HYBRID) {
+void VehicleController::InitServos() {
+    if (controller_type_ != VEHICLE_TYPE_SERVO && controller_type_ != VEHICLE_TYPE_HYBRID) {
         return;
     }
     
@@ -613,8 +613,8 @@ void MoveController::InitServos() {
     }
 }
 
-void MoveController::ControlMotor(int in1, int in2, int in3, int in4) {
-    if (controller_type_ != MOVE_TYPE_MOTOR && controller_type_ != MOVE_TYPE_HYBRID) {
+void VehicleController::ControlMotor(int in1, int in2, int in3, int in4) {
+    if (controller_type_ != VEHICLE_TYPE_MOTOR && controller_type_ != VEHICLE_TYPE_HYBRID) {
         return;
     }
     
@@ -625,7 +625,7 @@ void MoveController::ControlMotor(int in1, int in2, int in3, int in4) {
 }
 
 // 添加一个私有的通用舵机控制方法
-bool MoveController::ControlServoWithLU9685(int channel, int angle) {
+bool VehicleController::ControlServoWithLU9685(int channel, int angle) {
 #ifdef CONFIG_ENABLE_LU9685
     // 优先使用LU9685控制器
     if (lu9685_is_initialized()) {
@@ -647,7 +647,7 @@ bool MoveController::ControlServoWithLU9685(int channel, int angle) {
     return false;
 }
 
-void MoveController::ControlSteeringServo(int angle) {
+void VehicleController::ControlSteeringServo(int angle) {
     if (steering_servo_pin_ < 0) {
         return;
     }
@@ -681,7 +681,7 @@ void MoveController::ControlSteeringServo(int angle) {
     }
 }
 
-void MoveController::ControlThrottleServo(int position) {
+void VehicleController::ControlThrottleServo(int position) {
     if (throttle_servo_pin_ < 0) {
         return;
     }

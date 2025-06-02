@@ -1,17 +1,17 @@
 #pragma once
 
 #include "../components.h"
-#include "move_controller.h"
+#include "vehicle_controller.h"
 #include "../iot/thing.h"
 #include "../iot/thing_manager.h"
 #include "../web/web_server.h"
 #include "../web/web_content.h"
 
 // 移动内容类，用于处理Web UI交互
-class MoveContent : public WebContent {
+class VehicleContent : public WebContent {
 public:
-    MoveContent(WebServer* server);
-    virtual ~MoveContent();
+    VehicleContent(WebServer* server);
+    virtual ~VehicleContent();
 
     // WebContent接口实现
     virtual bool Start() override;
@@ -37,7 +37,7 @@ private:
     void InitHandlers();
 
     // 移动控制HTTP处理
-    static esp_err_t HandleMove(httpd_req_t *req);
+    static esp_err_t HandleVehicle(httpd_req_t *req);
     
     // 舵机控制HTTP处理
     static esp_err_t HandleServo(httpd_req_t *req);
@@ -50,4 +50,4 @@ private:
 };
 
 // 全局初始化函数
-void InitMoveComponents(WebServer* server); 
+void InitVehicleComponents(WebServer* server); 

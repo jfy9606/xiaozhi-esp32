@@ -4,7 +4,9 @@
 #include <cstring>
 #include "sdkconfig.h"
 #if CONFIG_ENABLE_WEB_CONTENT
-#include "web/html_content.h"
+#include "web/web_content.h"
+// Define AI_HTML using the web_content function
+#define AI_HTML get_ai_html_content()
 #endif
 
 #define TAG "AIContent"

@@ -1,160 +1,328 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <meta charset='UTF-8'>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>ESP32S3智能小车</title>
-  <link rel='stylesheet' href='https://fonts.googleapis.com/css2?family=Roboto:wght@400;500&display=swap'>
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css">
-  <link rel="stylesheet" href="css/common.css">
-  <link rel="stylesheet" href="css/index.css">
-  <!-- 添加备用图标加载 -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/js/all.min.js" defer></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESP32 Vehicle Control System</title>
+    <link rel="stylesheet" href="css/bootstrap.min.css">
+    <link rel="stylesheet" href="css/main.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
 </head>
 <body>
-  <div class="container">
-    <h1>智慧小车</h1>
-    
-    <!-- 设备信息部分 -->
-    <div class="device-info">
-      <h3><i class="fas fa-server"></i> 系统状态</h3>
-      <table>
-        <tr>
-          <th>运行时间</th>
-          <td id="uptime">加载中...</td>
-        </tr>
-        <tr>
-          <th>可用内存</th>
-          <td id="free-heap">加载中...</td>
-        </tr>
-        <tr>
-          <th>系统版本</th>
-          <td id="version">加载中...</td>
-        </tr>
-      </table>
+    <div class="container-fluid">
+        <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+            <div class="container-fluid">
+                <a class="navbar-brand" href="#">
+                    <i class="bi bi-robot"></i> ESP32 Vehicle Control
+                </a>
+                <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+                <div class="collapse navbar-collapse" id="navbarNav">
+                    <ul class="navbar-nav">
+                        <li class="nav-item">
+                            <a class="nav-link active" href="index.html">
+                                <i class="bi bi-house-door"></i> Home
+      </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="vehicle.html">
+                                <i class="bi bi-car-front"></i> Vehicle Control
+      </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="location.html">
+                                <i class="bi bi-geo-alt"></i> Location
+      </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="ai.html">
+                                <i class="bi bi-chat-dots"></i> AI Chat
+      </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="settings.html">
+                                <i class="bi bi-gear"></i> Settings
+      </a>
+                        </li>
+                    </ul>
+                    <div class="ms-auto">
+                        <span class="badge bg-success" id="status-badge">Connected</span>
+                        <span class="badge bg-danger d-none" id="status-badge-disconnected">Disconnected</span>
+                    </div>
+                </div>
     </div>
-    
-    <div class="menu">
-      <a href="/car" class="menu-item">
-        <i class="fas fa-car"></i> 小车控制
-      </a>
-      <a href="/vision" class="menu-item">
-        <i class="fas fa-camera"></i> 摄像头
-      </a>
-      <a href="/ai" class="menu-item">
-        <i class="fas fa-brain"></i> AI对话
-      </a>
-      <a href="/location" class="menu-item">
-        <i class="fas fa-map-marker-alt"></i> 定位
-      </a>
-      <a href="move.html" class="menu-item">
-        <i class="fas fa-bicycle"></i> 运动控制
-      </a>
-      <a href="vision.html" class="menu-item">
-        <i class="fas fa-eye"></i> 视觉识别
-      </a>
-      <a href="ai.html" class="menu-item">
-        <i class="fas fa-microphone"></i> AI语音
-      </a>
-      <a href="audio_control.html" class="menu-item">
-        <i class="fas fa-volume-up"></i> 音频控制
-      </a>
-      <a href="servo_control.html" class="menu-item">
-        <i class="fas fa-cog"></i> 舵机控制
-      </a>
-      <a href="device_config.html" class="menu-item">
-        <i class="fas fa-tools"></i> 设备配置
-      </a>
-    </div>
+        </nav>
 
-    <div style="display: flex; justify-content: center; margin-top: 20px;">
-      <a href="device_config.html" class="nav-settings-button" style="margin-right: 10px;">
-        <i class="fas fa-tools"></i> 系统配置
-      </a>
-      <a href="#" class="nav-settings-button" id="settings-button">
-        <i class="fas fa-cog"></i> AI设置
-      </a>
+        <div class="row mt-4">
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header bg-primary text-white">
+                        <i class="bi bi-camera-video"></i> Camera Feed
     </div>
-
-    <!-- 摄像头配置面板 -->
-    <div class="camera-config">
-      <h3>摄像头配置管理</h3>
-      <p>您可以保存当前摄像头设置、恢复之前保存的设置，或重置为默认配置。</p>
-      <div class="camera-config-buttons">
-        <button class="camera-button" id="save-camera-config">保存当前配置</button>
-        <button class="camera-button" id="load-camera-config">加载已保存配置</button>
-        <button class="camera-button reset" id="reset-camera-config">重置为默认配置</button>
-      </div>
-      <div id="camera-message" class="message"></div>
-    </div>
-    
-    <div class="footer">
-      <p>智慧小车 &copy; 2025</p>
-    </div>
-
-    <!-- 设置模态框 -->
-    <div id="settings-modal" class="modal">
-      <div class="modal-content">
-        <span class="close">&times;</span>
-        <h2>设置</h2>
-        
-        <div class="tab">
-          <button class="tablinks active" onclick="openTab(event, 'ai-settings')">AI设置</button>
-        </div>
-        
-        <div id="ai-settings" class="tabcontent" style="display: block;">
-          <h3>AI服务设置</h3>
-          <form id="ai-form">
-            <div class="form-group">
-              <label for="api_key">API Key:</label>
-              <input type="password" id="api_key" name="api_key" placeholder="输入您的API密钥">
-            </div>
-            <div class="form-group">
-              <label for="api_model">语言模型:</label>
-              <input type="text" id="api_model" name="api_model" value="gpt-3.5-turbo" placeholder="gpt-3.5-turbo">
-            </div>
-            <div class="form-group">
-              <label for="api_url">API URL:</label>
-              <input type="text" id="api_url" name="api_url" value='https://api.openai.com/v1/chat/completions' placeholder="API端点URL">
-            </div>
-            <button type="submit" class="settings-button">保存AI设置</button>
-          </form>
-          <div id="ai-message" class="message"></div>
-        </div>
+                    <div class="card-body text-center">
+                        <div class="camera-container">
+                            <img id="camera-feed" src="/api/camera/stream" alt="Camera Feed" class="img-fluid">
+                            <div class="camera-overlay d-none" id="camera-offline">
+                                <i class="bi bi-camera-video-off"></i>
+                                <p>Camera Offline</p>
       </div>
     </div>
+                        <div class="mt-3">
+                            <button class="btn btn-primary" id="btn-capture">
+                                <i class="bi bi-camera"></i> Capture
+                            </button>
+                            <button class="btn btn-secondary" id="btn-toggle-stream">
+                                <i class="bi bi-pause-circle"></i> Pause Stream
+                            </button>
+    </div>
+        </div>
+            </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header bg-success text-white">
+                        <i class="bi bi-speedometer2"></i> Vehicle Status
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="status-item">
+                                    <span class="status-label">Battery:</span>
+                                    <div class="progress">
+                                        <div class="progress-bar bg-success" id="battery-level" role="progressbar" style="width: 75%;" aria-valuenow="75" aria-valuemin="0" aria-valuemax="100">75%</div>
+                                    </div>
+                                </div>
+                                <div class="status-item">
+                                    <span class="status-label">Signal Strength:</span>
+                                    <div class="signal-strength">
+                                        <i class="bi bi-reception-4"></i>
+                                        <span id="signal-strength">Excellent</span>
+                                    </div>
+                                </div>
+                                <div class="status-item">
+                                    <span class="status-label">Speed:</span>
+                                    <span id="speed-value">0 m/s</span>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="status-item">
+                                    <span class="status-label">Mode:</span>
+                                    <span id="mode-value">Manual Control</span>
+                                </div>
+                                <div class="status-item">
+                                    <span class="status-label">Distance:</span>
+                                    <span id="distance-value">Front: 25cm, Rear: 40cm</span>
+                                </div>
+                                <div class="status-item">
+                                    <span class="status-label">Status:</span>
+                                    <span class="badge bg-success" id="vehicle-status">Ready</span>
+                                </div>
+                            </div>
+            </div>
+                        <div class="text-center mt-3">
+                            <a href="vehicle.html" class="btn btn-primary">
+                                <i class="bi bi-controller"></i> Control Vehicle
+                            </a>
+        </div>
+      </div>
+    </div>
     
-    <!-- OTA 升级对话框 -->
-    <div id="ota-modal" class="ota-modal">
-      <div class="ota-modal-content">
-        <span class="ota-close">&times;</span>
-        <h2>固件OTA升级</h2>
-        <p>请选择或拖放Arduino编译生成的.bin固件文件</p>
-        
-        <div class="upload-area" id="upload-area">
-          <i class="fas fa-file-upload"></i>
-          <p>点击或拖放固件文件到此处</p>
-          <input type="file" id="firmware-file" accept=".bin" style="display: none;">
+                <div class="card mt-3">
+                    <div class="card-header bg-info text-white">
+                        <i class="bi bi-activity"></i> Recent Activity
         </div>
-        
-        <div class="file-info" id="file-info"></div>
-        
-        <div class="progress-container" id="progress-container">
-          <div class="progress-bar" id="progress-bar"></div>
-        </div>
-        
-        <div class="ota-status" id="ota-status"></div>
-        
-        <div class="ota-action-buttons">
-          <button class="ota-upload-button" id="ota-upload-button">选择文件</button>
-          <button class="ota-flash-button" id="ota-flash-button" disabled>刷写固件</button>
+                    <div class="card-body">
+                        <ul class="list-group" id="activity-log">
+                            <li class="list-group-item">
+                                <i class="bi bi-check-circle text-success"></i>
+                                <small class="text-muted">Just now</small>
+                                System started successfully
+                            </li>
+                            <li class="list-group-item">
+                                <i class="bi bi-wifi text-primary"></i>
+                                <small class="text-muted">1 min ago</small>
+                                Connected to WiFi network
+                            </li>
+                            <li class="list-group-item">
+                                <i class="bi bi-camera text-info"></i>
+                                <small class="text-muted">2 mins ago</small>
+                                Camera initialized
+                            </li>
+                        </ul>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- 引入脚本文件 -->
-  <script src="js/api_client.js"></script>
-  <script src="js/index.js"></script>
+        <footer class="mt-4 text-center text-muted">
+            <p>ESP32 Vehicle Control System &copy; 2023</p>
+        </footer>
+    </div>
+
+    <script src="js/jquery-3.6.0.min.js"></script>
+    <script src="js/bootstrap.bundle.min.js"></script>
+    <script src="js/main.js"></script>
+    <script>
+        $(document).ready(function() {
+            // Check camera status
+            $.get('/api/camera/status', function(data) {
+                if (!data.has_camera) {
+                    $('#camera-feed').addClass('d-none');
+                    $('#camera-offline').removeClass('d-none');
+                }
+            }).fail(function() {
+                $('#camera-feed').addClass('d-none');
+                $('#camera-offline').removeClass('d-none');
+            });
+
+            // Capture button
+            $('#btn-capture').click(function() {
+                window.open('/api/camera/capture', '_blank');
+            });
+
+            // Toggle stream button
+            let streaming = true;
+            $('#btn-toggle-stream').click(function() {
+                if (streaming) {
+                    $('#camera-feed').attr('src', '');
+                    $(this).html('<i class="bi bi-play-circle"></i> Resume Stream');
+                    streaming = false;
+                } else {
+                    $('#camera-feed').attr('src', '/api/camera/stream');
+                    $(this).html('<i class="bi bi-pause-circle"></i> Pause Stream');
+                    streaming = true;
+                }
+            });
+
+            // WebSocket connection for real-time updates
+            const socket = new WebSocket(`ws://${window.location.host}/ws/vehicle`);
+            
+            socket.onopen = function() {
+                console.log('WebSocket connected');
+                $('#status-badge').removeClass('d-none');
+                $('#status-badge-disconnected').addClass('d-none');
+            };
+            
+            socket.onclose = function() {
+                console.log('WebSocket disconnected');
+                $('#status-badge').addClass('d-none');
+                $('#status-badge-disconnected').removeClass('d-none');
+            };
+            
+            socket.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+                
+                if (data.type === 'status') {
+                    updateVehicleStatus(data.data);
+                } else if (data.type === 'activity') {
+                    addActivityLog(data.data);
+                }
+            };
+
+            function updateVehicleStatus(status) {
+                // Update battery level
+                if (status.battery) {
+                    const batteryLevel = status.battery;
+                    $('#battery-level').css('width', batteryLevel + '%').text(batteryLevel + '%');
+                    
+                    if (batteryLevel > 60) {
+                        $('#battery-level').removeClass('bg-warning bg-danger').addClass('bg-success');
+                    } else if (batteryLevel > 20) {
+                        $('#battery-level').removeClass('bg-success bg-danger').addClass('bg-warning');
+                    } else {
+                        $('#battery-level').removeClass('bg-success bg-warning').addClass('bg-danger');
+                    }
+                }
+                
+                // Update signal strength
+                if (status.signal) {
+                    const signalStrength = status.signal;
+                    let signalText = 'Unknown';
+                    let signalIcon = 'bi-reception-0';
+                    
+                    if (signalStrength > 80) {
+                        signalText = 'Excellent';
+                        signalIcon = 'bi-reception-4';
+                    } else if (signalStrength > 60) {
+                        signalText = 'Good';
+                        signalIcon = 'bi-reception-3';
+                    } else if (signalStrength > 40) {
+                        signalText = 'Fair';
+                        signalIcon = 'bi-reception-2';
+                    } else if (signalStrength > 20) {
+                        signalText = 'Poor';
+                        signalIcon = 'bi-reception-1';
+                    } else {
+                        signalText = 'Very Poor';
+                        signalIcon = 'bi-reception-0';
+                    }
+                    
+                    $('.signal-strength i').removeClass().addClass('bi ' + signalIcon);
+                    $('#signal-strength').text(signalText);
+                }
+                
+                // Update speed
+                if (status.speed !== undefined) {
+                    $('#speed-value').text(status.speed + ' m/s');
+                }
+                
+                // Update mode
+                if (status.mode) {
+                    $('#mode-value').text(status.mode);
+                }
+                
+                // Update distance
+                if (status.distance) {
+                    $('#distance-value').text(`Front: ${status.distance.front}cm, Rear: ${status.distance.rear}cm`);
+                }
+                
+                // Update vehicle status
+                if (status.vehicleStatus) {
+                    $('#vehicle-status').text(status.vehicleStatus);
+                    
+                    if (status.vehicleStatus === 'Ready') {
+                        $('#vehicle-status').removeClass('bg-warning bg-danger').addClass('bg-success');
+                    } else if (status.vehicleStatus === 'Moving') {
+                        $('#vehicle-status').removeClass('bg-success bg-danger').addClass('bg-warning');
+                    } else if (status.vehicleStatus === 'Error') {
+                        $('#vehicle-status').removeClass('bg-success bg-warning').addClass('bg-danger');
+                    }
+                }
+            }
+
+            function addActivityLog(activity) {
+                const icon = getActivityIcon(activity.type);
+                const timestamp = activity.timestamp ? new Date(activity.timestamp).toLocaleTimeString() : 'Just now';
+                
+                const newItem = `
+                    <li class="list-group-item">
+                        <i class="bi ${icon}"></i>
+                        <small class="text-muted">${timestamp}</small>
+                        ${activity.message}
+                    </li>
+                `;
+                
+                $('#activity-log').prepend(newItem);
+                
+                // Keep only the last 5 items
+                if ($('#activity-log li').length > 5) {
+                    $('#activity-log li:last').remove();
+                }
+            }
+
+            function getActivityIcon(type) {
+                switch (type) {
+                    case 'success': return 'bi-check-circle text-success';
+                    case 'error': return 'bi-exclamation-circle text-danger';
+                    case 'warning': return 'bi-exclamation-triangle text-warning';
+                    case 'info': return 'bi-info-circle text-info';
+                    case 'network': return 'bi-wifi text-primary';
+                    case 'camera': return 'bi-camera text-info';
+                    default: return 'bi-circle text-secondary';
+                }
+            }
+        });
+    </script>
 </body>
 </html>

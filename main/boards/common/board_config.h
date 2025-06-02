@@ -5,6 +5,14 @@
 #include <driver/i2c_master.h>
 #include "ext/include/i2c_utils.h"  // 添加I2C工具头文件
 #include "sdkconfig.h"
+#include "esp_camera.h" // 添加ESP Camera头文件
+
+// 摄像头信息结构体
+typedef struct {
+    const char* model;       // 摄像头型号
+    const char* name;        // 摄像头名称
+    bool is_supported;       // 是否支持
+} camera_info_t;
 
 // 板级配置结构体，用于存储板子的引脚配置
 typedef struct {
@@ -38,6 +46,12 @@ typedef struct {
     int href_pin;
     int pclk_pin;
     int cam_led_pin;
+
+    // 摄像头配置与信息
+    bool camera_supported;           // 是否支持摄像头
+    bool has_camera;                 // 是否已初始化摄像头
+    camera_config_t camera_config;   // 摄像头配置
+    camera_info_t* camera_info;      // 摄像头信息
 } board_config_t;
 
 #ifdef __cplusplus

@@ -23,8 +23,8 @@ set(SOURCES "audio_codecs/audio_codec.cc"
             "background_task.cc"
             "main.cc"
             "components.cc"
-            "move/move_controller.cc"
-            "move/move_content.cc"
+            "vehicle/vehicle_controller.cc"
+            "vehicle/vehicle_content.cc"
             "ai/ai_controller.cc"
             "ai/ai_content.cc"
             "vision/vision_controller.cc"
@@ -33,7 +33,6 @@ set(SOURCES "audio_codecs/audio_codec.cc"
             "iot/things/servo.cc"
             "iot/things/us.cc"
             "iot/things/battery.cc"
-            "iot/things/cam.cc"
             "iot/things/imu.cc"
             "iot/things/lamp.cc"
             "iot/things/light.cc"
@@ -43,7 +42,6 @@ set(SOURCES "audio_codecs/audio_codec.cc"
             "ext/lu9685.cc"
             "web/web_server.cc"
             "web/web_content.cc"
-            "web/html_content.cc"
             "web/api_router.cc"
             "web/api_handlers.cc"
             )
@@ -55,7 +53,7 @@ set(EMBED_FILES "")
 if(CONFIG_ENABLE_WEB_SERVER AND CONFIG_ENABLE_WEB_CONTENT)
     # 指定绝对路径，确保正确找到HTML文件
     set(HTML_FILES "${CMAKE_CURRENT_SOURCE_DIR}/assets/html/index.html"
-                   "${CMAKE_CURRENT_SOURCE_DIR}/assets/html/move.html"
+                   "${CMAKE_CURRENT_SOURCE_DIR}/assets/html/vehicle.html"
                    "${CMAKE_CURRENT_SOURCE_DIR}/assets/html/vision.html"
                    "${CMAKE_CURRENT_SOURCE_DIR}/assets/html/servo_control.html"
                    "${CMAKE_CURRENT_SOURCE_DIR}/assets/html/ai.html"
@@ -131,7 +129,6 @@ if(CONFIG_ENABLE_WEB_SERVER)
     if(CONFIG_ENABLE_WEB_CONTENT)
         list(APPEND SOURCES 
             "web/web_content.cc" 
-            "web/html_content.cc"
         )
     endif()
 endif()
@@ -154,16 +151,16 @@ file(GLOB_RECURSE ALL_PROTOCOLS_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/protocols/*.
 list(FILTER ALL_PROTOCOLS_SOURCES EXCLUDE REGEX ".*(protocol|mqtt_protocol|websocket_protocol)\\.cc$")
 set(PROTOCOLS_SOURCES ${ALL_PROTOCOLS_SOURCES})
 
-# 收集其他move组件文件(排除已经明确列出的主要文件)
-file(GLOB ADDITIONAL_MOVE_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/move/*.cc)
-list(FILTER ADDITIONAL_MOVE_SOURCES EXCLUDE REGEX ".*(move_controller|move_content)\\.cc$")
-set(MOVE_SOURCES ${ADDITIONAL_MOVE_SOURCES})
+# 收集其他vehicle组件文件(排除已经明确列出的主要文件)
+file(GLOB ADDITIONAL_VEHICLE_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/vehicle/*.cc)
+list(FILTER ADDITIONAL_VEHICLE_SOURCES EXCLUDE REGEX ".*(vehicle_controller|vehicle_content)\\.cc$")
+set(VEHICLE_SOURCES ${ADDITIONAL_VEHICLE_SOURCES})
 
 # 将所有收集的文件添加到SOURCES列表
 list(APPEND SOURCES ${IOT_THINGS_SOURCES})
 list(APPEND SOURCES ${WEB_SOURCES})
 list(APPEND SOURCES ${PROTOCOLS_SOURCES})
-list(APPEND SOURCES ${MOVE_SOURCES})
+list(APPEND SOURCES ${VEHICLE_SOURCES})
 
 # 添加板级公共文件
 file(GLOB BOARD_COMMON_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/boards/common/*.cc)

@@ -8,7 +8,6 @@
 #include <esp_timer.h>
 #include <esp_chip_info.h>
 #include "sdkconfig.h"
-#include "html_content.h"
 #include <sys/param.h>
 #include <wifi_station.h>
 #include <esp_heap_caps.h>
@@ -16,10 +15,27 @@
 
 #define TAG CONFIG_WEB_CONTENT_TAG
 
-// 初始化静态成员变量 - 移除PSRAM变量，保留大小变量用于引用内嵌资源
+// 初始化静态成员变量 - 保留大小变量用于引用内嵌资源
 size_t WebContent::favicon_ico_size = 0;
 size_t WebContent::style_css_size = 0;
 size_t WebContent::script_js_size = 0;
+size_t WebContent::index_html_size = 0;
+size_t WebContent::vehicle_html_size = 0;
+size_t WebContent::ai_html_size = 0;
+size_t WebContent::vision_html_size = 0;
+
+// 声明外部嵌入的HTML文件
+extern const uint8_t index_html_start[] asm("_binary_index_html_start");
+extern const uint8_t index_html_end[] asm("_binary_index_html_end");
+
+extern const uint8_t vehicle_html_start[] asm("_binary_vehicle_html_start");
+extern const uint8_t vehicle_html_end[] asm("_binary_vehicle_html_end");
+
+extern const uint8_t ai_html_start[] asm("_binary_ai_html_start");
+extern const uint8_t ai_html_end[] asm("_binary_ai_html_end");
+
+extern const uint8_t vision_html_start[] asm("_binary_vision_html_start");
+extern const uint8_t vision_html_end[] asm("_binary_vision_html_end");
 
 // 构造函数
 WebContent::WebContent(WebServer* server) 
@@ -31,6 +47,75 @@ WebContent::WebContent(WebServer* server)
 WebContent::~WebContent() {
     ESP_LOGI(TAG, "WebContent实例销毁");
     Stop();
+}
+
+// 初始化HTML内容
+void WebContent::InitHtmlContent() {
+    static bool initialized = false;
+    if (initialized) return;
+    
+    ESP_LOGI(TAG, "初始化HTML内容...");
+    
+    // 计算大小
+    index_html_size = index_html_end - index_html_start;
+    vehicle_html_size = vehicle_html_end - vehicle_html_start;
+    ai_html_size = ai_html_end - ai_html_start;
+    vision_html_size = vision_html_end - vision_html_start;
+    
+    ESP_LOGI(TAG, "HTML文件大小: index=%zu, move=%zu, ai=%zu, vision=%zu",
+            index_html_size, vehicle_html_size, ai_html_size, vision_html_size);
+    
+    ESP_LOGI(TAG, "HTML内容将直接从flash读取");
+    
+    initialized = true;
+}
+
+// HTML内容大小获取函数
+size_t WebContent::GetIndexHtmlSize() {
+    InitHtmlContent();
+    return index_html_size;
+}
+
+size_t WebContent::GetVehicleHtmlSize() {
+    InitHtmlContent();
+    return vehicle_html_size;
+}
+
+size_t WebContent::GetAiHtmlSize() {
+    InitHtmlContent();
+    return ai_html_size;
+}
+
+size_t WebContent::GetVisionHtmlSize() {
+    InitHtmlContent();
+    return vision_html_size;
+}
+
+size_t WebContent::GetMotorHtmlSize() {
+    // 返回vehicle.html大小，因为motor.html已被合并到vehicle.html
+    InitHtmlContent();
+    return vehicle_html_size;
+}
+
+// HTML内容获取函数
+const char* WebContent::GetIndexHtmlContent() {
+    InitHtmlContent();
+    return (const char*)index_html_start;
+}
+
+const char* WebContent::GetVehicleHtmlContent() {
+    InitHtmlContent();
+    return (const char*)vehicle_html_start;
+}
+
+const char* WebContent::GetAiHtmlContent() {
+    InitHtmlContent();
+    return (const char*)ai_html_start;
+}
+
+const char* WebContent::GetVisionHtmlContent() {
+    InitHtmlContent();
+    return (const char*)vision_html_start;
 }
 
 // 启动Web内容服务
@@ -47,6 +132,9 @@ bool WebContent::Start() {
 
     // 计算嵌入资源大小
     ComputeResourceSizes();
+    
+    // 初始化HTML内容
+    InitHtmlContent();
     
     // 注册静态资源处理器
     RegisterStaticContent();
@@ -811,12 +899,12 @@ esp_err_t WebContent::HandleCssFile(httpd_req_t* req) {
         ESP_LOGI(TAG, "发送index.css, 大小: %d字节", (int)len);
         return httpd_resp_send(req, (const char*)_binary_index_css_start, len);
     }
-    else if (strcmp(filename, "move.css") == 0) {
-        extern const uint8_t _binary_move_css_start[] asm("_binary_move_css_start");
-        extern const uint8_t _binary_move_css_end[] asm("_binary_move_css_end");
-        size_t len = _binary_move_css_end - _binary_move_css_start;
-        ESP_LOGI(TAG, "发送move.css, 大小: %d字节", (int)len);
-        return httpd_resp_send(req, (const char*)_binary_move_css_start, len);
+    else if (strcmp(filename, "vehicle.css") == 0) {
+        extern const uint8_t _binary_vehicle_css_start[] asm("_binary_vehicle_css_start");
+        extern const uint8_t _binary_vehicle_css_end[] asm("_binary_vehicle_css_end");
+        size_t len = _binary_vehicle_css_end - _binary_vehicle_css_start;
+        ESP_LOGI(TAG, "发送vehicle.css, 大小: %d字节", (int)len);
+        return httpd_resp_send(req, (const char*)_binary_vehicle_css_start, len);
     }
     else if (strcmp(filename, "ai.css") == 0) {
         extern const uint8_t _binary_ai_css_start[] asm("_binary_ai_css_start");
@@ -873,12 +961,12 @@ esp_err_t WebContent::HandleJsFile(httpd_req_t* req) {
         ESP_LOGI(TAG, "发送index.js, 大小: %d字节", (int)len);
         return httpd_resp_send(req, (const char*)_binary_index_js_start, len);
     }
-    else if (strcmp(filename, "move.js") == 0) {
-        extern const uint8_t _binary_move_js_start[] asm("_binary_move_js_start");
-        extern const uint8_t _binary_move_js_end[] asm("_binary_move_js_end");
-        size_t len = _binary_move_js_end - _binary_move_js_start;
-        ESP_LOGI(TAG, "发送move.js, 大小: %d字节", (int)len);
-        return httpd_resp_send(req, (const char*)_binary_move_js_start, len);
+    else if (strcmp(filename, "vehicle.js") == 0) {
+        extern const uint8_t _binary_vehicle_js_start[] asm("_binary_vehicle_js_start");
+        extern const uint8_t _binary_vehicle_js_end[] asm("_binary_vehicle_js_end");
+        size_t len = _binary_vehicle_js_end - _binary_vehicle_js_start;
+        ESP_LOGI(TAG, "发送vehicle.js, 大小: %d字节", (int)len);
+        return httpd_resp_send(req, (const char*)_binary_vehicle_js_start, len);
     }
     else if (strcmp(filename, "ai.js") == 0) {
         extern const uint8_t _binary_ai_js_start[] asm("_binary_ai_js_start");
@@ -899,4 +987,44 @@ esp_err_t WebContent::HandleJsFile(httpd_req_t* req) {
     ESP_LOGW(TAG, "未找到JS文件: %s", filename);
     httpd_resp_send_404(req);
     return ESP_OK;
+}
+
+// 导出C接口供外部调用
+extern "C" {
+    size_t get_index_html_size() {
+        return WebContent::GetIndexHtmlSize();
+    }
+
+    size_t get_vehicle_html_size() {
+    return WebContent::GetVehicleHtmlSize();
+    }
+
+    size_t get_ai_html_size() {
+        return WebContent::GetAiHtmlSize();
+    }
+
+    size_t get_vision_html_size() {
+        return WebContent::GetVisionHtmlSize();
+    }
+
+    size_t get_motor_html_size() {
+        return WebContent::GetMotorHtmlSize();
+    }
+
+    // 获取HTML内容的函数 - 直接返回flash中的内容
+    const char* get_index_html_content() {
+        return WebContent::GetIndexHtmlContent();
+    }
+
+    const char* get_vehicle_html_content() {
+    return WebContent::GetVehicleHtmlContent();
+    }
+
+    const char* get_ai_html_content() {
+        return WebContent::GetAiHtmlContent();
+    }
+
+    const char* get_vision_html_content() {
+        return WebContent::GetVisionHtmlContent();
+    }
 } 

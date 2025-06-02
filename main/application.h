@@ -25,6 +25,11 @@
 #include "components.h"
 #include "wake_word.h"
 
+// 只有在电机控制器启用时才包含相关头文件
+#if defined(CONFIG_ENABLE_MOTOR_CONTROLLER)
+#include "vehicle/vehicle_controller.h"
+#endif
+
 // 只有在Web服务器启用时才包含相关头文件
 #if defined(CONFIG_ENABLE_WEB_SERVER)
 #include "web/web_server.h"

@@ -1,90 +1,548 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <meta charset='UTF-8'>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>ESP32S3位置定位</title>
-  <link rel='stylesheet' href='https://fonts.googleapis.com/css2?family=Roboto:wght@400;500&display=swap'>
-  <link rel="stylesheet" href="css/common.css">
-  <link rel="stylesheet" href="css/location.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Location Tracking - ESP32 Vehicle Control System</title>
+    <link rel="stylesheet" href="css/bootstrap.min.css">
+    <link rel="stylesheet" href="css/main.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
 </head>
-
 <body>
-  <div class="container">
-    <h1>ESP32S3位置定位</h1>
-    
-    <div class="main-content">
-      <div class="map-container">
-        <div id="location-map" class="map-canvas">
-          <div id="device-marker" class="device-marker">
-          <div id="direction-indicator" class="direction-indicator"></div>
+    <div class="container-fluid">
+        <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+            <div class="container-fluid">
+                <a class="navbar-brand" href="#">
+                    <i class="bi bi-robot"></i> ESP32 Vehicle Control
+                </a>
+                <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+                <div class="collapse navbar-collapse" id="navbarNav">
+                    <ul class="navbar-nav">
+                        <li class="nav-item">
+                            <a class="nav-link" href="index.html">
+                                <i class="bi bi-house-door"></i> Home
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="vehicle.html">
+                                <i class="bi bi-car-front"></i> Vehicle Control
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link active" href="location.html">
+                                <i class="bi bi-geo-alt"></i> Location
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="ai.html">
+                                <i class="bi bi-chat-dots"></i> AI Chat
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="settings.html">
+                                <i class="bi bi-gear"></i> Settings
+                            </a>
+                        </li>
+                    </ul>
+                    <div class="ms-auto">
+                        <span class="badge bg-success" id="status-badge">Connected</span>
+                        <span class="badge bg-danger d-none" id="status-badge-disconnected">Disconnected</span>
+                    </div>
+                </div>
+            </div>
+        </nav>
+
+        <div class="row mt-4">
+            <div class="col-md-8">
+                <div class="card">
+                    <div class="card-header bg-primary text-white">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <i class="bi bi-map"></i> Location Map
+                            </div>
+                            <div>
+                                <button class="btn btn-sm btn-light" id="btn-center-map">
+                                    <i class="bi bi-geo"></i> Center
+                                </button>
+                                <button class="btn btn-sm btn-light" id="btn-clear-path">
+                                    <i class="bi bi-trash"></i> Clear Path
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card-body p-0">
+                        <div id="map" class="map-container"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card">
+                    <div class="card-header bg-success text-white">
+                        <i class="bi bi-geo-alt"></i> Location Data
+                    </div>
+                    <div class="card-body">
+                        <div class="status-item">
+                            <span class="status-label">Current Position:</span>
+                            <div class="row">
+                                <div class="col-6">Lat: <span id="current-lat">0.000000</span></div>
+                                <div class="col-6">Lng: <span id="current-lng">0.000000</span></div>
+                            </div>
+                        </div>
+                        <div class="status-item">
+                            <span class="status-label">Altitude:</span>
+                            <span id="altitude-value">0 m</span>
+                        </div>
+                        <div class="status-item">
+                            <span class="status-label">Speed:</span>
+                            <span id="speed-value">0 km/h</span>
+                        </div>
+                        <div class="status-item">
+                            <span class="status-label">Heading:</span>
+                            <span id="heading-value">0°</span>
+                        </div>
+                        <div class="status-item">
+                            <span class="status-label">Accuracy:</span>
+                            <span id="accuracy-value">0 m</span>
+                        </div>
+                        <div class="status-item">
+                            <span class="status-label">Last Update:</span>
+                            <span id="last-update">Never</span>
           </div>
         </div>
       </div>
       
-      <div class="controls-container">
-        <div class="mode-controls">
-          <button class="mode-button active" id="auto-mode">自动定位</button>
-          <button class="mode-button" id="manual-mode">手动调整</button>
+                <div class="card mt-3">
+                    <div class="card-header bg-info text-white">
+                        <i class="bi bi-signpost-split"></i> Navigation
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label for="destination" class="form-label">Destination</label>
+                            <div class="input-group">
+                                <input type="text" class="form-control" id="destination" placeholder="Enter coordinates or address">
+                                <button class="btn btn-primary" type="button" id="btn-navigate">
+                                    <i class="bi bi-search"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <button class="btn btn-primary w-100" id="btn-start-navigation">
+                                <i class="bi bi-cursor"></i> Start Navigation
+                            </button>
+                        </div>
+                        <div class="mb-3">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="toggle-tracking">
+                                <label class="form-check-label" for="toggle-tracking">Real-time Tracking</label>
+                            </div>
+                        </div>
+                        <div class="status-item">
+                            <span class="status-label">Distance to Destination:</span>
+                            <span id="distance-to-destination">N/A</span>
+                        </div>
+                        <div class="status-item">
+                            <span class="status-label">Estimated Time:</span>
+                            <span id="estimated-time">N/A</span>
+                        </div>
+                    </div>
         </div>
         
-        <div class="location-info">
-          <div class="info-grid">
-            <div class="info-item">
-              <div class="info-label">X坐标</div>
-              <div class="info-value" id="x-position">0<span class="info-unit">cm</span></div>
+                <div class="card mt-3">
+                    <div class="card-header bg-secondary text-white">
+                        <i class="bi bi-list-ul"></i> Saved Locations
+                    </div>
+                    <div class="card-body p-0">
+                        <ul class="list-group list-group-flush" id="saved-locations">
+                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                <div>
+                                    <i class="bi bi-house"></i> Home
+                                </div>
+                                <button class="btn btn-sm btn-outline-primary">
+                                    <i class="bi bi-cursor"></i>
+                                </button>
+                            </li>
+                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                <div>
+                                    <i class="bi bi-building"></i> Office
+                                </div>
+                                <button class="btn btn-sm btn-outline-primary">
+                                    <i class="bi bi-cursor"></i>
+                                </button>
+                            </li>
+                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                <div>
+                                    <i class="bi bi-p-square"></i> Parking
+                                </div>
+                                <button class="btn btn-sm btn-outline-primary">
+                                    <i class="bi bi-cursor"></i>
+                                </button>
+                            </li>
+                        </ul>
             </div>
-            <div class="info-item">
-              <div class="info-label">Y坐标</div>
-              <div class="info-value" id="y-position">0<span class="info-unit">cm</span></div>
+                    <div class="card-footer">
+                        <button class="btn btn-sm btn-outline-success w-100" id="btn-save-location">
+                            <i class="bi bi-bookmark-plus"></i> Save Current Location
+                        </button>
             </div>
-            <div class="info-item">
-              <div class="info-label">方向角</div>
-              <div class="info-value" id="orientation">0<span class="info-unit">°</span></div>
             </div>
-            <div class="info-item">
-              <div class="info-label">信号强度</div>
-              <div class="info-value" id="signal-strength">0<span class="info-unit">db</span></div>
             </div>
           </div>
           
-          <button class="action-button" id="calibrate-btn">校准位置</button>
-          <button class="action-button" id="set-home-btn">设置为原点</button>
+        <footer class="mt-4 text-center text-muted">
+            <p>ESP32 Vehicle Control System &copy; 2023</p>
+        </footer>
         </div>
         
-        <div id="manual-controls" class="manual-controls hidden">
-          <div class="slider-container">
-            <label for="x-slider">X位置: <span id="x-slider-value">0</span>cm</label>
-            <input type="range" id="x-slider" min="0" max="100" step="1" value="50">
+    <div class="modal fade" id="saveLocationModal" tabindex="-1" aria-labelledby="saveLocationModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="saveLocationModalLabel">Save Location</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="location-name" class="form-label">Location Name</label>
+                        <input type="text" class="form-control" id="location-name" placeholder="Enter a name for this location">
+                    </div>
+                    <div class="mb-3">
+                        <label for="location-icon" class="form-label">Icon</label>
+                        <select class="form-select" id="location-icon">
+                            <option value="bi-house">Home</option>
+                            <option value="bi-building">Office</option>
+                            <option value="bi-p-square">Parking</option>
+                            <option value="bi-shop">Shop</option>
+                            <option value="bi-cup-hot">Cafe</option>
+                            <option value="bi-flag">Flag</option>
+                            <option value="bi-geo-alt">Pin</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Coordinates</label>
+                        <div class="row">
+                            <div class="col-6">
+                                <input type="text" class="form-control" id="save-lat" readonly>
           </div>
-          <div class="slider-container">
-            <label for="y-slider">Y位置: <span id="y-slider-value">0</span>cm</label>
-            <input type="range" id="y-slider" min="0" max="100" step="1" value="50">
+                            <div class="col-6">
+                                <input type="text" class="form-control" id="save-lng" readonly>
           </div>
-          <div class="slider-container">
-            <label for="orientation-slider">方向: <span id="orientation-slider-value">0</span>°</label>
-            <input type="range" id="orientation-slider" min="0" max="359" step="1" value="0">
           </div>
-          <button class="action-button" id="apply-manual-btn">应用设置</button>
           </div>
-          
-          <div class="status-container">
-            <div class="status">
-            <span id="connection-status" class="connection-status"></span>
-            <span id="status-text">正在连接...</span>
           </div>
-          <div id="debug-info" class="debug-info"></div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="btn-confirm-save">Save</button>
         </div>
       </div>
     </div>
-    
-    <div class="action-buttons">
-      <a href="/" class="back-button">返回主页</a>
-      <button id="toggle-debug" class="debug-button">显示调试信息</button>
     </div>
-  </div>
 
-  <script src="js/api_client.js"></script>
-  <script src="js/location.js"></script>
+    <script src="js/jquery-3.6.0.min.js"></script>
+    <script src="js/bootstrap.bundle.min.js"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <script src="js/main.js"></script>
+    <script>
+        $(document).ready(function() {
+            // Initialize map
+            const map = L.map('map').setView([0, 0], 15);
+            
+            // Add tile layer (OpenStreetMap)
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            }).addTo(map);
+            
+            // Vehicle marker
+            const vehicleIcon = L.icon({
+                iconUrl: 'img/vehicle-marker.png',
+                iconSize: [32, 32],
+                iconAnchor: [16, 16],
+                popupAnchor: [0, -16]
+            });
+            
+            const vehicleMarker = L.marker([0, 0], { icon: vehicleIcon }).addTo(map);
+            vehicleMarker.bindPopup('Vehicle Location');
+            
+            // Path line
+            const pathLine = L.polyline([], { color: 'blue', weight: 3 }).addTo(map);
+            
+            // Destination marker
+            let destinationMarker = null;
+            
+            // WebSocket connection for real-time updates
+            const socket = new WebSocket(`ws://${window.location.host}/ws/location`);
+            
+            socket.onopen = function() {
+                console.log('WebSocket connected');
+                $('#status-badge').removeClass('d-none');
+                $('#status-badge-disconnected').addClass('d-none');
+            };
+            
+            socket.onclose = function() {
+                console.log('WebSocket disconnected');
+                $('#status-badge').addClass('d-none');
+                $('#status-badge-disconnected').removeClass('d-none');
+            };
+            
+            socket.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+                
+                if (data.type === 'location') {
+                    updateLocation(data.data);
+                } else if (data.type === 'navigation') {
+                    updateNavigation(data.data);
+                }
+            };
+            
+            // Update location data and map
+            function updateLocation(location) {
+                const lat = location.latitude;
+                const lng = location.longitude;
+                
+                // Update text fields
+                $('#current-lat').text(lat.toFixed(6));
+                $('#current-lng').text(lng.toFixed(6));
+                $('#altitude-value').text(location.altitude.toFixed(1) + ' m');
+                $('#speed-value').text(location.speed.toFixed(1) + ' km/h');
+                $('#heading-value').text(location.heading.toFixed(1) + '°');
+                $('#accuracy-value').text(location.accuracy.toFixed(1) + ' m');
+                $('#last-update').text(new Date().toLocaleTimeString());
+                
+                // Update vehicle marker position
+                vehicleMarker.setLatLng([lat, lng]);
+                
+                // Add point to path
+                pathLine.addLatLng([lat, lng]);
+                
+                // Center map if tracking is enabled
+                if ($('#toggle-tracking').is(':checked')) {
+                    map.setView([lat, lng]);
+                }
+                
+                // Update navigation info if destination is set
+                if (destinationMarker) {
+                    const destLatLng = destinationMarker.getLatLng();
+                    const distance = map.distance([lat, lng], [destLatLng.lat, destLatLng.lng]);
+                    $('#distance-to-destination').text((distance / 1000).toFixed(2) + ' km');
+                    
+                    // Estimate time based on current speed
+                    if (location.speed > 0) {
+                        const timeInHours = distance / 1000 / location.speed;
+                        const timeInMinutes = timeInHours * 60;
+                        $('#estimated-time').text(Math.round(timeInMinutes) + ' min');
+                    } else {
+                        $('#estimated-time').text('N/A');
+                    }
+                }
+            }
+            
+            // Update navigation data
+            function updateNavigation(navigation) {
+                if (navigation.destination) {
+                    const lat = navigation.destination.latitude;
+                    const lng = navigation.destination.longitude;
+                    
+                    // Set or update destination marker
+                    if (destinationMarker) {
+                        destinationMarker.setLatLng([lat, lng]);
+                    } else {
+                        destinationMarker = L.marker([lat, lng], {
+                            icon: L.icon({
+                                iconUrl: 'img/destination-marker.png',
+                                iconSize: [32, 32],
+                                iconAnchor: [16, 32],
+                                popupAnchor: [0, -32]
+                            })
+                        }).addTo(map);
+                        destinationMarker.bindPopup('Destination');
+                    }
+                    
+                    // Update navigation info
+                    $('#distance-to-destination').text(navigation.distance.toFixed(2) + ' km');
+                    $('#estimated-time').text(navigation.estimatedTime + ' min');
+                    
+                    // Fit map to show both vehicle and destination
+                    const bounds = L.latLngBounds(vehicleMarker.getLatLng(), destinationMarker.getLatLng());
+                    map.fitBounds(bounds, { padding: [50, 50] });
+                }
+            }
+            
+            // Center map button
+            $('#btn-center-map').click(function() {
+                const latLng = vehicleMarker.getLatLng();
+                map.setView(latLng, 15);
+            });
+            
+            // Clear path button
+            $('#btn-clear-path').click(function() {
+                pathLine.setLatLngs([]);
+            });
+            
+            // Toggle tracking
+            $('#toggle-tracking').change(function() {
+                if ($(this).is(':checked')) {
+                    const latLng = vehicleMarker.getLatLng();
+                    map.setView(latLng, 15);
+                }
+            });
+            
+            // Navigation button
+            $('#btn-navigate').click(function() {
+                const destination = $('#destination').val();
+                if (destination) {
+                    // In a real implementation, this would geocode the address
+                    // For now, we'll simulate a destination
+                    const vehicleLatLng = vehicleMarker.getLatLng();
+                    const destLat = vehicleLatLng.lat + (Math.random() * 0.01 - 0.005);
+                    const destLng = vehicleLatLng.lng + (Math.random() * 0.01 - 0.005);
+                    
+                    if (destinationMarker) {
+                        destinationMarker.setLatLng([destLat, destLng]);
+                    } else {
+                        destinationMarker = L.marker([destLat, destLng], {
+                            icon: L.icon({
+                                iconUrl: 'img/destination-marker.png',
+                                iconSize: [32, 32],
+                                iconAnchor: [16, 32],
+                                popupAnchor: [0, -32]
+                            })
+                        }).addTo(map);
+                        destinationMarker.bindPopup('Destination');
+                    }
+                    
+                    // Calculate distance
+                    const distance = map.distance([vehicleLatLng.lat, vehicleLatLng.lng], [destLat, destLng]);
+                    $('#distance-to-destination').text((distance / 1000).toFixed(2) + ' km');
+                    $('#estimated-time').text(Math.round(distance / 1000 / 5 * 60) + ' min'); // Assuming 5 km/h
+                    
+                    // Fit map to show both vehicle and destination
+                    const bounds = L.latLngBounds(vehicleLatLng, [destLat, destLng]);
+                    map.fitBounds(bounds, { padding: [50, 50] });
+                }
+            });
+            
+            // Start navigation button
+            $('#btn-start-navigation').click(function() {
+                if (destinationMarker) {
+                    const destLatLng = destinationMarker.getLatLng();
+                    sendCommand('start_navigation', {
+                        latitude: destLatLng.lat,
+                        longitude: destLatLng.lng
+                    });
+                    
+                    $(this).text('Stop Navigation').removeClass('btn-primary').addClass('btn-danger');
+                    $(this).attr('id', 'btn-stop-navigation');
+                } else {
+                    alert('Please set a destination first');
+                }
+            });
+            
+            // Stop navigation button (dynamically added)
+            $(document).on('click', '#btn-stop-navigation', function() {
+                sendCommand('stop_navigation', {});
+                
+                $(this).text('Start Navigation').removeClass('btn-danger').addClass('btn-primary');
+                $(this).attr('id', 'btn-start-navigation');
+            });
+            
+            // Save location button
+            $('#btn-save-location').click(function() {
+                const latLng = vehicleMarker.getLatLng();
+                $('#save-lat').val(latLng.lat.toFixed(6));
+                $('#save-lng').val(latLng.lng.toFixed(6));
+                
+                const modal = new bootstrap.Modal(document.getElementById('saveLocationModal'));
+                modal.show();
+            });
+            
+            // Confirm save location
+            $('#btn-confirm-save').click(function() {
+                const name = $('#location-name').val();
+                const icon = $('#location-icon').val();
+                const lat = $('#save-lat').val();
+                const lng = $('#save-lng').val();
+                
+                if (name) {
+                    // Add to saved locations list
+                    const newLocation = `
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            <div>
+                                <i class="bi ${icon}"></i> ${name}
+  </div>
+                            <button class="btn btn-sm btn-outline-primary btn-navigate-to" data-lat="${lat}" data-lng="${lng}">
+                                <i class="bi bi-cursor"></i>
+                            </button>
+                        </li>
+                    `;
+                    
+                    $('#saved-locations').append(newLocation);
+                    
+                    // Hide modal
+                    bootstrap.Modal.getInstance(document.getElementById('saveLocationModal')).hide();
+                    
+                    // Clear form
+                    $('#location-name').val('');
+                }
+            });
+            
+            // Navigate to saved location
+            $(document).on('click', '.btn-navigate-to', function() {
+                const lat = $(this).data('lat');
+                const lng = $(this).data('lng');
+                
+                if (destinationMarker) {
+                    destinationMarker.setLatLng([lat, lng]);
+                } else {
+                    destinationMarker = L.marker([lat, lng], {
+                        icon: L.icon({
+                            iconUrl: 'img/destination-marker.png',
+                            iconSize: [32, 32],
+                            iconAnchor: [16, 32],
+                            popupAnchor: [0, -32]
+                        })
+                    }).addTo(map);
+                    destinationMarker.bindPopup('Destination');
+                }
+                
+                // Calculate distance
+                const vehicleLatLng = vehicleMarker.getLatLng();
+                const distance = map.distance([vehicleLatLng.lat, vehicleLatLng.lng], [lat, lng]);
+                $('#distance-to-destination').text((distance / 1000).toFixed(2) + ' km');
+                $('#estimated-time').text(Math.round(distance / 1000 / 5 * 60) + ' min'); // Assuming 5 km/h
+                
+                // Fit map to show both vehicle and destination
+                const bounds = L.latLngBounds(vehicleLatLng, [lat, lng]);
+                map.fitBounds(bounds, { padding: [50, 50] });
+            });
+            
+            // Send commands to the server
+            function sendCommand(cmd, params) {
+                if (socket.readyState === WebSocket.OPEN) {
+                    const message = {
+                        cmd: cmd,
+                        ...params
+                    };
+                    socket.send(JSON.stringify(message));
+                }
+            }
+            
+            // Simulate initial location (for demo purposes)
+            setTimeout(function() {
+                const initialLocation = {
+                    latitude: 37.7749,
+                    longitude: -122.4194,
+                    altitude: 10.5,
+                    speed: 0,
+                    heading: 90,
+                    accuracy: 5
+                };
+                
+                updateLocation(initialLocation);
+                map.setView([initialLocation.latitude, initialLocation.longitude], 15);
+            }, 500);
+        });
+    </script>
 </body>
 </html> 

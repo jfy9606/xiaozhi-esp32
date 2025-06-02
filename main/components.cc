@@ -5,6 +5,12 @@
 
 #define TAG "Components"
 
+// 实现单例获取方法
+ComponentManager& ComponentManager::GetInstance() {
+    static ComponentManager instance;
+    return instance;
+}
+
 void ComponentManager::StartAll() {
     for (auto component : components_) {
         if (!component->IsRunning()) {
@@ -71,9 +77,9 @@ void ComponentManager::StopComponentsByType(ComponentType type) {
     ESP_LOGI(TAG, "Stopped %d components of type %d", count, type);
 }
 
-void ComponentManager::RegisterComponent(Component* component) {
+bool ComponentManager::RegisterComponent(Component* component) {
     if (!component) {
-        return;
+        return false;
     }
     
     // 检查组件类型是否启用，如果没有启用则不注册
@@ -82,7 +88,7 @@ void ComponentManager::RegisterComponent(Component* component) {
         ESP_LOGI(TAG, "Component type %d not enabled in config, skipping registration for %s", 
                  type, component->GetName() ? component->GetName() : "unnamed");
         delete component; // 释放内存，防止泄漏
-        return;
+        return false;
     }
     
     // 检查是否已存在同名组件
@@ -94,15 +100,19 @@ void ComponentManager::RegisterComponent(Component* component) {
     if (it != components_.end()) {
         ESP_LOGW(TAG, "Component %s already registered", component->GetName());
         delete component; // 释放内存，防止泄漏
-        return;
+        return false;
     }
     
     components_.push_back(component);
     ESP_LOGI(TAG, "Component registered: %s (type: %d)", component->GetName(), component->GetType());
+    return true;
 }
 
-void ComponentManager::UnregisterComponent(Component* component) {
-    if (component) {
+bool ComponentManager::UnregisterComponent(Component* component) {
+    if (!component) {
+        return false;
+    }
+    
         // 如果组件正在运行，先停止它
         if (component->IsRunning()) {
             component->Stop();
@@ -113,8 +123,10 @@ void ComponentManager::UnregisterComponent(Component* component) {
         if (it != components_.end()) {
             components_.erase(it);
             ESP_LOGI(TAG, "Component unregistered: %s", component->GetName());
-        }
+        return true;
     }
+    
+    return false;
 }
 
 Component* ComponentManager::GetComponent(const char* name) {
@@ -160,11 +172,4 @@ bool ComponentManager::HasComponentType(ComponentType type) const {
     return false;
 }
 
-ComponentManager::~ComponentManager() {
-    StopAll();
-    
-    for (auto component : components_) {
-        delete component;
-    }
-    components_.clear();
-} 
+// Removed explicit destructor implementation since it's defaulted in header 

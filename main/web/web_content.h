@@ -64,6 +64,19 @@ public:
     // 设置WiFi配置
     bool ConfigureWifi(const PSRAMString& ssid, const PSRAMString& password);
 
+    // HTML内容大小获取函数
+    static size_t GetIndexHtmlSize();
+    static size_t GetVehicleHtmlSize();
+    static size_t GetAiHtmlSize();
+    static size_t GetVisionHtmlSize();
+    static size_t GetMotorHtmlSize();
+    
+    // HTML内容获取函数
+    static const char* GetIndexHtmlContent();
+    static const char* GetVehicleHtmlContent();
+    static const char* GetAiHtmlContent();
+    static const char* GetVisionHtmlContent();
+
 private:
     WebServer* server_;
     bool running_;
@@ -78,18 +91,27 @@ private:
     static size_t favicon_ico_size;
     static size_t style_css_size;
     static size_t script_js_size;
+    
+    // HTML内容大小
+    static size_t index_html_size;
+    static size_t vehicle_html_size;
+    static size_t ai_html_size;
+    static size_t vision_html_size;
+    
+    // 初始化HTML内容
+    static void InitHtmlContent();
 };
 
 // 导出HTML内容获取函数，供C代码调用
 extern "C" {
     size_t get_index_html_size();
-    size_t get_move_html_size();
+    size_t get_vehicle_html_size();
     size_t get_ai_html_size();
     size_t get_vision_html_size();
     size_t get_motor_html_size();
     
     const char* get_index_html_content();
-    const char* get_move_html_content();
+    const char* get_vehicle_html_content();
     const char* get_ai_html_content();
     const char* get_vision_html_content();
 } 

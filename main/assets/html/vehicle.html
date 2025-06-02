@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vehicle Control - ESP32 Vehicle Control System</title>
+    <link rel="stylesheet" href="css/bootstrap.min.css">
+    <link rel="stylesheet" href="css/main.css">
+    <link rel="stylesheet" href="css/vehicle.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
+</head>
+<body>
+    <div class="container-fluid">
+        <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+            <div class="container-fluid">
+                <a class="navbar-brand" href="#">
+                    <i class="bi bi-robot"></i> ESP32 Vehicle Control
+                </a>
+                <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+                <div class="collapse navbar-collapse" id="navbarNav">
+                    <ul class="navbar-nav">
+                        <li class="nav-item">
+                            <a class="nav-link" href="index.html">
+                                <i class="bi bi-house-door"></i> Home
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link active" href="vehicle.html">
+                                <i class="bi bi-car-front"></i> Vehicle Control
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="location.html">
+                                <i class="bi bi-geo-alt"></i> Location
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="ai.html">
+                                <i class="bi bi-chat-dots"></i> AI Chat
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="settings.html">
+                                <i class="bi bi-gear"></i> Settings
+                            </a>
+                        </li>
+                    </ul>
+                    <div class="ms-auto">
+                        <span class="badge bg-success" id="status-badge">Connected</span>
+                        <span class="badge bg-danger d-none" id="status-badge-disconnected">Disconnected</span>
+                    </div>
+                </div>
+            </div>
+        </nav>
+
+        <div class="row mt-4">
+            <div class="col-md-8">
+                <div class="card">
+                    <div class="card-header bg-primary text-white">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <i class="bi bi-camera-video"></i> Camera Feed
+                            </div>
+                            <div>
+                                <button class="btn btn-sm btn-light" id="btn-fullscreen">
+                                    <i class="bi bi-fullscreen"></i>
+                                </button>
+                                <button class="btn btn-sm btn-light" id="btn-capture">
+                                    <i class="bi bi-camera"></i>
+                                </button>
+                                <button class="btn btn-sm btn-light" id="btn-toggle-stream">
+                                    <i class="bi bi-pause-circle"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="camera-container position-relative">
+                            <img id="camera-feed" src="/api/camera/stream" alt="Camera Feed" class="img-fluid w-100">
+                            <div class="camera-overlay d-none" id="camera-offline">
+                                <i class="bi bi-camera-video-off"></i>
+                                <p>Camera Offline</p>
+                            </div>
+                            <div class="obstacle-indicators">
+                                <div class="obstacle-indicator front" id="obstacle-front">
+                                    <i class="bi bi-exclamation-triangle-fill"></i>
+                                </div>
+                                <div class="obstacle-indicator rear" id="obstacle-rear">
+                                    <i class="bi bi-exclamation-triangle-fill"></i>
+                                </div>
+                                <div class="obstacle-indicator left" id="obstacle-left">
+                                    <i class="bi bi-exclamation-triangle-fill"></i>
+                                </div>
+                                <div class="obstacle-indicator right" id="obstacle-right">
+                                    <i class="bi bi-exclamation-triangle-fill"></i>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card-footer">
+                        <div class="row">
+                            <div class="col-6">
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" id="toggle-obstacle-detection">
+                                    <label class="form-check-label" for="toggle-obstacle-detection">Obstacle Detection</label>
+                                </div>
+                            </div>
+                            <div class="col-6 text-end">
+                                <span class="badge bg-info" id="camera-resolution">640x480</span>
+                                <span class="badge bg-secondary" id="camera-fps">30 FPS</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card">
+                    <div class="card-header bg-success text-white">
+                        <i class="bi bi-controller"></i> Vehicle Controls
+                    </div>
+                    <div class="card-body">
+                        <div class="control-mode-selector mb-3">
+                            <div class="btn-group w-100" role="group">
+                                <input type="radio" class="btn-check" name="control-mode" id="control-mode-joystick" checked>
+                                <label class="btn btn-outline-primary" for="control-mode-joystick">
+                                    <i class="bi bi-joystick"></i> Joystick
+                                </label>
+                                
+                                <input type="radio" class="btn-check" name="control-mode" id="control-mode-buttons">
+                                <label class="btn btn-outline-primary" for="control-mode-buttons">
+                                    <i class="bi bi-dpad"></i> Buttons
+                                </label>
+                                
+                                <input type="radio" class="btn-check" name="control-mode" id="control-mode-auto">
+                                <label class="btn btn-outline-primary" for="control-mode-auto">
+                                    <i class="bi bi-magic"></i> Auto
+                                </label>
+                            </div>
+                        </div>
+                        
+                        <div id="joystick-control" class="control-panel">
+                            <div class="joystick-container">
+                                <div id="joystick-zone" class="joystick-zone"></div>
+                            </div>
+                            <div class="joystick-status mt-2">
+                                <div class="row">
+                                    <div class="col-6">
+                                        <small class="text-muted">Direction: <span id="joystick-direction">Center</span></small>
+                                    </div>
+                                    <div class="col-6">
+                                        <small class="text-muted">Force: <span id="joystick-force">0%</span></small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div id="button-control" class="control-panel d-none">
+                            <div class="d-flex flex-column align-items-center">
+                                <button class="btn btn-lg btn-primary mb-2 control-btn" id="btn-forward">
+                                    <i class="bi bi-arrow-up"></i>
+                                </button>
+                                <div class="d-flex justify-content-center">
+                                    <button class="btn btn-lg btn-primary me-2 control-btn" id="btn-left">
+                                        <i class="bi bi-arrow-left"></i>
+                                    </button>
+                                    <button class="btn btn-lg btn-danger mx-2 control-btn" id="btn-stop">
+                                        <i class="bi bi-stop-fill"></i>
+                                    </button>
+                                    <button class="btn btn-lg btn-primary ms-2 control-btn" id="btn-right">
+                                        <i class="bi bi-arrow-right"></i>
+                                    </button>
+                                </div>
+                                <button class="btn btn-lg btn-primary mt-2 control-btn" id="btn-backward">
+                                    <i class="bi bi-arrow-down"></i>
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div id="auto-control" class="control-panel d-none">
+                            <div class="list-group">
+                                <button class="list-group-item list-group-item-action" id="auto-follow-line">
+                                    <i class="bi bi-distribute-horizontal"></i> Line Following
+                                </button>
+                                <button class="list-group-item list-group-item-action" id="auto-obstacle-avoidance">
+                                    <i class="bi bi-bounding-box"></i> Obstacle Avoidance
+                                </button>
+                                <button class="list-group-item list-group-item-action" id="auto-face-tracking">
+                                    <i class="bi bi-person-badge"></i> Face Tracking
+                                </button>
+                                <button class="list-group-item list-group-item-action" id="auto-color-tracking">
+                                    <i class="bi bi-palette"></i> Color Tracking
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <hr>
+                        
+                        <h6>Pan-Tilt Controls</h6>
+                        <div class="mb-3">
+                            <label for="pan-slider" class="form-label d-flex justify-content-between">
+                                <span>Pan</span>
+                                <span id="pan-value">0°</span>
+                            </label>
+                            <input type="range" class="form-range" id="pan-slider" min="-90" max="90" value="0">
+                        </div>
+                        <div class="mb-3">
+                            <label for="tilt-slider" class="form-label d-flex justify-content-between">
+                                <span>Tilt</span>
+                                <span id="tilt-value">0°</span>
+                            </label>
+                            <input type="range" class="form-range" id="tilt-slider" min="-90" max="90" value="0">
+                        </div>
+                        <div class="text-center">
+                            <button class="btn btn-sm btn-secondary" id="btn-center-servos">
+                                <i class="bi bi-arrows-angle-contract"></i> Center
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="card mt-3">
+                    <div class="card-header bg-info text-white">
+                        <i class="bi bi-speedometer2"></i> Vehicle Status
+                    </div>
+                    <div class="card-body">
+                        <div class="status-item">
+                            <span class="status-label">Speed:</span>
+                            <span id="speed-value">0 m/s</span>
+                        </div>
+                        <div class="status-item">
+                            <span class="status-label">Battery:</span>
+                            <div class="progress">
+                                <div class="progress-bar bg-success" id="battery-level" role="progressbar" style="width: 75%;" aria-valuenow="75" aria-valuemin="0" aria-valuemax="100">75%</div>
+                            </div>
+                        </div>
+                        <div class="status-item">
+                            <span class="status-label">Distance:</span>
+                            <div class="row">
+                                <div class="col-6">Front: <span id="front-distance">25cm</span></div>
+                                <div class="col-6">Rear: <span id="rear-distance">40cm</span></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <footer class="mt-4 text-center text-muted">
+            <p>ESP32 Vehicle Control System &copy; 2023</p>
+        </footer>
+    </div>
+
+    <script src="js/jquery-3.6.0.min.js"></script>
+    <script src="js/bootstrap.bundle.min.js"></script>
+    <script src="js/nipplejs.min.js"></script>
+    <script src="js/main.js"></script>
+    <script>
+        $(document).ready(function() {
+            // Check camera status
+            $.get('/api/camera/status', function(data) {
+                if (!data.has_camera) {
+                    $('#camera-feed').addClass('d-none');
+                    $('#camera-offline').removeClass('d-none');
+                }
+            }).fail(function() {
+                $('#camera-feed').addClass('d-none');
+                $('#camera-offline').removeClass('d-none');
+            });
+
+            // Capture button
+            $('#btn-capture').click(function() {
+                window.open('/api/camera/capture', '_blank');
+            });
+
+            // Toggle stream button
+            let streaming = true;
+            $('#btn-toggle-stream').click(function() {
+                if (streaming) {
+                    $('#camera-feed').attr('src', '');
+                    $(this).html('<i class="bi bi-play-circle"></i>');
+                    streaming = false;
+                } else {
+                    $('#camera-feed').attr('src', '/api/camera/stream');
+                    $(this).html('<i class="bi bi-pause-circle"></i>');
+                    streaming = true;
+                }
+            });
+
+            // Fullscreen button
+            $('#btn-fullscreen').click(function() {
+                const elem = document.getElementById('camera-feed');
+                if (elem.requestFullscreen) {
+                    elem.requestFullscreen();
+                } else if (elem.webkitRequestFullscreen) { /* Safari */
+                    elem.webkitRequestFullscreen();
+                } else if (elem.msRequestFullscreen) { /* IE11 */
+                    elem.msRequestFullscreen();
+                }
+            });
+
+            // Control mode selector
+            $('#control-mode-joystick').change(function() {
+                if ($(this).is(':checked')) {
+                    $('.control-panel').addClass('d-none');
+                    $('#joystick-control').removeClass('d-none');
+                }
+            });
+
+            $('#control-mode-buttons').change(function() {
+                if ($(this).is(':checked')) {
+                    $('.control-panel').addClass('d-none');
+                    $('#button-control').removeClass('d-none');
+                }
+            });
+
+            $('#control-mode-auto').change(function() {
+                if ($(this).is(':checked')) {
+                    $('.control-panel').addClass('d-none');
+                    $('#auto-control').removeClass('d-none');
+                }
+            });
+
+            // Initialize joystick
+            const joystickManager = nipplejs.create({
+                zone: document.getElementById('joystick-zone'),
+                mode: 'static',
+                position: { left: '50%', top: '50%' },
+                color: 'blue',
+                size: 150
+            });
+
+            joystickManager.on('move', function(evt, data) {
+                const angle = data.angle.degree;
+                const force = Math.min(1, data.force / 2);
+                const direction = getDirection(angle);
+                
+                $('#joystick-direction').text(direction);
+                $('#joystick-force').text(Math.round(force * 100) + '%');
+                
+                // Send control command to vehicle
+                sendControlCommand(direction, force);
+            });
+
+            joystickManager.on('end', function() {
+                $('#joystick-direction').text('Center');
+                $('#joystick-force').text('0%');
+                
+                // Send stop command
+                sendControlCommand('stop', 0);
+            });
+
+            function getDirection(angle) {
+                if (angle >= 337.5 || angle < 22.5) return 'Forward';
+                if (angle >= 22.5 && angle < 67.5) return 'Forward Right';
+                if (angle >= 67.5 && angle < 112.5) return 'Right';
+                if (angle >= 112.5 && angle < 157.5) return 'Backward Right';
+                if (angle >= 157.5 && angle < 202.5) return 'Backward';
+                if (angle >= 202.5 && angle < 247.5) return 'Backward Left';
+                if (angle >= 247.5 && angle < 292.5) return 'Left';
+                if (angle >= 292.5 && angle < 337.5) return 'Forward Left';
+                return 'Center';
+            }
+
+            // Button controls
+            $('#btn-forward').on('mousedown touchstart', function() {
+                sendControlCommand('forward', 1);
+            }).on('mouseup touchend', function() {
+                sendControlCommand('stop', 0);
+            });
+
+            $('#btn-backward').on('mousedown touchstart', function() {
+                sendControlCommand('backward', 1);
+            }).on('mouseup touchend', function() {
+                sendControlCommand('stop', 0);
+            });
+
+            $('#btn-left').on('mousedown touchstart', function() {
+                sendControlCommand('left', 1);
+            }).on('mouseup touchend', function() {
+                sendControlCommand('stop', 0);
+            });
+
+            $('#btn-right').on('mousedown touchstart', function() {
+                sendControlCommand('right', 1);
+            }).on('mouseup touchend', function() {
+                sendControlCommand('stop', 0);
+            });
+
+            $('#btn-stop').click(function() {
+                sendControlCommand('stop', 0);
+            });
+
+            // Pan-Tilt controls
+            $('#pan-slider').on('input', function() {
+                const value = $(this).val();
+                $('#pan-value').text(value + '°');
+                sendServoCommand('pan', parseInt(value));
+            });
+
+            $('#tilt-slider').on('input', function() {
+                const value = $(this).val();
+                $('#tilt-value').text(value + '°');
+                sendServoCommand('tilt', parseInt(value));
+            });
+
+            $('#btn-center-servos').click(function() {
+                $('#pan-slider').val(0);
+                $('#tilt-slider').val(0);
+                $('#pan-value').text('0°');
+                $('#tilt-value').text('0°');
+                sendServoCommand('pan', 0);
+                sendServoCommand('tilt', 0);
+            });
+
+            // Auto control buttons
+            $('#auto-follow-line').click(function() {
+                sendAutoCommand('follow_line');
+                $(this).addClass('active').siblings().removeClass('active');
+            });
+
+            $('#auto-obstacle-avoidance').click(function() {
+                sendAutoCommand('obstacle_avoidance');
+                $(this).addClass('active').siblings().removeClass('active');
+            });
+
+            $('#auto-face-tracking').click(function() {
+                sendAutoCommand('face_tracking');
+                $(this).addClass('active').siblings().removeClass('active');
+            });
+
+            $('#auto-color-tracking').click(function() {
+                sendAutoCommand('color_tracking');
+                $(this).addClass('active').siblings().removeClass('active');
+            });
+
+            // Toggle obstacle detection
+            $('#toggle-obstacle-detection').change(function() {
+                const enabled = $(this).is(':checked');
+                sendCommand('set_obstacle_detection', { enabled: enabled });
+            });
+
+            // WebSocket connection for real-time updates
+            const socket = new WebSocket(`ws://${window.location.host}/ws/vehicle`);
+            
+            socket.onopen = function() {
+                console.log('WebSocket connected');
+                $('#status-badge').removeClass('d-none');
+                $('#status-badge-disconnected').addClass('d-none');
+            };
+            
+            socket.onclose = function() {
+                console.log('WebSocket disconnected');
+                $('#status-badge').addClass('d-none');
+                $('#status-badge-disconnected').removeClass('d-none');
+            };
+            
+            socket.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+                
+                if (data.type === 'status') {
+                    updateVehicleStatus(data.data);
+                } else if (data.type === 'obstacle') {
+                    updateObstacleStatus(data.data);
+                }
+            };
+
+            function updateVehicleStatus(status) {
+                // Update battery level
+                if (status.battery) {
+                    const batteryLevel = status.battery;
+                    $('#battery-level').css('width', batteryLevel + '%').text(batteryLevel + '%');
+                    
+                    if (batteryLevel > 60) {
+                        $('#battery-level').removeClass('bg-warning bg-danger').addClass('bg-success');
+                    } else if (batteryLevel > 20) {
+                        $('#battery-level').removeClass('bg-success bg-danger').addClass('bg-warning');
+                    } else {
+                        $('#battery-level').removeClass('bg-success bg-warning').addClass('bg-danger');
+                    }
+                }
+                
+                // Update speed
+                if (status.speed !== undefined) {
+                    $('#speed-value').text(status.speed + ' m/s');
+                }
+                
+                // Update distances
+                if (status.distance) {
+                    $('#front-distance').text(status.distance.front + 'cm');
+                    $('#rear-distance').text(status.distance.rear + 'cm');
+                }
+                
+                // Update camera info
+                if (status.camera) {
+                    if (status.camera.resolution) {
+                        $('#camera-resolution').text(status.camera.resolution);
+                    }
+                    if (status.camera.fps) {
+                        $('#camera-fps').text(status.camera.fps + ' FPS');
+                    }
+                }
+            }
+
+            function updateObstacleStatus(obstacles) {
+                // Update obstacle indicators
+                $('#obstacle-front').toggleClass('active', obstacles.front);
+                $('#obstacle-rear').toggleClass('active', obstacles.rear);
+                $('#obstacle-left').toggleClass('active', obstacles.left);
+                $('#obstacle-right').toggleClass('active', obstacles.right);
+            }
+
+            // Send commands to the server
+            function sendControlCommand(direction, force) {
+                sendCommand('control', { direction: direction, force: force });
+            }
+
+            function sendServoCommand(servo, angle) {
+                sendCommand('servo', { servo: servo, angle: angle });
+            }
+
+            function sendAutoCommand(mode) {
+                sendCommand('auto', { mode: mode });
+            }
+
+            function sendCommand(cmd, params) {
+                if (socket.readyState === WebSocket.OPEN) {
+                    const message = {
+                        cmd: cmd,
+                        ...params
+                    };
+                    socket.send(JSON.stringify(message));
+                }
+            }
+        });
+    </script>
+    <script src="js/vehicle.js"></script>
+</body>
+</html>

@@ -10,7 +10,7 @@
 
 #include "location/location_controller.h"
 #include "vision/vision_controller.h"
-#include "move/move_controller.h"
+#include "vehicle/vehicle_controller.h"
 #include "display.h"
 #include "system_info.h"
 #include "ml307_ssl_transport.h"
@@ -1565,17 +1565,17 @@ bool Application::InitComponents() {
     ESP_LOGI(TAG, "Registering Servo Thing");
     iot::ThingManager::GetInstance().AddThing(new iot::Thing("Servo", "舵机控制器"));
     
-    // 创建并注册MoveController
-    ESP_LOGI(TAG, "Creating and registering MoveController");
+    // 创建并注册VehicleController
+    ESP_LOGI(TAG, "Creating and registering VehicleController");
     
-    // 使用配置宏创建MoveController
-    static MoveController* move_controller = new MoveController(
+    // 使用配置宏创建VehicleController
+    static VehicleController* vehicle_controller = new VehicleController(
         CONFIG_MOTOR_ENA_PIN, CONFIG_MOTOR_ENB_PIN,
         CONFIG_MOTOR_PCF8575_IN1_PIN, CONFIG_MOTOR_PCF8575_IN2_PIN,
         CONFIG_MOTOR_PCF8575_IN3_PIN, CONFIG_MOTOR_PCF8575_IN4_PIN,
         CONFIG_SERVO_LU9685_LEFT_CHANNEL, CONFIG_SERVO_LU9685_RIGHT_CHANNEL);
     
-    manager.RegisterComponent(move_controller);
+    manager.RegisterComponent(vehicle_controller);
 #endif
 
     return true;

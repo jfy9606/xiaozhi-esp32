@@ -6,6 +6,12 @@
 let statusPollingInterval; // 状态轮询间隔ID
 let otaFile = null; // 保存固件文件
 
+// Configuration
+const indexConfig = {
+  ws: null,
+  deviceInfo: null,
+};
+
 // 初始化页面
 document.addEventListener('DOMContentLoaded', function() {
     // 获取系统状态
@@ -19,6 +25,9 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // 设置OTA相关事件
     setupOtaEvents();
+    
+    initWebSocket();
+    initFeatures();
 });
 
 // 启动状态轮询
@@ -349,4 +358,169 @@ function uploadFirmware(file) {
     
     xhr.open('POST', '/update');
     xhr.send(formData);
+}
+
+// Initialize WebSocket connection
+function initWebSocket() {
+  if (indexConfig.ws) {
+    indexConfig.ws.close();
+  }
+  
+  const wsUrl = `ws://${window.location.host}/ws/system`;
+  indexConfig.ws = new WebSocket(wsUrl);
+  
+  indexConfig.ws.onopen = function() {
+    console.log("WebSocket connection established");
+    // Request device info
+    sendWebSocketMessage({ cmd: 'get_device_info' });
+  };
+  
+  indexConfig.ws.onmessage = function(event) {
+    try {
+      const message = JSON.parse(event.data);
+      handleWebSocketMessage(message);
+    } catch (e) {
+      console.error("Error parsing WebSocket message:", e);
+    }
+  };
+  
+  indexConfig.ws.onclose = function() {
+    console.log("WebSocket connection closed");
+    // Try to reconnect after a delay
+    setTimeout(initWebSocket, 5000);
+  };
+  
+  indexConfig.ws.onerror = function(error) {
+    console.error("WebSocket error:", error);
+  };
+}
+
+// Send message through WebSocket
+function sendWebSocketMessage(message) {
+  if (indexConfig.ws && indexConfig.ws.readyState === WebSocket.OPEN) {
+    indexConfig.ws.send(JSON.stringify(message));
+  } else {
+    console.warn("WebSocket not connected");
+  }
+}
+
+// Handle incoming WebSocket messages
+function handleWebSocketMessage(message) {
+  console.log("Received message:", message);
+  
+  if (message.type === 'device_info') {
+    updateDeviceInfo(message.data);
+  }
+}
+
+// Update device info in the UI
+function updateDeviceInfo(info) {
+  indexConfig.deviceInfo = info;
+  
+  // Update elements with device info
+  const deviceNameElem = document.getElementById('device-name');
+  const deviceStatusElem = document.getElementById('device-status');
+  const deviceVersionElem = document.getElementById('device-version');
+  
+  if (deviceNameElem && info.name) {
+    deviceNameElem.textContent = info.name;
+  }
+  
+  if (deviceStatusElem && info.status) {
+    deviceStatusElem.textContent = info.status;
+    deviceStatusElem.className = `status-badge status-${info.status.toLowerCase()}`;
+  }
+  
+  if (deviceVersionElem && info.version) {
+    deviceVersionElem.textContent = `v${info.version}`;
+  }
+  
+  // Update feature availability
+  updateFeatureAvailability(info.features || {});
+}
+
+// Update feature cards based on availability
+function updateFeatureAvailability(features) {
+  // Camera feature
+  const cameraFeature = document.getElementById('feature-camera');
+  if (cameraFeature) {
+    if (features.camera) {
+      cameraFeature.classList.remove('feature-disabled');
+    } else {
+      cameraFeature.classList.add('feature-disabled');
+    }
+  }
+  
+  // Audio feature
+  const audioFeature = document.getElementById('feature-audio');
+  if (audioFeature) {
+    if (features.audio) {
+      audioFeature.classList.remove('feature-disabled');
+    } else {
+      audioFeature.classList.add('feature-disabled');
+    }
+  }
+  
+  // Display feature
+  const displayFeature = document.getElementById('feature-display');
+  if (displayFeature) {
+    if (features.display) {
+      displayFeature.classList.remove('feature-disabled');
+    } else {
+      displayFeature.classList.add('feature-disabled');
+    }
+  }
+  
+  // Motor feature
+  const motorFeature = document.getElementById('feature-motor');
+  if (motorFeature) {
+    if (features.motor) {
+      motorFeature.classList.remove('feature-disabled');
+    } else {
+      motorFeature.classList.add('feature-disabled');
+    }
+  }
+}
+
+// Initialize feature cards and buttons
+function initFeatures() {
+  // Camera feature card click
+  const cameraFeature = document.getElementById('feature-camera');
+  if (cameraFeature) {
+    cameraFeature.addEventListener('click', function() {
+      if (!this.classList.contains('feature-disabled')) {
+        window.location.href = '/vision';
+      }
+    });
+  }
+  
+  // AI chat feature card click
+  const aiFeature = document.getElementById('feature-ai');
+  if (aiFeature) {
+    aiFeature.addEventListener('click', function() {
+      if (!this.classList.contains('feature-disabled')) {
+        window.location.href = '/ai';
+      }
+    });
+  }
+  
+  // Control feature card click
+  const controlFeature = document.getElementById('feature-control');
+  if (controlFeature) {
+    controlFeature.addEventListener('click', function() {
+      if (!this.classList.contains('feature-disabled')) {
+        window.location.href = '/control';
+      }
+    });
+  }
+  
+  // Settings feature card click
+  const settingsFeature = document.getElementById('feature-settings');
+  if (settingsFeature) {
+    settingsFeature.addEventListener('click', function() {
+      if (!this.classList.contains('feature-disabled')) {
+        window.location.href = '/settings';
+      }
+    });
+  }
 } 

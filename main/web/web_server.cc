@@ -16,7 +16,6 @@
 #include "location/location_controller.h"
 #include "location/location_content.h"
 #include "web/web_content.h"
-#include "web/html_content.h"
 #include "iot/thing_manager.h"
 #include "api_definitions.h"
 #include "api_handlers.h"
@@ -36,12 +35,12 @@
 #include <iomanip>
 
 #ifdef CONFIG_ENABLE_WEB_CONTENT
-#include "html_content.h"
+#include "web_content.h"
 #endif
 
 // 声明外部函数（从其他组件获取HTML内容）
-extern const char* get_move_html_content();
-extern size_t get_move_html_size();
+extern const char* get_vehicle_html_content();
+extern size_t get_vehicle_html_size();
 extern const char* get_vision_html_content();
 extern size_t get_vision_html_size();
 extern const char* get_ai_html_content();
@@ -64,7 +63,7 @@ static const char* WS_MSG_TAG = "WsMessage";
 extern "C" { 
     // 常量别名
     extern const char* INDEX_HTML;
-    extern const char* MOVE_HTML;
+    extern const char* VEHICLE_HTML;
     extern const char* AI_HTML;
     extern const char* VISION_HTML;
     extern const char* LOCATION_HTML;
@@ -73,7 +72,7 @@ extern "C" {
 
 // Forward declarations
 #if defined(CONFIG_ENABLE_MOTOR_CONTROLLER)
-extern void InitMoveComponents(WebServer* server);
+extern void InitVehicleComponents(WebServer* server);
 #endif
 #if CONFIG_ENABLE_AI_CONTROLLER && CONFIG_ENABLE_WEB_CONTENT
 extern void InitAIComponents(WebServer* server);
@@ -195,6 +194,12 @@ bool WebServer::Start() {
     
     // 开始定期广播系统状态
     StartPeriodicStatusUpdates();
+    
+    // 如果有注册就绪回调，调用它
+    if (ready_callback_) {
+        ESP_LOGI(TAG, "Calling ready callback");
+        ready_callback_();
+    }
     
     // 注册所有URI处理器
     bool has_registered_all = true;
@@ -560,8 +565,8 @@ esp_err_t WebServer::VisionHandler(httpd_req_t *req) {
 esp_err_t WebServer::CarHandler(httpd_req_t *req) {
 #if defined(CONFIG_ENABLE_MOTOR_CONTROLLER)
     // 获取电机控制相关的HTML内容
-            const char* html_content = get_move_html_content();
-        size_t len = get_move_html_size();
+            const char* html_content = get_vehicle_html_content();
+        size_t len = get_vehicle_html_size();
     
         ESP_LOGI(TAG, "Serving car.html, size: %d bytes", len);
     return SendHttpResponse(req, "text/html", html_content, len);
@@ -918,16 +923,22 @@ void WebServer::HandleWebSocketMessage(int client_id, const PSRAMString& message
     
     try {
         // 检查是否是心跳消息
-        if (message.find("heartbeat") != PSRAMString::npos) {
+        if (message.find("heartbeat") != PSRAMString::npos || 
+            message.find("ping") != PSRAMString::npos) {
             ESP_LOGD(WS_MSG_TAG, "收到心跳消息，发送响应和状态更新");
             
-            // 生成系统状态数据
-            PSRAMString status = GetSystemStatusJson();
-            
             // 发送心跳响应
-            SendWebSocketMessage(client_id, "{\"type\":\"heartbeat_response\",\"status\":\"ok\"}");
+            cJSON* pong_response = cJSON_CreateObject();
+            cJSON_AddStringToObject(pong_response, "type", "pong");
+            cJSON_AddNumberToObject(pong_response, "timestamp", esp_timer_get_time() / 1000);
+            
+            char* pong_str = cJSON_PrintUnformatted(pong_response);
+            SendWebSocketMessage(client_id, pong_str);
+            free(pong_str);
+            cJSON_Delete(pong_response);
             
             // 同时发送系统状态更新
+            PSRAMString status = GetSystemStatusJson();
             SendWebSocketMessage(client_id, status);
             return;
         }
@@ -949,6 +960,18 @@ void WebServer::HandleWebSocketMessage(int client_id, const PSRAMString& message
         
         PSRAMString msg_type = type_json->valuestring;
         ESP_LOGD(WS_MSG_TAG, "消息类型: %s", msg_type.c_str());
+        
+        // 首先检查是否有注册的处理器
+        auto handler_it = ws_handlers_.find(msg_type);
+        if (handler_it != ws_handlers_.end()) {
+            try {
+                handler_it->second(client_id, message, msg_type);
+                cJSON_Delete(root);
+                return;
+            } catch (const std::exception& e) {
+                ESP_LOGE(WS_MSG_TAG, "WebSocket处理器异常: %s", e.what());
+            }
+        }
         
         // 处理不同类型的消息
         if (msg_type == "get_system_status") {
@@ -1002,6 +1025,55 @@ void WebServer::HandleWebSocketMessage(int client_id, const PSRAMString& message
                     }
                 }
             }
+        }
+        // 处理joystick类型消息
+        else if (msg_type == "joystick") {
+            // 处理摇杆控制命令
+            PSRAMString error_msg = "";
+            
+            // 这里需要添加joystick消息处理逻辑
+            // 例如转发到车辆控制系统
+            cJSON* speed_json = cJSON_GetObjectItem(root, "speed");
+            cJSON* dirX_json = cJSON_GetObjectItem(root, "dirX");
+            cJSON* dirY_json = cJSON_GetObjectItem(root, "dirY");
+            
+            if (speed_json && dirX_json && dirY_json) {
+                // 处理控制命令...
+                // 返回确认响应
+                cJSON* ack_response = cJSON_CreateObject();
+                cJSON_AddStringToObject(ack_response, "type", "joystick_ack");
+                cJSON_AddStringToObject(ack_response, "status", "ok");
+                
+                char* ack_str = cJSON_PrintUnformatted(ack_response);
+                SendWebSocketMessage(client_id, ack_str);
+                free(ack_str);
+                cJSON_Delete(ack_response);
+            } else {
+                // 返回错误响应
+                cJSON* error_response = cJSON_CreateObject();
+                cJSON_AddStringToObject(error_response, "type", "error");
+                cJSON_AddStringToObject(error_response, "message", "Invalid joystick control parameters");
+                
+                char* error_str = cJSON_PrintUnformatted(error_response);
+                SendWebSocketMessage(client_id, error_str);
+                free(error_str);
+                cJSON_Delete(error_response);
+            }
+        }
+        else {
+            // 如果没有找到处理器，发送错误响应
+            ESP_LOGW(WS_MSG_TAG, "未找到消息类型 '%s' 的处理器", msg_type.c_str());
+            
+            // 发送错误响应
+            cJSON* error_response = cJSON_CreateObject();
+            cJSON_AddStringToObject(error_response, "type", "error");
+            cJSON_AddStringToObject(error_response, "message", "Unknown message type");
+            cJSON_AddStringToObject(error_response, "original_type", msg_type.c_str());
+            
+            char* error_str = cJSON_PrintUnformatted(error_response);
+            SendWebSocketMessage(client_id, error_str);
+            free(error_str);
+            cJSON_Delete(error_response);
         }
         
         cJSON_Delete(root);
@@ -1486,7 +1558,7 @@ void WebServer::InitWebComponents() {
     // 注册但不启动移动组件
 #if defined(CONFIG_ENABLE_MOTOR_CONTROLLER)
     if (ComponentManager::IsComponentTypeEnabled(COMPONENT_TYPE_MOTOR)) {
-    InitMoveComponents(web_server);
+    InitVehicleComponents(web_server);
         ESP_LOGI(TAG, "移动组件已注册");
     } else {
         ESP_LOGI(TAG, "移动组件在配置中已禁用");
@@ -1599,21 +1671,21 @@ bool WebServer::StartWebComponents() {
         // 启动移动相关组件
 #if defined(CONFIG_ENABLE_MOTOR_CONTROLLER)
         if (ComponentManager::IsComponentTypeEnabled(COMPONENT_TYPE_MOTOR)) {
-        Component* move_controller = manager.GetComponent("MoveController");
+        Component* vehicle_controller = manager.GetComponent("VehicleController");
         
-        if (move_controller && !move_controller->IsRunning()) {
-            if (!move_controller->Start()) {
-                ESP_LOGE(TAG, "启动MoveController失败");
+        if (vehicle_controller && !vehicle_controller->IsRunning()) {
+            if (!vehicle_controller->Start()) {
+                ESP_LOGE(TAG, "启动VehicleController失败");
             } else {
-                ESP_LOGI(TAG, "MoveController启动成功");
+                ESP_LOGI(TAG, "VehicleController启动成功");
         
-                    // 只有在MoveController启动成功后才启动MoveContent
-        Component* move_content = manager.GetComponent("MoveContent");
-        if (move_content && !move_content->IsRunning()) {
-            if (!move_content->Start()) {
-                ESP_LOGE(TAG, "启动MoveContent失败");
+                                // 只有在VehicleController启动成功后才启动VehicleContent
+            Component* vehicle_content = manager.GetComponent("VehicleContent");
+            if (vehicle_content && !vehicle_content->IsRunning()) {
+                if (!vehicle_content->Start()) {
+                    ESP_LOGE(TAG, "启动VehicleContent失败");
             } else {
-                ESP_LOGI(TAG, "MoveContent启动成功");
+                    ESP_LOGI(TAG, "VehicleContent启动成功");
             }
                     }
                 }
