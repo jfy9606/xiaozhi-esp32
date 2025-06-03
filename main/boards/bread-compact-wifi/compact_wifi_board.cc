@@ -11,8 +11,7 @@
 #include "led/single_led.h"
 #include "assets/lang_config.h"
 #include "../common/esp32_camera.h"
-#include "vision/vision_controller.h"
-#include "vision/vision_content.h"
+#include "vision/vision.h"
 
 #include <wifi_station.h>
 #include <esp_log.h>
@@ -352,7 +351,7 @@ private:
         }
         
         // 获取板级配置
-        board_config_t* board_config = board_config_get();
+        board_config_t* board_config = Board::GetBoardConfig();
         if (board_config) {
             // 配置摄像头引脚
             camera_config_t config = {};
@@ -486,25 +485,24 @@ public:
         if (camera_ && camera_->IsInitialized()) {
             // 检查是否已经有VisionController实例
             auto& manager = ComponentManager::GetInstance();
-            if (!manager.GetComponent("VisionController")) {
+            if (!manager.GetComponent("Vision")) {
                 ESP_LOGI(TAG, "Initializing Vision subsystem...");
                 
-                // 在Web Server启动后，自动添加Vision支持
-                auto webserver_component = manager.GetComponent("WebServer");
+                // 查找Web组件
+                auto webserver_component = manager.GetComponent("Web");
                 if (webserver_component) {
-                    WebServer* webserver = static_cast<WebServer*>(webserver_component);
+                    Web* webserver = static_cast<Web*>(webserver_component);
                     
-                    // 注册Vision准备就绪回调
-                    webserver->RegisterReadyCallback([webserver]() {
-                        // 延迟初始化Vision组件，以确保WebServer已完全启动
-                        ESP_LOGI(TAG, "WebServer ready, initializing Vision components");
-                        InitVisionComponents(webserver);
-                    });
+                    // Web组件已经在运行，可以直接初始化Vision组件
+                    ESP_LOGI(TAG, "Web server is available, initializing Vision component");
+                    InitVisionComponent(webserver);
                     
-                    ESP_LOGI(TAG, "Vision subsystem initialization scheduled");
+                    ESP_LOGI(TAG, "Vision subsystem initialized");
                 } else {
-                    ESP_LOGW(TAG, "WebServer component not found, Vision subsystem not initialized");
+                    ESP_LOGW(TAG, "Web component not found, Vision initialization will be handled by Application");
                 }
+            } else {
+                ESP_LOGI(TAG, "Vision component already registered");
             }
         }
 

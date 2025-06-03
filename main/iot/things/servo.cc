@@ -7,7 +7,7 @@
 #include "iot/thing.h"
 #include "iot/thing_manager.h"
 #include "board.h"
-#include "../boards/common/board_config.h"
+#include "../boards/common/board.h"
 #include "ext/include/lu9685.h"
 #include "ext/include/i2c_utils.h"  // 新添加的I2C工具头文件
 #include "sdkconfig.h"

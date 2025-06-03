@@ -27,12 +27,12 @@
 
 // 只有在电机控制器启用时才包含相关头文件
 #if defined(CONFIG_ENABLE_MOTOR_CONTROLLER)
-#include "vehicle/vehicle_controller.h"
+#include "vehicle/vehicle.h"
 #endif
 
 // 只有在Web服务器启用时才包含相关头文件
 #if defined(CONFIG_ENABLE_WEB_SERVER)
-#include "web/web_server.h"
+#include "web/web.h"
 #endif
 
 #define SCHEDULE_EVENT (1 << 0)
@@ -98,6 +98,7 @@ public:
     void SetAecMode(AecMode mode);
     AecMode GetAecMode() const { return aec_mode_; }
     BackgroundTask* GetBackgroundTask() const { return background_task_; }
+    void InitVehicleComponent(Web* web_server);
 
 private:
     Application();
@@ -156,6 +157,8 @@ private:
     // 初始化位置控制器
     void InitLocationController();
 #endif
+
+    void CleanupComponents();
 };
 
 #endif // _APPLICATION_H_

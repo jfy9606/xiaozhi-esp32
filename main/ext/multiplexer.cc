@@ -12,7 +12,7 @@
 #include "sdkconfig.h"
 
 // Include board-specific configurations
-#include "board_config.h"
+#include "../boards/common/board.h"
 
 // Include multiplexer drivers
 #ifdef CONFIG_ENABLE_PCA9548A

@@ -1,7 +1,11 @@
 #pragma once
 
 #include "../components.h"
+#include "../iot/thing.h"
+#include "../iot/thing_manager.h"
+#include "../web/web.h"
 #include <vector>
+#include <string>
 
 // 默认参数定义
 #define DEFAULT_SPEED 150
@@ -13,26 +17,42 @@
 #define MIN_SERVO_ANGLE 0
 #define MAX_SERVO_ANGLE 180
 
-// 移动控制器组件类型
-enum VehicleControllerType {
+// 车辆控制器类型
+enum VehicleType {
     VEHICLE_TYPE_MOTOR,      // 使用电机控制
     VEHICLE_TYPE_SERVO,      // 使用舵机控制
-    VEHICLE_TYPE_HYBRID      // 混合控制（同时使用电机和舵机）
+    VEHICLE_TYPE_HYBRID,     // 混合控制（同时使用电机和舵机）
+    VEHICLE_TYPE_MOTOR_CAMERA, // 带云台的电机小车
+    VEHICLE_TYPE_SERVO_CAMERA  // 带云台的舵机小车
 };
 
-class VehicleController : public Component {
+/**
+ * Vehicle组件：整合车辆控制和Web内容管理
+ * 
+ * 此类负责:
+ * 1. 电机与舵机的底层控制
+ * 2. 车辆运动控制逻辑
+ * 3. Web界面相关功能的处理
+ * 4. WebSocket实时通信
+ */
+class Vehicle : public Component {
 public:
-    // 构造函数 - 电机控制配置
-    VehicleController(int ena_pin, int enb_pin, int in1_pin, int in2_pin, int in3_pin, int in4_pin);
+    // 构造函数
+    // 电机控制构造函数
+    Vehicle(Web* server, int ena_pin, int enb_pin, int in1_pin, int in2_pin, int in3_pin, int in4_pin);
     
-    // 构造函数 - 舵机控制配置
-    VehicleController(int steering_servo_pin, int throttle_servo_pin = -1);
+    // 舵机控制构造函数
+    Vehicle(Web* server, int steering_servo_pin, int throttle_servo_pin = -1);
     
-    // 混合控制构造函数
-    VehicleController(int ena_pin, int enb_pin, int in1_pin, int in2_pin, int in3_pin, int in4_pin,
-                  int steering_servo_pin, int throttle_servo_pin = -1);
+    // 带云台的电机小车构造函数
+    Vehicle(Web* server, int ena_pin, int enb_pin, int in1_pin, int in2_pin, int in3_pin, int in4_pin,
+            int camera_h_servo_pin, int camera_v_servo_pin);
     
-    virtual ~VehicleController();
+    // 带云台的舵机小车构造函数
+    Vehicle(Web* server, int steering_servo_pin, int throttle_servo_pin,
+            int camera_h_servo_pin, int camera_v_servo_pin);
+    
+    virtual ~Vehicle();
 
     // Component接口实现
     virtual bool Start() override;
@@ -41,9 +61,9 @@ public:
     virtual const char* GetName() const override;
     virtual ComponentType GetType() const override { return COMPONENT_TYPE_MOTOR; }
 
-    // 设置控制参数
+    // 车辆控制方法
     void SetControlParams(float distance, int dirX, int dirY);
-
+    
     // 电机控制方法
     void Forward(int speed = DEFAULT_SPEED);
     void Backward(int speed = DEFAULT_SPEED);
@@ -55,8 +75,11 @@ public:
     // 舵机控制方法
     void SetSteeringAngle(int angle);
     void SetThrottlePosition(int position);
+    
+    // Web相关方法
+    void HandleWebSocketMessage(int client_index, const std::string& message);
 
-    // 辅助方法
+    // 辅助方法和获取器
     inline int map(int x, int in_min, int in_max, int out_min, int out_max) {
         return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
     }
@@ -65,14 +88,23 @@ public:
     int GetCurrentSpeed() const { return motor_speed_; }
     int GetDirectionX() const { return direction_x_; }
     int GetDirectionY() const { return direction_y_; }
-    VehicleControllerType GetControllerType() const { return controller_type_; }
+    VehicleType GetControllerType() const { return vehicle_type_; }
     
     // 获取舵机角度
     int GetSteeringAngle() const { return steering_angle_; }
     int GetThrottlePosition() const { return throttle_position_; }
 
+    // 物联网集成 Thing相关逻辑
+    static void SendUltrasonicData(Web* server, iot::Thing* thing);
+    static void SendServoData(Web* server, iot::Thing* thing);
+
 private:
-    VehicleControllerType controller_type_;
+    // 车辆类型
+    VehicleType vehicle_type_;
+    bool running_;
+    
+    // WebServer引用
+    Web* webserver_;
     
     // 电机控制引脚
     int ena_pin_;
@@ -85,8 +117,6 @@ private:
     // 舵机控制引脚
     int steering_servo_pin_;
     int throttle_servo_pin_;
-    
-    bool running_;
     
     // 控制参数
     int direction_x_;
@@ -103,7 +133,16 @@ private:
     int steering_angle_;
     int throttle_position_;
 
+    // 带云台的引脚
+    int camera_h_servo_pin_;
+    int camera_v_servo_pin_;
+
+    // HTTP处理器
+    static esp_err_t HandleVehicle(httpd_req_t *req);
+    static esp_err_t HandleServo(httpd_req_t *req);
+    
     // 初始化方法
+    void InitHandlers();
     void InitGPIO();
     void InitServos();
     
@@ -111,7 +150,12 @@ private:
     void ControlMotor(int in1, int in2, int in3, int in4);
     void ControlSteeringServo(int angle);
     void ControlThrottleServo(int position);
-    
-    // 通用舵机控制方法 - 使用LU9685
     bool ControlServoWithLU9685(int channel, int angle);
-}; 
+    
+    // 数据发送任务
+    static void UltrasonicDataTask(void* pvParameters);
+    static void ServoDataTask(void* pvParameters);
+};
+
+// 全局初始化函数
+void InitVehicleComponent(Web* server); 

@@ -4,13 +4,13 @@
 #include <nvs_flash.h>
 
 #include "application.h"
-#include "web/web_server.h"
+#include "web/web.h"
 #include "boards/common/board.h"
 #include "multiplexer.h"
 
-#include "location/location_controller.h"
-#include "vision/vision_controller.h"
-#include "vehicle/vehicle_controller.h"
+#include "location/location.h"
+#include "vision/vision.h"
+#include "vehicle/vehicle.h"
 #include "display.h"
 #include "system_info.h"
 #include "ml307_ssl_transport.h"
@@ -770,7 +770,6 @@ void Application::Start() {
 
 #endif // CONFIG_ENABLE_MULTIPLEXER
 
-    // 如果配置了PCF8575，则初始化
     // Initialize PCF8575 if configured
 #ifdef CONFIG_ENABLE_PCF8575
     if (pca9548a_is_initialized()) {
@@ -786,18 +785,29 @@ void Application::Start() {
     }
 #endif
 
-    // 首先完成所有组件的注册
-    ESP_LOGI(TAG, "Now registering all components");
-    InitComponents();
-    
+    // 首先创建和注册Web组件，以便其他组件可以使用它
 #if defined(CONFIG_ENABLE_WEB_SERVER)
-    // 现在再初始化Web组件
+    // 首先初始化Web组件
     ESP_LOGI(TAG, "Initializing web components");
-    WebServer::InitWebComponents();
+    Web* web = new Web(8080);
+    if (web) {
+        auto& manager = ComponentManager::GetInstance();
+        manager.RegisterComponent(web);
+        if (!web->Start()) {
+            ESP_LOGE(TAG, "Failed to start Web component");
+            // 不要在这里返回，继续初始化其他组件
+        } else {
+            ESP_LOGI(TAG, "Web服务器初始化成功，端口：8080");
+        }
+    }
     ESP_LOGI(TAG, "Web components registered");
 #endif
 
-    // 然后初始化所有组件
+    // 然后注册其他组件，现在它们可以访问Web组件
+    ESP_LOGI(TAG, "Now registering all components");
+    InitComponents();
+    
+    // 初始化所有组件
     ESP_LOGI(TAG, "Now initializing all registered components");
     InitializeComponents();
     
@@ -1537,67 +1547,45 @@ bool Application::InitComponents() {
     // 获取组件管理器单例
     auto& manager = ComponentManager::GetInstance();
     
+    // 获取Web组件，只声明一次，用于所有需要Web的组件
+    Web* web_server = nullptr;
+    if (manager.GetComponent("Web")) {
+        web_server = (Web*)manager.GetComponent("Web");
+        ESP_LOGI(TAG, "Found Web component");
+    } else {
+        ESP_LOGW(TAG, "Web component not found, Vision and Location components will not have web access");
+    }
+    
     // 注册Vision控制器组件
 #ifdef CONFIG_ENABLE_VISION_CONTROLLER
-    ESP_LOGI(TAG, "Registering VisionController");
-    static VisionController* vision_controller = new VisionController();
-    manager.RegisterComponent(vision_controller);
+    ESP_LOGI(TAG, "Registering Vision component");
+    static Vision* vision = new Vision(web_server);
+    manager.RegisterComponent(vision);
 #endif
 
     // 注册位置控制器组件
 #ifdef CONFIG_ENABLE_LOCATION_CONTROLLER
-    ESP_LOGI(TAG, "Registering LocationController");
-    manager.RegisterComponent(LocationController::GetInstance());
+    ESP_LOGI(TAG, "Registering Location component");
+    static Location* location = new Location(web_server);
+    manager.RegisterComponent(location);
 #endif
 
-    // 初始化网页组件
-#if defined(CONFIG_ENABLE_WEB_SERVER) && defined(CONFIG_ENABLE_WEB_CONTENT)
-    ESP_LOGI(TAG, "Registering WebServer");
-    WebServer::InitWebComponents();
-#endif
-
+    // 初始化车辆控制组件
 #ifdef CONFIG_ENABLE_MOTOR_CONTROLLER
-    // 注册电机控制器Thing
-    ESP_LOGI(TAG, "Registering Motor Thing");
-    iot::ThingManager::GetInstance().AddThing(new iot::Thing("Motor", "电机控制器"));
-    
-    // 注册舵机Thing
-    ESP_LOGI(TAG, "Registering Servo Thing");
-    iot::ThingManager::GetInstance().AddThing(new iot::Thing("Servo", "舵机控制器"));
-    
-    // 创建并注册VehicleController
-    ESP_LOGI(TAG, "Creating and registering VehicleController");
-    
-    // 使用配置宏创建VehicleController
-    static VehicleController* vehicle_controller = new VehicleController(
-        CONFIG_MOTOR_ENA_PIN, CONFIG_MOTOR_ENB_PIN,
-        CONFIG_MOTOR_PCF8575_IN1_PIN, CONFIG_MOTOR_PCF8575_IN2_PIN,
-        CONFIG_MOTOR_PCF8575_IN3_PIN, CONFIG_MOTOR_PCF8575_IN4_PIN,
-        CONFIG_SERVO_LU9685_LEFT_CHANNEL, CONFIG_SERVO_LU9685_RIGHT_CHANNEL);
-    
-    manager.RegisterComponent(vehicle_controller);
+    InitVehicleComponent(web_server);
 #endif
 
     return true;
 }
 
 #ifdef CONFIG_ENABLE_LOCATION_CONTROLLER
-
 // 初始化位置控制器
 void Application::InitLocationController() {
     ESP_LOGI(TAG, "初始化位置控制器...");
     try {
-        auto* location_controller = LocationController::GetInstance();
-        if (!location_controller->IsInitialized()) {
-            // LocationController 类没有 Initialize 方法，应该直接启动
-            // 设置初始化标志
-            location_controller->SetInitialized(true);
-        }
-
-        // 启动位置控制器
-        if (!location_controller->Start()) {
-            ESP_LOGW(TAG, "位置控制器启动失败");
-            return;
+        auto* location = (Location*)ComponentManager::GetInstance().GetComponent("Location");
+        if (location && !location->IsRunning()) {
+            location->Start();
         }
 
         ESP_LOGI(TAG, "位置控制器初始化成功");
@@ -1633,4 +1621,79 @@ void Application::SetAecMode(AecMode mode) {
             protocol_->CloseAudioChannel();
         }
     });
+}
+
+void Application::InitVehicleComponent(Web* web_server) {
+    ESP_LOGI(TAG, "Creating and registering Vehicle component");
+    
+    // 创建适当类型的车辆
+    Vehicle* vehicle = nullptr;
+    
+#ifdef CONFIG_ENABLE_MOTOR_CONTROLLER
+    // 使用安全的默认值，避免未定义配置导致编译错误
+    // 如果这些引脚未配置，将默认设置为-1表示无效
+#ifdef CONFIG_MOTOR_ENA_PIN
+    int ena_pin = CONFIG_MOTOR_ENA_PIN;
+    int enb_pin = CONFIG_MOTOR_ENB_PIN;
+#else
+    int ena_pin = -1;
+    int enb_pin = -1;
+#endif
+
+    // 电机引脚
+#if defined(CONFIG_MOTOR_IN1_PIN) && defined(CONFIG_MOTOR_IN2_PIN) && defined(CONFIG_MOTOR_IN3_PIN) && defined(CONFIG_MOTOR_IN4_PIN)
+    int in1_pin = CONFIG_MOTOR_IN1_PIN;
+    int in2_pin = CONFIG_MOTOR_IN2_PIN;
+    int in3_pin = CONFIG_MOTOR_IN3_PIN;
+    int in4_pin = CONFIG_MOTOR_IN4_PIN;
+#else
+    int in1_pin = -1;
+    int in2_pin = -1;
+    int in3_pin = -1;
+    int in4_pin = -1;
+#endif
+
+    // 舵机引脚
+#if defined(CONFIG_SERVO_PIN_1) && defined(CONFIG_SERVO_PIN_2)
+    int servo_pin_1 = CONFIG_SERVO_PIN_1;
+    int servo_pin_2 = CONFIG_SERVO_PIN_2;
+#else
+    int servo_pin_1 = -1;
+    int servo_pin_2 = -1;
+#endif
+    
+    // 检查电机引脚是否配置
+    bool motor_pins_ok = (ena_pin >= 0 && enb_pin >= 0 && 
+                         in1_pin >= 0 && in2_pin >= 0 && 
+                         in3_pin >= 0 && in4_pin >= 0);
+    
+    // 检查舵机引脚是否配置
+    bool servo_pins_ok = (servo_pin_1 >= 0 && servo_pin_2 >= 0);
+    
+    if (motor_pins_ok) {
+        // 如果电机引脚配置正确，创建电机小车
+        ESP_LOGI(TAG, "Creating vehicle with motor control (pins: ENA=%d, ENB=%d, IN1=%d, IN2=%d, IN3=%d, IN4=%d)",
+                ena_pin, enb_pin, in1_pin, in2_pin, in3_pin, in4_pin);
+        vehicle = new Vehicle(web_server, 
+                             ena_pin, enb_pin,
+                             in1_pin, in2_pin,
+                             in3_pin, in4_pin);
+    } else if (servo_pins_ok) {
+        // 如果舵机引脚配置正确，创建舵机小车
+        ESP_LOGI(TAG, "Creating vehicle with servo control (pins: SERVO1=%d, SERVO2=%d)",
+                servo_pin_1, servo_pin_2);
+        vehicle = new Vehicle(web_server, servo_pin_1, servo_pin_2);
+    } else {
+        ESP_LOGW(TAG, "Cannot create vehicle, insufficient pin configuration");
+    }
+    
+    // 如果创建成功，注册并启动组件
+    if (vehicle) {
+        auto& manager = ComponentManager::GetInstance();
+        manager.RegisterComponent(vehicle);
+        ESP_LOGI(TAG, "Vehicle component registered");
+    }
+#else
+    ESP_LOGI(TAG, "Motor controller disabled in configuration");
+#endif
 }

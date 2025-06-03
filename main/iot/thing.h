@@ -42,6 +42,13 @@ public:
     int number() const { return number_getter_(); }
     std::string string() const { return string_getter_(); }
 
+    float value() const { 
+        if (type_ == kValueTypeNumber) {
+            return static_cast<float>(number_getter_()); 
+        }
+        return 0.0f;
+    }
+
     std::string GetDescriptorJson() {
         std::string json_str = "{";
         json_str += "\"description\":\"" + description_ + "\",";
@@ -94,6 +101,8 @@ public:
         }
         throw std::runtime_error("Property not found: " + name);
     }
+
+    const std::vector<Property>& properties() const { return properties_; }
 
     std::string GetDescriptorJson() {
         std::string json_str = "{";
@@ -261,31 +270,48 @@ public:
     }
 };
 
-class Thing {
+class Thing : public Component {
 public:
     Thing(const std::string& name, const std::string& description) :
-        name_(name), description_(description) {}
+        name_(name), description_(description), running_(false) {}
     virtual ~Thing() = default;
+
+    virtual bool Start() override;
+    virtual void Stop() override;
+    virtual bool IsRunning() const override;
+
+    virtual const char* GetName() const override;
+    ComponentType GetType() const override { return COMPONENT_TYPE_IOT; }
 
     virtual std::string GetDescriptorJson();
     virtual std::string GetStateJson();
     virtual void Invoke(const cJSON* command);
 
+    // Get a value by property name
+    float GetValue(const std::string& property_name) const;
+    
+    // Get all values as a map
+    std::map<std::string, float> GetValues() const;
+    
+    // Set a value by property name
+    virtual bool SetValue(const std::string& property_name, float value);
+    virtual bool SetValue(const std::string& property_name, int value);
+    virtual bool SetValue(const std::string& property_name, bool value);
+    virtual bool SetValue(const std::string& property_name, const std::string& value);
+
     const std::string& name() const { return name_; }
     const std::string& description() const { return description_; }
-    
-    // 作为组件时的类型
-    ComponentType GetType() const { return COMPONENT_TYPE_IOT; }
 
 protected:
-    PropertyList properties_;
-    MethodList methods_;
-
-private:
     std::string name_;
     std::string description_;
+    PropertyList properties_;
+    MethodList methods_;
+    bool running_;
+    
+    // Property values storage
+    std::map<std::string, float> property_values_;
 };
-
 
 void RegisterThing(const std::string& type, std::function<Thing*()> creator);
 Thing* CreateThing(const std::string& type);

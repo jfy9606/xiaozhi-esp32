@@ -4,7 +4,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
-#include "board_config.h"
+#include "../boards/common/board.h"
 #include "include/pcf8575.h"
 #include "include/pca9548a.h"
 #include "include/multiplexer.h"

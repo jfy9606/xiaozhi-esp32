@@ -23,12 +23,9 @@ set(SOURCES "audio_codecs/audio_codec.cc"
             "background_task.cc"
             "main.cc"
             "components.cc"
-            "vehicle/vehicle_controller.cc"
-            "vehicle/vehicle_content.cc"
-            "ai/ai_controller.cc"
-            "ai/ai_content.cc"
-            "vision/vision_controller.cc"
-            "vision/vision_content.cc"
+            "vehicle/vehicle.cc"
+            "ai/ai.cc"
+            "vision/vision.cc"
             "iot/things/motor.cc"
             "iot/things/servo.cc"
             "iot/things/us.cc"
@@ -40,13 +37,12 @@ set(SOURCES "audio_codecs/audio_codec.cc"
             "iot/things/speaker.cc"
             "ext/pcf8575.cc"
             "ext/lu9685.cc"
-            "web/web_server.cc"
-            "web/web_content.cc"
-            "web/api_router.cc"
-            "web/api_handlers.cc"
+            "web/web.cc"
+            "web/api.cc"
+            "location/location.cc"
             )
 
-set(INCLUDE_DIRS "." "display" "audio_codecs" "protocols" "audio_processing" "location")
+set(INCLUDE_DIRS "." "display" "audio_codecs" "protocols" "audio_processing" "location" "vehicle" "vision" "ai" "web")
 
 # HTML文件列表 - 只在启用web内容时使用
 set(EMBED_FILES "")
@@ -114,9 +110,7 @@ endif()
 
 # 根据配置添加Web组件
 if(CONFIG_ENABLE_WEB_SERVER)
-    list(APPEND SOURCES 
-        "web/web_server.cc"
-    )
+    # Web组件已包含在SOURCES中
     list(APPEND INCLUDE_DIRS "web")
     list(APPEND INCLUDE_DIRS "assets/html")
     
@@ -125,26 +119,16 @@ if(CONFIG_ENABLE_WEB_SERVER)
         set(COMPONENT_REQUIRES "")
     endif()
     list(APPEND COMPONENT_REQUIRES "lwip" "esp_http_server")
-    
-    if(CONFIG_ENABLE_WEB_CONTENT)
-        list(APPEND SOURCES 
-            "web/web_content.cc" 
-        )
-    endif()
 endif()
 
 # 根据配置添加Location组件
 if(CONFIG_ENABLE_LOCATION_CONTROLLER)
-    list(APPEND SOURCES 
-        "location/location_controller.cc"
-        "location/location_content.cc"
-    )
+    # Location组件已包含在SOURCES中
     message(STATUS "位置定位组件已启用")
 endif()
 
 # 使用file(GLOB...)来收集额外的源文件
 file(GLOB IOT_THINGS_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/iot/things/*.cc)
-file(GLOB WEB_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/web/*.cc)
 
 # 收集其他protocols文件(排除已经明确列出的主要文件)
 file(GLOB_RECURSE ALL_PROTOCOLS_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/protocols/*.cc)
@@ -153,12 +137,11 @@ set(PROTOCOLS_SOURCES ${ALL_PROTOCOLS_SOURCES})
 
 # 收集其他vehicle组件文件(排除已经明确列出的主要文件)
 file(GLOB ADDITIONAL_VEHICLE_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/vehicle/*.cc)
-list(FILTER ADDITIONAL_VEHICLE_SOURCES EXCLUDE REGEX ".*(vehicle_controller|vehicle_content)\\.cc$")
+list(FILTER ADDITIONAL_VEHICLE_SOURCES EXCLUDE REGEX ".*vehicle\\.cc$")
 set(VEHICLE_SOURCES ${ADDITIONAL_VEHICLE_SOURCES})
 
 # 将所有收集的文件添加到SOURCES列表
 list(APPEND SOURCES ${IOT_THINGS_SOURCES})
-list(APPEND SOURCES ${WEB_SOURCES})
 list(APPEND SOURCES ${PROTOCOLS_SOURCES})
 list(APPEND SOURCES ${VEHICLE_SOURCES})
 

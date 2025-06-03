@@ -21,7 +21,7 @@
 #include "freertos/task.h"
 #include "driver/gpio.h"
 
-#include "board_config.h"
+#include "../boards/common/board.h"
 #include "../thing.h"
 
 static constexpr char TAG[] = "Light";

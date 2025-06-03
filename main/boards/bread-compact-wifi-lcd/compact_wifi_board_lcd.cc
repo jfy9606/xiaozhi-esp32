@@ -488,7 +488,7 @@ private:
         }
         
         // 获取板级配置
-        board_config_t* board_config = board_config_get();
+        board_config_t* board_config = Board::GetBoardConfig();
         if (board_config) {
             // 配置摄像头引脚
             camera_config_t config = {};

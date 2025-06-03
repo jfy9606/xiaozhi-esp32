@@ -34,6 +34,26 @@ Thing* CreateThing(const std::string& type) {
 #endif
 }
 
+// Component interface implementation
+bool Thing::Start() {
+    ESP_LOGI(TAG, "Starting thing: %s", name_.c_str());
+    running_ = true;
+    return true;
+}
+
+void Thing::Stop() {
+    ESP_LOGI(TAG, "Stopping thing: %s", name_.c_str());
+    running_ = false;
+}
+
+bool Thing::IsRunning() const {
+    return running_;
+}
+
+const char* Thing::GetName() const {
+    return name_.c_str();
+}
+
 std::string Thing::GetDescriptorJson() {
     std::string json_str = "{";
     json_str += "\"name\":\"" + name_ + "\",";
@@ -88,5 +108,49 @@ void Thing::Invoke(const cJSON* command) {
     }
 }
 
+// Get a value by property name
+float Thing::GetValue(const std::string& property_name) const {
+    auto it = property_values_.find(property_name);
+    if (it != property_values_.end()) {
+        return it->second;
+    }
+    
+    // If not found in values map, try to get from properties
+    try {
+        return properties_[property_name].value();
+    } catch (const std::runtime_error& e) {
+        ESP_LOGW(TAG, "Property not found: %s", property_name.c_str());
+        return 0.0f;
+    }
+}
+
+// Get all values as a map
+std::map<std::string, float> Thing::GetValues() const {
+    return property_values_;
+}
+
+// Set value implementations
+bool Thing::SetValue(const std::string& property_name, float value) {
+    property_values_[property_name] = value;
+    return true;
+}
+
+bool Thing::SetValue(const std::string& property_name, int value) {
+    return SetValue(property_name, static_cast<float>(value));
+}
+
+bool Thing::SetValue(const std::string& property_name, bool value) {
+    return SetValue(property_name, value ? 1.0f : 0.0f);
+}
+
+bool Thing::SetValue(const std::string& property_name, const std::string& value) {
+    try {
+        float float_value = std::stof(value);
+        return SetValue(property_name, float_value);
+    } catch (const std::exception& e) {
+        ESP_LOGE(TAG, "Failed to convert string to float: %s", value.c_str());
+        return false;
+    }
+}
 
 } // namespace iot

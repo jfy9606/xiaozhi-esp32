@@ -75,7 +75,9 @@
 
 // 舵机引脚定义 - 使用Kconfig中的配置
 #ifdef CONFIG_ENABLE_SERVO_CONTROLLER
+#ifndef SERVO_COUNT
 #define SERVO_COUNT CONFIG_SERVO_COUNT  // 舵机数量
+#endif
 
 // 设置舵机引脚数组
 #define SERVO_PINS_ARRAY { \
@@ -165,9 +167,9 @@ resource_state_t get_resource_state(void);
 #endif
 
 // 引入通用板级配置头文件
-#include "../common/board_config.h"
+#include "../boards/common/board.h"
 
 // A MCP Test: Control a lamp
 #define LAMP_GPIO GPIO_NUM_18
 
-#endif // _BOARD_CONFIG_H_
+#endif // _BOARD_H_

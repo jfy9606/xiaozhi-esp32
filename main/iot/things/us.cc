@@ -8,7 +8,7 @@
 #include "esp_timer.h"
 #include "esp_rom_sys.h"
 
-#include "board_config.h"
+#include "../boards/common/board.h"
 #include "../thing.h"
 #include "ext/include/multiplexer.h"
 #include "ext/include/pcf8575.h"

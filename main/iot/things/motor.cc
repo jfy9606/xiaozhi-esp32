@@ -1,4 +1,4 @@
-#include "board_config.h"
+#include "../boards/common/board.h"
 #include "../thing.h"
 #include "ext/include/pcf8575.h"
 #include "esp_timer.h"
@@ -14,8 +14,6 @@ extern "C" {
 
 #include "iot/thing.h"
 #include "iot/thing_manager.h"
-#include "board.h"
-#include "../boards/common/board_config.h"
 #include "motor.h"
 #include <stdio.h>
 #include <stdlib.h>

@@ -121,23 +121,23 @@ function showChatMessage(message) {
   aiConfig.messages.push(message);
   
   // Create message element
-  const messageElement = document.createElement('div');
+    const messageElement = document.createElement('div');
   messageElement.className = `message message-${message.sender}`;
   
   const contentElement = document.createElement('div');
   contentElement.className = 'message-content';
   contentElement.textContent = message.text;
-  
-  const timeElement = document.createElement('div');
-  timeElement.className = 'message-time';
+    
+    const timeElement = document.createElement('div');
+    timeElement.className = 'message-time';
   timeElement.textContent = formatMessageTime(message.timestamp);
   
   messageElement.appendChild(contentElement);
   contentElement.appendChild(timeElement);
-  
+    
   messagesContainer.appendChild(messageElement);
-  
-  // Scroll to bottom
+    
+    // Scroll to bottom
   messagesContainer.scrollTop = messagesContainer.scrollHeight;
   
   // Hide thinking indicator if we received an AI message
