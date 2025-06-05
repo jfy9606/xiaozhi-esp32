@@ -418,7 +418,7 @@ private:
         if (camera_ && camera_->IsInitialized()) {
             auto& mcp_server = McpServer::GetInstance();
             
-            mcp_server.AddTool("self.camera.take_photo", "拍摄照片", PropertyList(), [this](const PropertyList& properties) -> ReturnValue {
+            mcp_server.AddTool("self.camera.take_photo", "拍摄照片", ::PropertyList(), [this](const ::PropertyList& properties) -> ReturnValue {
                 if (camera_) {
                     camera_->Capture();
                     return true;
@@ -427,21 +427,21 @@ private:
             });
             
             if (CAM_LED_PIN >= 0) {
-                mcp_server.AddTool("self.camera.flash", "控制闪光灯", PropertyList({
-                    Property("enable", kPropertyTypeBoolean)
-                }), [this](const PropertyList& properties) -> ReturnValue {
-                    bool enable = properties["enable"].value<bool>();
+                mcp_server.AddTool("self.camera.flash", "控制闪光灯", ::PropertyList({
+                    ::Property("enable", ::kPropertyTypeBoolean)
+                }), [this](const ::PropertyList& properties) -> ReturnValue {
+                    bool enable = properties["enable"].template value<bool>();
                     gpio_set_level((gpio_num_t)CAM_LED_PIN, enable ? 1 : 0);
                     return true;
                 });
             }
             
-            mcp_server.AddTool("self.camera.set_config", "设置摄像头参数", PropertyList({
-                Property("param", kPropertyTypeString),
-                Property("value", kPropertyTypeInteger, -2, 2)
-            }), [this](const PropertyList& properties) -> ReturnValue {
-                std::string param = properties["param"].value<std::string>();
-                int value = properties["value"].value<int>();
+            mcp_server.AddTool("self.camera.set_config", "设置摄像头参数", ::PropertyList({
+                ::Property("param", ::kPropertyTypeString),
+                ::Property("value", ::kPropertyTypeInteger, -2, 2)
+            }), [this](const ::PropertyList& properties) -> ReturnValue {
+                std::string param = properties["param"].template value<std::string>();
+                int value = properties["value"].template value<int>();
                 
                 if (camera_) {
                     if (param == "brightness") {

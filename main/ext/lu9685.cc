@@ -92,13 +92,6 @@ lu9685_handle_t lu9685_init(const lu9685_config_t *config)
     // 检查LU9685设备是否可访问
     i2c_master_bus_handle_t bus_handle = dev->i2c_port;
     
-    // 设置I2C设备配置
-    i2c_device_config_t dev_cfg = {
-        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
-        .device_address = dev->i2c_addr,
-        .scl_speed_hz = 100000,
-    };
-    
     // 尝试探测设备是否存在
     esp_err_t ret = i2c_master_probe(bus_handle, dev->i2c_addr, 1000);
     if (ret != ESP_OK) {

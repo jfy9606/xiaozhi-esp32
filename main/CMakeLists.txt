@@ -344,6 +344,40 @@ file(GLOB COMMON_SOUNDS ${CMAKE_CURRENT_SOURCE_DIR}/assets/common/*.p3)
 # 添加语音文件到嵌入列表
 list(APPEND EMBED_FILES ${LANG_SOUNDS} ${COMMON_SOUNDS})
 
+# 如果启用了Web内容，添加HTML、CSS和JS文件
+if(CONFIG_ENABLE_WEB_CONTENT)
+    message(STATUS "Embedding web content files")
+    # 主HTML文件
+    file(GLOB HTML_FILES ${CMAKE_CURRENT_SOURCE_DIR}/assets/html/*.html)
+    # CSS文件
+    file(GLOB CSS_FILES ${CMAKE_CURRENT_SOURCE_DIR}/assets/html/css/*.css)
+    # JS文件
+    file(GLOB JS_FILES ${CMAKE_CURRENT_SOURCE_DIR}/assets/html/js/*.js)
+    
+    # 添加到嵌入文件列表
+    list(APPEND EMBED_FILES ${HTML_FILES} ${CSS_FILES} ${JS_FILES})
+    
+    # 输出找到的文件数量
+    list(LENGTH HTML_FILES HTML_COUNT)
+    list(LENGTH CSS_FILES CSS_COUNT)
+    list(LENGTH JS_FILES JS_COUNT)
+    message(STATUS "Found ${HTML_COUNT} HTML files, ${CSS_COUNT} CSS files, and ${JS_COUNT} JS files")
+    
+    # 调试: 输出所有文件名
+    foreach(FILE ${HTML_FILES})
+        get_filename_component(FILENAME ${FILE} NAME)
+        message(STATUS "  HTML: ${FILENAME}")
+    endforeach()
+    foreach(FILE ${CSS_FILES})
+        get_filename_component(FILENAME ${FILE} NAME)
+        message(STATUS "  CSS: ${FILENAME}")
+    endforeach()
+    foreach(FILE ${JS_FILES})
+        get_filename_component(FILENAME ${FILE} NAME)
+        message(STATUS "  JS: ${FILENAME}")
+    endforeach()
+endif()
+
 # 如果目标芯片是 ESP32，则排除特定文件
 if(CONFIG_IDF_TARGET_ESP32)
     list(REMOVE_ITEM SOURCES "audio_codecs/box_audio_codec.cc"
