@@ -41,6 +41,5 @@ bool NoWakeWord::GetWakeWordOpus(std::vector<uint8_t>& opus) {
 }
 
 const std::string& NoWakeWord::GetLastDetectedWakeWord() const {
-    static const std::string empty_string;
-    return empty_string;  // No wake word detected
+    return last_detected_wake_word_;
 }
