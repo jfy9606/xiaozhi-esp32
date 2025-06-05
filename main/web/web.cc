@@ -448,90 +448,294 @@ esp_err_t Web::HandleStaticFile(httpd_req_t* req) {
         filename = "/index.html";
     }
     
+    ESP_LOGI(TAG, "HandleStaticFile: Trying to serve %s", filename.c_str());
+    
     // Get embedded file data
     const uint8_t* file_start = nullptr;
     const uint8_t* file_end = nullptr;
     
-    // First check HTML files
-    if (filename == "/index.html") {
-        extern const uint8_t index_html_start[] asm("_binary_index_html_start");
-        extern const uint8_t index_html_end[] asm("_binary_index_html_end");
-        file_start = index_html_start;
-        file_end = index_html_end;
-    } else {
-        // For other static files, need to map to embedded binary data
-        // This would require more detailed handling based on your embedded files
-        ESP_LOGW(TAG, "Static file not found: %s", filename.c_str());
-        return httpd_resp_send_404(req);
-    }
+    // 检查是否是HTML文件请求
+    bool is_html = (filename.find(".html") != std::string::npos);
+    bool is_css = (filename.find(".css") != std::string::npos);
+    bool is_js = (filename.find(".js") != std::string::npos);
     
-    if (!file_start || !file_end || file_start >= file_end) {
-        ESP_LOGW(TAG, "Invalid file data for: %s", filename.c_str());
-        return httpd_resp_send_404(req);
-    }
-    
-    // Set content type
-    const char* content_type = "text/html";
-    if (filename.find(".css") != std::string::npos) {
+    // 根据文件类型设置内容类型
+    const char* content_type = "text/plain";
+    if (is_html) {
+        content_type = "text/html";
+    } else if (is_css) {
         content_type = "text/css";
-    } else if (filename.find(".js") != std::string::npos) {
+        return HandleCssFile(req);
+    } else if (is_js) {
         content_type = "application/javascript";
+        return HandleJsFile(req);
     } else if (filename.find(".png") != std::string::npos) {
         content_type = "image/png";
     } else if (filename.find(".jpg") != std::string::npos || filename.find(".jpeg") != std::string::npos) {
         content_type = "image/jpeg";
     }
     
-    httpd_resp_set_type(req, content_type);
+    // 简单的 HTML 文件处理，只处理项目中已嵌入的文件
+    if (filename == "/index.html") {
+        extern const uint8_t index_html_start[] asm("_binary_index_html_start");
+        extern const uint8_t index_html_end[] asm("_binary_index_html_end");
+        file_start = index_html_start;
+        file_end = index_html_end;
+    } else if (filename == "/vehicle.html") {
+        extern const uint8_t vehicle_html_start[] asm("_binary_vehicle_html_start");
+        extern const uint8_t vehicle_html_end[] asm("_binary_vehicle_html_end");
+        file_start = vehicle_html_start;
+        file_end = vehicle_html_end;
+    } else if (filename == "/vision.html") {
+        extern const uint8_t vision_html_start[] asm("_binary_vision_html_start");
+        extern const uint8_t vision_html_end[] asm("_binary_vision_html_end");
+        file_start = vision_html_start;
+        file_end = vision_html_end;
+    } else if (filename == "/ai.html") {
+        extern const uint8_t ai_html_start[] asm("_binary_ai_html_start");
+        extern const uint8_t ai_html_end[] asm("_binary_ai_html_end");
+        file_start = ai_html_start;
+        file_end = ai_html_end;
+    } else if (filename == "/location.html") {
+        extern const uint8_t location_html_start[] asm("_binary_location_html_start");
+        extern const uint8_t location_html_end[] asm("_binary_location_html_end");
+        file_start = location_html_start;
+        file_end = location_html_end;
+    } else if (filename == "/servo_control.html") {
+        extern const uint8_t servo_control_html_start[] asm("_binary_servo_control_html_start");
+        extern const uint8_t servo_control_html_end[] asm("_binary_servo_control_html_end");
+        file_start = servo_control_html_start;
+        file_end = servo_control_html_end;
+    } else if (filename == "/device_config.html") {
+        extern const uint8_t device_config_html_start[] asm("_binary_device_config_html_start");
+        extern const uint8_t device_config_html_end[] asm("_binary_device_config_html_end");
+        file_start = device_config_html_start;
+        file_end = device_config_html_end;
+    } else if (filename == "/settings.html") {
+        extern const uint8_t settings_html_start[] asm("_binary_settings_html_start");
+        extern const uint8_t settings_html_end[] asm("_binary_settings_html_end");
+        file_start = settings_html_start;
+        file_end = settings_html_end;
+    } else if (filename == "/audio_control.html") {
+        extern const uint8_t audio_control_html_start[] asm("_binary_audio_control_html_start");
+        extern const uint8_t audio_control_html_end[] asm("_binary_audio_control_html_end");
+        file_start = audio_control_html_start;
+        file_end = audio_control_html_end;
+    }
+    // 如果未找到文件，将使用GetHTML生成文件内容
     
-    // Send file data
+    if (!file_start || !file_end || file_start >= file_end) {
+        ESP_LOGW(TAG, "Static file not embedded: %s", filename.c_str());
+        
+        // 尝试使用GetHtml生成页面
+        std::string page = filename;
+        if (page.starts_with("/")) {
+            page = page.substr(1);
+        }
+        if (page.ends_with(".html")) {
+            page = page.substr(0, page.length() - 5);
+        }
+        
+        ESP_LOGI(TAG, "Trying to generate HTML for: %s", page.c_str());
+        std::string html = GetHtml(page);
+        
+        // 只有当不是404页面时才返回内容
+        if (html.find("404 - 页面不存在") == std::string::npos) {
+            ESP_LOGI(TAG, "Generated HTML content for %s (%zu bytes)", page.c_str(), html.length());
+            httpd_resp_set_type(req, "text/html");
+            httpd_resp_sendstr(req, html.c_str());
+            return ESP_OK;
+        }
+        
+        ESP_LOGW(TAG, "Could not generate HTML for %s, returning 404", page.c_str());
+        return httpd_resp_send_404(req);
+    }
+    
+    // 设置内容类型
+    httpd_resp_set_type(req, content_type);
+    ESP_LOGI(TAG, "Serving file %s as %s (%ld bytes)", filename.c_str(), content_type, (long)(file_end - file_start));
+    
+    // 发送文件数据
     return httpd_resp_send(req, (const char*)file_start, file_end - file_start);
 }
 
+// CSS file handling
 esp_err_t Web::HandleCssFile(httpd_req_t* req) {
-    // Extract CSS filename
     std::string uri(req->uri);
-    std::string filename = uri.substr(uri.find_last_of("/") + 1);
+    ESP_LOGI(TAG, "Handling CSS request for: %s", uri.c_str());
     
-    // Handle CSS files
+    // Extract the CSS filename from the URI (e.g., /css/main.css -> main.css)
+    std::string filename = uri;
+    size_t pos = filename.rfind('/');
+    if (pos != std::string::npos) {
+        filename = filename.substr(pos + 1);
+    }
+    
+    // 尝试加载已知的 CSS 文件
+    const uint8_t* css_start = nullptr;
+    const uint8_t* css_end = nullptr;
+    
+    // 设置 MIME 类型为 CSS
+    httpd_resp_set_type(req, "text/css");
+    
+    // 根据请求的文件名获取相应的嵌入文件
     if (filename == "bootstrap.min.css") {
         extern const uint8_t bootstrap_min_css_start[] asm("_binary_bootstrap_min_css_start");
         extern const uint8_t bootstrap_min_css_end[] asm("_binary_bootstrap_min_css_end");
-        
-        httpd_resp_set_type(req, "text/css");
-        return httpd_resp_send(req, (const char*)bootstrap_min_css_start, bootstrap_min_css_end - bootstrap_min_css_start);
+        css_start = bootstrap_min_css_start;
+        css_end = bootstrap_min_css_end;
+    } else if (filename == "common.css") {
+        extern const uint8_t common_css_start[] asm("_binary_common_css_start");
+        extern const uint8_t common_css_end[] asm("_binary_common_css_end");
+        css_start = common_css_start;
+        css_end = common_css_end;
+    } else if (filename == "main.css") {
+        extern const uint8_t main_css_start[] asm("_binary_main_css_start");
+        extern const uint8_t main_css_end[] asm("_binary_main_css_end");
+        css_start = main_css_start;
+        css_end = main_css_end;
+    } else if (filename == "index.css") {
+        extern const uint8_t index_css_start[] asm("_binary_index_css_start");
+        extern const uint8_t index_css_end[] asm("_binary_index_css_end");
+        css_start = index_css_start;
+        css_end = index_css_end;
+    } else if (filename == "vehicle.css") {
+        extern const uint8_t vehicle_css_start[] asm("_binary_vehicle_css_start");
+        extern const uint8_t vehicle_css_end[] asm("_binary_vehicle_css_end");
+        css_start = vehicle_css_start;
+        css_end = vehicle_css_end;
+    } else if (filename == "vision.css") {
+        extern const uint8_t vision_css_start[] asm("_binary_vision_css_start");
+        extern const uint8_t vision_css_end[] asm("_binary_vision_css_end");
+        css_start = vision_css_start;
+        css_end = vision_css_end;
+    } else if (filename == "ai.css") {
+        extern const uint8_t ai_css_start[] asm("_binary_ai_css_start");
+        extern const uint8_t ai_css_end[] asm("_binary_ai_css_end");
+        css_start = ai_css_start;
+        css_end = ai_css_end;
     }
-    // Add more CSS files as needed
     
-    // CSS file not found
+    // 如果找到对应的嵌入文件，发送它
+    if (css_start != nullptr && css_end != nullptr && css_start < css_end) {
+        return httpd_resp_send(req, (const char*)css_start, css_end - css_start);
+    }
+    
+    // 文件未找到
     ESP_LOGW(TAG, "CSS file not found: %s", filename.c_str());
     return httpd_resp_send_404(req);
 }
 
+// JavaScript file handling
 esp_err_t Web::HandleJsFile(httpd_req_t* req) {
-    // Extract JS filename
     std::string uri(req->uri);
-    std::string filename = uri.substr(uri.find_last_of("/") + 1);
+    ESP_LOGI(TAG, "Handling JavaScript request for: %s", uri.c_str());
     
-    // Handle JS files
-    if (filename == "common.js") {
-        extern const uint8_t common_js_start[] asm("_binary_common_js_start");
-        extern const uint8_t common_js_end[] asm("_binary_common_js_end");
-        
-        httpd_resp_set_type(req, "application/javascript");
-        return httpd_resp_send(req, (const char*)common_js_start, common_js_end - common_js_start);
+    // Extract the JS filename from the URI (e.g., /js/main.js -> main.js)
+    std::string filename = uri;
+    size_t pos = filename.rfind('/');
+    if (pos != std::string::npos) {
+        filename = filename.substr(pos + 1);
     }
-    else if (filename == "bootstrap.bundle.min.js") {
+    
+    // 尝试加载已知的 JS 文件
+    const uint8_t* js_start = nullptr;
+    const uint8_t* js_end = nullptr;
+    
+    // 设置 MIME 类型为 JavaScript
+    httpd_resp_set_type(req, "application/javascript");
+    
+    // 根据请求的文件名获取相应的嵌入文件
+    // 注意：这里的 _binary_ 符号是通过 ESP-IDF 的 EMBED_FILES 功能自动生成的
+    if (filename == "bootstrap.bundle.min.js") {
         extern const uint8_t bootstrap_bundle_min_js_start[] asm("_binary_bootstrap_bundle_min_js_start");
         extern const uint8_t bootstrap_bundle_min_js_end[] asm("_binary_bootstrap_bundle_min_js_end");
-        
-        httpd_resp_set_type(req, "application/javascript");
-        return httpd_resp_send(req, (const char*)bootstrap_bundle_min_js_start, bootstrap_bundle_min_js_end - bootstrap_bundle_min_js_start);
+        js_start = bootstrap_bundle_min_js_start;
+        js_end = bootstrap_bundle_min_js_end;
+    } else if (filename == "common.js") {
+        extern const uint8_t common_js_start[] asm("_binary_common_js_start");
+        extern const uint8_t common_js_end[] asm("_binary_common_js_end");
+        js_start = common_js_start;
+        js_end = common_js_end;
+    } else if (filename == "main.js") {
+        extern const uint8_t main_js_start[] asm("_binary_main_js_start");
+        extern const uint8_t main_js_end[] asm("_binary_main_js_end");
+        js_start = main_js_start;
+        js_end = main_js_end;
+    } else if (filename == "index.js") {
+        extern const uint8_t index_js_start[] asm("_binary_index_js_start");
+        extern const uint8_t index_js_end[] asm("_binary_index_js_end");
+        js_start = index_js_start;
+        js_end = index_js_end;
+    } else if (filename == "vehicle.js") {
+        extern const uint8_t vehicle_js_start[] asm("_binary_vehicle_js_start");
+        extern const uint8_t vehicle_js_end[] asm("_binary_vehicle_js_end");
+        js_start = vehicle_js_start;
+        js_end = vehicle_js_end;
+    } else if (filename == "vision.js") {
+        extern const uint8_t vision_js_start[] asm("_binary_vision_js_start");
+        extern const uint8_t vision_js_end[] asm("_binary_vision_js_end");
+        js_start = vision_js_start;
+        js_end = vision_js_end;
+    } else if (filename == "ai.js") {
+        extern const uint8_t ai_js_start[] asm("_binary_ai_js_start");
+        extern const uint8_t ai_js_end[] asm("_binary_ai_js_end");
+        js_start = ai_js_start;
+        js_end = ai_js_end;
+    } else if (filename == "location.js") {
+        extern const uint8_t location_js_start[] asm("_binary_location_js_start");
+        extern const uint8_t location_js_end[] asm("_binary_location_js_end");
+        js_start = location_js_start;
+        js_end = location_js_end;
+    } else if (filename == "ai-chat.js") {
+        extern const uint8_t ai_chat_js_start[] asm("_binary_ai_chat_js_start");
+        extern const uint8_t ai_chat_js_end[] asm("_binary_ai_chat_js_end");
+        js_start = ai_chat_js_start;
+        js_end = ai_chat_js_end;
+    } else if (filename == "api_client.js") {
+        extern const uint8_t api_client_js_start[] asm("_binary_api_client_js_start");
+        extern const uint8_t api_client_js_end[] asm("_binary_api_client_js_end");
+        js_start = api_client_js_start;
+        js_end = api_client_js_end;
+    } else if (filename == "audio_control.js") {
+        extern const uint8_t audio_control_js_start[] asm("_binary_audio_control_js_start");
+        extern const uint8_t audio_control_js_end[] asm("_binary_audio_control_js_end");
+        js_start = audio_control_js_start;
+        js_end = audio_control_js_end;
+    } else if (filename == "camera-module.js") {
+        extern const uint8_t camera_module_js_start[] asm("_binary_camera_module_js_start");
+        extern const uint8_t camera_module_js_end[] asm("_binary_camera_module_js_end");
+        js_start = camera_module_js_start;
+        js_end = camera_module_js_end;
+    } else if (filename == "device_config.js") {
+        extern const uint8_t device_config_js_start[] asm("_binary_device_config_js_start");
+        extern const uint8_t device_config_js_end[] asm("_binary_device_config_js_end");
+        js_start = device_config_js_start;
+        js_end = device_config_js_end;
+    } else if (filename == "location-module.js") {
+        extern const uint8_t location_module_js_start[] asm("_binary_location_module_js_start");
+        extern const uint8_t location_module_js_end[] asm("_binary_location_module_js_end");
+        js_start = location_module_js_start;
+        js_end = location_module_js_end;
+    } else if (filename == "servo_control.js") {
+        extern const uint8_t servo_control_js_start[] asm("_binary_servo_control_js_start");
+        extern const uint8_t servo_control_js_end[] asm("_binary_servo_control_js_end");
+        js_start = servo_control_js_start;
+        js_end = servo_control_js_end;
+    } else if (filename == "settings-module.js") {
+        extern const uint8_t settings_module_js_start[] asm("_binary_settings_module_js_start");
+        extern const uint8_t settings_module_js_end[] asm("_binary_settings_module_js_end");
+        js_start = settings_module_js_start;
+        js_end = settings_module_js_end;
     }
-    // Add more JS files as needed
     
-    // JS file not found
-    ESP_LOGW(TAG, "JS file not found: %s", filename.c_str());
+    // 如果找到对应的嵌入文件，发送它
+    if (js_start != nullptr && js_end != nullptr && js_start < js_end) {
+        return httpd_resp_send(req, (const char*)js_start, js_end - js_start);
+    }
+    
+    // 文件未找到
+    ESP_LOGW(TAG, "JavaScript file not found: %s", filename.c_str());
     return httpd_resp_send_404(req);
 }
 
@@ -783,6 +987,11 @@ void Web::InitDefaultHandlers() {
     RegisterHandler(HttpMethod::HTTP_GET, "/motor", CarHandler);
     RegisterHandler(HttpMethod::HTTP_GET, "/vehicle", CarHandler);
     
+    // 添加通用HTML文件处理器
+    RegisterHandler(HttpMethod::HTTP_GET, "/*.html", [this](httpd_req_t* req) -> esp_err_t {
+        return HandleStaticFile(req);
+    });
+    
     // CSS files
     RegisterHandler(HttpMethod::HTTP_GET, "/css/*", [this](httpd_req_t* req) -> esp_err_t {
         return HandleCssFile(req);
@@ -837,7 +1046,17 @@ esp_err_t Web::InternalRequestHandler(httpd_req_t* req) {
         return httpd_resp_send_500(req);
     }
     
-    ESP_LOGI(TAG, "Request received for URI: %s, method: %d", req->uri, req->method);
+    const char* method_str = "";
+    switch (req->method) {
+        case HTTP_GET:    method_str = "GET"; break;
+        case HTTP_POST:   method_str = "POST"; break;
+        case HTTP_PUT:    method_str = "PUT"; break;
+        case HTTP_DELETE: method_str = "DELETE"; break;
+        case HTTP_PATCH:  method_str = "PATCH"; break;
+        default: method_str = "UNKNOWN"; break;
+    }
+    
+    ESP_LOGI(TAG, "Request received: %s %s", method_str, req->uri);
     Web* web = static_cast<Web*>(req->user_ctx);
     
     // Find handler for this URI and method
@@ -845,24 +1064,30 @@ esp_err_t Web::InternalRequestHandler(httpd_req_t* req) {
     auto it = web->http_handlers_.find(key);
     
     if (it != web->http_handlers_.end()) {
-        ESP_LOGI(TAG, "Handler found for URI: %s", req->uri);
+        ESP_LOGI(TAG, "Exact handler found for: %s %s", method_str, req->uri);
         return it->second(req);
     }
     
     // Try wildcard handlers
+    ESP_LOGI(TAG, "No exact handler found, trying wildcards for: %s", req->uri);
     for (const auto& handler_pair : web->http_handlers_) {
         // Extract URI part from key (uri:method format)
         std::string handler_uri = handler_pair.first.substr(0, handler_pair.first.find_last_of(":"));
+        std::string method_str = handler_pair.first.substr(handler_pair.first.find_last_of(":") + 1);
+        int handler_method = std::stoi(method_str);
         
-        // Check if this is a wildcard handler that matches
-        if (handler_uri.back() == '*') {
-            std::string prefix = handler_uri.substr(0, handler_uri.size() - 1);
-            if (strncmp(req->uri, prefix.c_str(), prefix.length()) == 0) {
-                int method_code = std::stoi(handler_pair.first.substr(handler_pair.first.find_last_of(":") + 1));
-                if (method_code == req->method) {
-                    ESP_LOGI(TAG, "Wildcard handler found for URI: %s, prefix: %s", req->uri, prefix.c_str());
-                    return handler_pair.second(req);
-                }
+        // Skip if method doesn't match
+        if (handler_method != req->method) {
+            continue;
+        }
+        
+        // Check if this handler uses wildcards
+        if (handler_uri.find('*') != std::string::npos || handler_uri.find('?') != std::string::npos) {
+            ESP_LOGI(TAG, "Checking wildcard pattern: '%s' against '%s'", handler_uri.c_str(), req->uri);
+            
+            if (httpd_uri_match_wildcard(handler_uri.c_str(), req->uri, handler_uri.length())) {
+                ESP_LOGI(TAG, "Wildcard match found! Using handler for pattern: %s", handler_uri.c_str());
+                return handler_pair.second(req);
             }
         }
     }
@@ -873,8 +1098,15 @@ esp_err_t Web::InternalRequestHandler(httpd_req_t* req) {
         return web->RootHandler(req);
     }
     
+    // Check if this is an HTML file request
+    std::string uri_str(req->uri);
+    if (uri_str.find(".html") != std::string::npos && req->method == HTTP_GET) {
+        ESP_LOGI(TAG, "HTML file request detected: %s, trying static file handler", req->uri);
+        return web->HandleStaticFile(req);
+    }
+    
     // No handler found
-    ESP_LOGW(TAG, "No handler for %s [method %d], URI: %s", req->uri, req->method, req->uri);
+    ESP_LOGW(TAG, "No handler found for %s %s", method_str, req->uri);
     return httpd_resp_send_404(req);
 }
 
@@ -993,17 +1225,36 @@ esp_err_t Web::HandleApiRequest(httpd_req_t* req, const std::string& uri) {
 
 // Root handler implementation
 esp_err_t Web::RootHandler(httpd_req_t* req) {
+    ESP_LOGI(TAG, "Handling root request: %s", req->uri);
+    
     if (!current_instance_) {
         ESP_LOGE(TAG, "No Web instance for ROOT handler");
         return httpd_resp_send_500(req);
     }
     
-    ESP_LOGI(TAG, "Serving ROOT path via RootHandler");
-    
     std::string html = current_instance_->GetHtml("index");
+    
+    if (html.empty() || html.find("页面不存在") != std::string::npos) {
+        ESP_LOGW(TAG, "Failed to load index.html content or received 404 template");
+        // 如果无法获取正确的index内容，尝试使用默认的简单HTML
+        html = "<!DOCTYPE html><html><head><title>Vehicle Control</title>"
+               "<meta charset='UTF-8'>"
+               "<meta name='viewport' content='width=device-width, initial-scale=1.0'>"
+               "<style>body{font-family:Arial;text-align:center;margin:40px}</style>"
+               "</head><body>"
+               "<h1>ESP32 Vehicle Control</h1>"
+               "<p>Welcome to the ESP32 Vehicle Control System</p>"
+               "<ul style='list-style:none;padding:0'>"
+               "<li><a href='/vehicle'>Vehicle Control</a></li>"
+               "<li><a href='/cam'>Camera</a></li>"
+               "</ul></body></html>";
+    }
+    
+    ESP_LOGI(TAG, "Serving index.html (%zu bytes)", html.length());
+    
     httpd_resp_set_type(req, "text/html");
-    httpd_resp_set_hdr(req, "Content-Encoding", "identity");
     httpd_resp_sendstr(req, html.c_str());
+    
     return ESP_OK;
 }
 

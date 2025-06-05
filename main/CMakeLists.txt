@@ -53,7 +53,10 @@ if(CONFIG_ENABLE_WEB_SERVER AND CONFIG_ENABLE_WEB_CONTENT)
                    "${CMAKE_CURRENT_SOURCE_DIR}/assets/html/vision.html"
                    "${CMAKE_CURRENT_SOURCE_DIR}/assets/html/servo_control.html"
                    "${CMAKE_CURRENT_SOURCE_DIR}/assets/html/ai.html"
-                   "${CMAKE_CURRENT_SOURCE_DIR}/assets/html/location.html")
+                   "${CMAKE_CURRENT_SOURCE_DIR}/assets/html/location.html"
+                   "${CMAKE_CURRENT_SOURCE_DIR}/assets/html/device_config.html"
+                   "${CMAKE_CURRENT_SOURCE_DIR}/assets/html/settings.html"
+                   "${CMAKE_CURRENT_SOURCE_DIR}/assets/html/audio_control.html")
     
     # JavaScript文件列表
     file(GLOB JS_FILES "${CMAKE_CURRENT_SOURCE_DIR}/assets/html/js/*.js")

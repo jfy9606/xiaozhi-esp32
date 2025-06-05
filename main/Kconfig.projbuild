@@ -417,15 +417,6 @@ menu "组件管理器"
             help
                 Web服务器监听的端口号。默认为8080。
         
-        config WEB_SERVER_USE_PSRAM
-            bool "使用PSRAM存储Web服务器内容"
-            default y if SPIRAM
-            depends on ENABLE_WEB_SERVER && SPIRAM
-            help
-                如果启用，Web服务器将尽可能使用PSRAM存储数据，包括HTML内容、
-                WebSocket消息、HTTP请求/响应等，减轻内部内存负担。
-                此选项需要硬件支持PSRAM并已在项目中启用SPIRAM。
-                
         config ENABLE_WEB_CONTENT
             bool "启用Web内容功能"
             default y
