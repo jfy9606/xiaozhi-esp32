@@ -1,3 +1,8 @@
+/**
+ * servo_control.js - 舵机控制模块
+ * 控制ESP32上的舵机，提供角度调节和频率设置功能
+ */
+
 // 通道数量
 const CHANNEL_COUNT = 16;
 
@@ -13,219 +18,496 @@ const logContainer = document.getElementById('log-container');
 // 存储舵机角度的数组
 const servoAngles = Array(CHANNEL_COUNT).fill(90);
 
-// 生成舵机控制界面
-function generateServoControls() {
-    servoControlsContainer.innerHTML = '';
+// 舵机控制器类
+class ServoController {
+    constructor() {
+        // 初始化API客户端
+        this.api = window.xiaozhi.api;
+        this.utils = window.xiaozhi.utils;
+        
+        // 舵机控制状态
+        this.servoStatus = {};
+        this.isConnected = false;
+        this.pendingUpdates = false;
+        this.lastAngleUpdate = {}; // 记录最后一次角度更新时间
+        this.updateThrottle = 50; // 更新节流间隔(毫秒)
+        
+        // 初始化UI元素引用
+        this.angleSliders = document.querySelectorAll('.servo-angle');
+        this.frequencySlider = document.getElementById('servo-frequency');
+        this.statusLabels = document.querySelectorAll('.status-label');
+        this.connectionStatus = document.getElementById('connection-status');
+
+        // 添加UI事件监听器
+        this._setupEventListeners();
+        
+        // 初始化WebSocket连接
+        this._initWebSocket();
+        
+        // 加载初始状态
+        this._loadInitialStatus();
+    }
     
-    for (let i = 0; i < CHANNEL_COUNT; i++) {
-        const servoControl = document.createElement('div');
-        servoControl.className = 'servo-control';
-        
-        const title = document.createElement('h3');
-        title.textContent = `通道 ${i}`;
-        
-        const sliderContainer = document.createElement('div');
-        sliderContainer.className = 'slider-container';
-        
-        const angleDisplay = document.createElement('div');
-        angleDisplay.className = 'angle-display';
-        angleDisplay.textContent = `${servoAngles[i]}°`;
-        angleDisplay.id = `angle-display-${i}`;
-        
-        const slider = document.createElement('input');
-        slider.type = 'range';
-        slider.min = '0';
-        slider.max = '180';
-        slider.value = servoAngles[i];
-        slider.className = 'range-slider';
-        slider.id = `servo-slider-${i}`;
-        
-        slider.addEventListener('input', (event) => {
-            const angle = parseInt(event.target.value);
-            servoAngles[i] = angle;
-            angleDisplay.textContent = `${angle}°`;
+    /**
+     * 初始化事件监听器
+     * @private
+     */
+    _setupEventListeners() {
+        // 舵机角度滑块变化事件
+        this.angleSliders.forEach(slider => {
+            slider.addEventListener('input', (e) => {
+                const channel = parseInt(e.target.dataset.channel, 10);
+                const angle = parseInt(e.target.value, 10);
+                this._updateAngleDebounced(channel, angle);
+            });
+            
+            slider.addEventListener('change', (e) => {
+                const channel = parseInt(e.target.dataset.channel, 10);
+                const angle = parseInt(e.target.value, 10);
+                this._updateAngleImmediate(channel, angle);
+            });
         });
         
-        slider.addEventListener('change', (event) => {
-            const angle = parseInt(event.target.value);
-            setServoAngle(i, angle);
+        // 频率滑块变化事件
+        if (this.frequencySlider) {
+            this.frequencySlider.addEventListener('change', (e) => {
+                const frequency = parseInt(e.target.value, 10);
+                this.setFrequency(frequency);
+            });
+        }
+        
+        // 设置预设按钮事件
+        const presetButtons = document.querySelectorAll('.preset-btn');
+        presetButtons.forEach(button => {
+            button.addEventListener('click', (e) => {
+                const presetData = JSON.parse(e.target.dataset.preset);
+                this.applyPreset(presetData);
+            });
         });
         
-        const buttonContainer = document.createElement('div');
-        buttonContainer.style.display = 'flex';
-        buttonContainer.style.justifyContent = 'space-between';
-        buttonContainer.style.marginTop = '10px';
-        
-        const minBtn = document.createElement('button');
-        minBtn.textContent = '0°';
-        minBtn.onclick = () => {
-            slider.value = 0;
-            servoAngles[i] = 0;
-            angleDisplay.textContent = '0°';
-            setServoAngle(i, 0);
-        };
-        
-        const centerBtn = document.createElement('button');
-        centerBtn.textContent = '90°';
-        centerBtn.onclick = () => {
-            slider.value = 90;
-            servoAngles[i] = 90;
-            angleDisplay.textContent = '90°';
-            setServoAngle(i, 90);
-        };
-        
-        const maxBtn = document.createElement('button');
-        maxBtn.textContent = '180°';
-        maxBtn.onclick = () => {
-            slider.value = 180;
-            servoAngles[i] = 180;
-            angleDisplay.textContent = '180°';
-            setServoAngle(i, 180);
-        };
-        
-        buttonContainer.appendChild(minBtn);
-        buttonContainer.appendChild(centerBtn);
-        buttonContainer.appendChild(maxBtn);
-        
-        sliderContainer.appendChild(angleDisplay);
-        sliderContainer.appendChild(slider);
-        sliderContainer.appendChild(buttonContainer);
-        
-        servoControl.appendChild(title);
-        servoControl.appendChild(sliderContainer);
-        
-        servoControlsContainer.appendChild(servoControl);
+        // 连接/断开按钮
+        const connectBtn = document.getElementById('connect-btn');
+        if (connectBtn) {
+            connectBtn.addEventListener('click', () => {
+                if (this.isConnected) {
+                    this.disconnect();
+                } else {
+                    this.connect();
+                }
+            });
+        }
+
+        // 监听网络状态变化
+        window.xiaozhi.utils.NetworkMonitor.onOnline(() => {
+            if (!this.isConnected) {
+                this._initWebSocket();
+            }
+        });
     }
-}
-
-// 更新连接状态UI
-function updateConnectionStatus(connected) {
-    connectionStatus.className = `status-indicator ${connected ? 'status-connected' : 'status-disconnected'}`;
-    statusText.textContent = connected ? '已连接' : '未连接';
     
-    // 启用/禁用控制元素
-    const sliders = document.querySelectorAll('.range-slider');
-    const buttons = document.querySelectorAll('button');
-    
-    sliders.forEach(slider => {
-        slider.disabled = !connected;
-    });
-    
-    buttons.forEach(button => {
-        button.disabled = !connected;
-    });
-    
-    frequencyInput.disabled = !connected;
-}
-
-// 添加日志条目
-function addLogEntry(message, type = 'info') {
-    const logEntry = document.createElement('div');
-    logEntry.className = `log-entry log-${type}`;
-    
-    const timestamp = new Date().toLocaleTimeString();
-    const logTimestamp = document.createElement('span');
-    logTimestamp.className = 'log-timestamp';
-    logTimestamp.textContent = `[${timestamp}]`;
-    
-    logEntry.appendChild(logTimestamp);
-    logEntry.appendChild(document.createTextNode(` ${message}`));
-    
-    logContainer.appendChild(logEntry);
-    logContainer.scrollTop = logContainer.scrollHeight;
-}
-
-// 设置舵机角度
-function setServoAngle(channel, angle) {
-    try {
-        window.xiaozhi.api.setServoAngleWs(channel, angle);
-        addLogEntry(`设置通道 ${channel} 角度为 ${angle}°`, 'info');
-    } catch (error) {
-        addLogEntry(`设置舵机角度失败: ${error.message}`, 'error');
+    /**
+     * 初始化WebSocket连接
+     * @private
+     */
+    _initWebSocket() {
+        this.utils.UI.showToast('正在连接舵机控制器...', 'info');
+        this.updateConnectionStatus('connecting');
+        
+        try {
+            // 连接舵机控制WebSocket
+            this.ws = this.api.connectServoControl({
+                onOpen: () => {
+                    this.isConnected = true;
+                    this.updateConnectionStatus('connected');
+                    this.utils.UI.showToast('已连接到舵机控制器', 'success');
+                    this._loadInitialStatus();
+                },
+                onClose: () => {
+                    this.isConnected = false;
+                    this.updateConnectionStatus('disconnected');
+                    this.utils.UI.showToast('舵机控制器连接已断开', 'warning');
+                },
+                onError: (error, details) => {
+                    this.isConnected = false;
+                    this.updateConnectionStatus('error');
+                    this.utils.UI.showToast(`舵机控制器连接错误: ${details}`, 'error');
+                    this.utils.Logger.error(`舵机WebSocket错误: ${details}`, error);
+                },
+                onMessage: (data) => this._handleMessage(data),
+                autoReconnect: true
+            });
+        } catch (error) {
+            this.utils.Logger.error('初始化舵机控制WebSocket失败', error);
+            this.updateConnectionStatus('error');
+            this.utils.UI.showToast('连接舵机控制器失败', 'error');
+        }
     }
-}
-
-// 设置PWM频率
-function setFrequency(frequency) {
-    try {
-        window.xiaozhi.api.setServoFrequencyWs(frequency);
-        addLogEntry(`设置PWM频率为 ${frequency} Hz`, 'info');
-    } catch (error) {
-        addLogEntry(`设置频率失败: ${error.message}`, 'error');
+    
+    /**
+     * 加载初始舵机状态
+     * @private
+     */
+    _loadInitialStatus() {
+        this.utils.UI.showLoader('加载舵机状态...');
+        this.api.getServoStatus()
+            .then(response => {
+                if (response && response.status === 'success') {
+                    this.servoStatus = response.data || {};
+                    this._updateUI();
+                    this.utils.Logger.info('舵机状态已加载', this.servoStatus);
+                } else {
+                    throw new Error(response.message || '加载舵机状态失败');
+                }
+            })
+            .catch(error => {
+                this.utils.Logger.error('加载舵机状态失败', error);
+                this.utils.UI.showToast('加载舵机状态失败: ' + error.message, 'error');
+            })
+            .finally(() => {
+                this.utils.UI.hideLoader();
+            });
     }
-}
-
-// 初始化页面
-function initPage() {
-    // 生成舵机控制界面
-    generateServoControls();
     
-    // 初始状态为未连接
-    updateConnectionStatus(false);
+    /**
+     * 处理WebSocket消息
+     * @private
+     * @param {Object} data - 接收到的消息数据
+     */
+    _handleMessage(data) {
+        try {
+            if (!data || !data.type) {
+                this.utils.Logger.warn('收到无效舵机消息', data);
+                return;
+            }
+            
+            switch (data.type) {
+                case 'status_update':
+                    this.servoStatus = data.data || this.servoStatus;
+                    this._updateUI();
+                    break;
+                    
+                case 'servo_moved':
+                    this._updateServoPosition(data.channel, data.angle);
+                    this.utils.Logger.debug(`舵机${data.channel}移动到${data.angle}度`);
+                    break;
+                    
+                case 'frequency_changed':
+                    this._updateFrequencyDisplay(data.frequency);
+                    this.utils.Logger.debug(`舵机频率更新为${data.frequency}Hz`);
+                    break;
+                    
+                case 'error':
+                    this.utils.UI.showToast(`舵机控制错误: ${data.message}`, 'error');
+                    this.utils.Logger.error('舵机控制错误', data);
+                    break;
+                    
+                default:
+                    this.utils.Logger.debug('收到未处理的舵机消息类型', data);
+            }
+            
+        } catch (error) {
+            this.utils.Logger.error('处理舵机消息出错', error);
+        }
+    }
     
-    // 添加频率设置按钮事件
-    setFrequencyBtn.addEventListener('click', () => {
-        const frequency = parseInt(frequencyInput.value);
-        if (frequency < 50 || frequency > 300) {
-            addLogEntry('频率必须在50-300 Hz范围内', 'error');
+    /**
+     * 更新UI显示
+     * @private
+     */
+    _updateUI() {
+        // 更新舵机角度滑块
+        if (this.servoStatus.angles) {
+            Object.keys(this.servoStatus.angles).forEach(channel => {
+                const angle = this.servoStatus.angles[channel];
+                const slider = document.querySelector(`.servo-angle[data-channel="${channel}"]`);
+                const display = document.querySelector(`.angle-display[data-channel="${channel}"]`);
+                
+                if (slider) {
+                    slider.value = angle;
+                }
+                
+                if (display) {
+                    display.textContent = angle + '°';
+                }
+            });
+        }
+        
+        // 更新频率显示
+        if (this.servoStatus.frequency && this.frequencySlider) {
+            this.frequencySlider.value = this.servoStatus.frequency;
+            const frequencyDisplay = document.getElementById('frequency-display');
+            if (frequencyDisplay) {
+                frequencyDisplay.textContent = this.servoStatus.frequency + ' Hz';
+            }
+        }
+    }
+    
+    /**
+     * 更新舵机位置显示
+     * @private
+     * @param {number} channel - 舵机通道
+     * @param {number} angle - 舵机角度
+     */
+    _updateServoPosition(channel, angle) {
+        // 更新内部状态
+        if (!this.servoStatus.angles) {
+            this.servoStatus.angles = {};
+        }
+        this.servoStatus.angles[channel] = angle;
+        
+        // 更新UI
+        const slider = document.querySelector(`.servo-angle[data-channel="${channel}"]`);
+        const display = document.querySelector(`.angle-display[data-channel="${channel}"]`);
+        
+        if (slider && parseInt(slider.value, 10) !== angle) {
+            slider.value = angle;
+        }
+        
+        if (display) {
+            display.textContent = angle + '°';
+        }
+    }
+    
+    /**
+     * 更新频率显示
+     * @private
+     * @param {number} frequency - 频率值
+     */
+    _updateFrequencyDisplay(frequency) {
+        // 更新内部状态
+        this.servoStatus.frequency = frequency;
+        
+        // 更新UI
+        if (this.frequencySlider) {
+            this.frequencySlider.value = frequency;
+        }
+        
+        const frequencyDisplay = document.getElementById('frequency-display');
+        if (frequencyDisplay) {
+            frequencyDisplay.textContent = frequency + ' Hz';
+        }
+    }
+    
+    /**
+     * 节流更新舵机角度
+     * @private
+     * @param {number} channel - 舵机通道
+     * @param {number} angle - 舵机角度
+     */
+    _updateAngleDebounced(channel, angle) {
+        const now = Date.now();
+        
+        // 显示实时更新但不发送
+        this._updateServoPosition(channel, angle);
+        
+        // 检查是否需要节流
+        if (!this.lastAngleUpdate[channel] || 
+            (now - this.lastAngleUpdate[channel]) > this.updateThrottle) {
+            this._updateAngleImmediate(channel, angle);
+        }
+    }
+    
+    /**
+     * 立即更新舵机角度
+     * @private
+     * @param {number} channel - 舵机通道
+     * @param {number} angle - 舵机角度
+     */
+    _updateAngleImmediate(channel, angle) {
+        // 记录更新时间
+        this.lastAngleUpdate[channel] = Date.now();
+        
+        // 检查连接状态
+        if (!this.isConnected) {
+            this.utils.UI.showToast('舵机控制器未连接', 'warning');
             return;
         }
         
-        setFrequency(frequency);
-    });
-    
-    // 连接到WebSocket
-    try {
-        window.xiaozhi.api.connectServoControl({
-            onOpen: () => {
-                updateConnectionStatus(true);
-                addLogEntry('已连接到舵机控制WebSocket', 'success');
-                
-                // 获取舵机状态
-                window.xiaozhi.api.getServoStatus()
-                    .then(response => {
-                        if (response.success) {
-                            addLogEntry('获取舵机状态成功', 'success');
-                            
-                            if (response.data.max_frequency_hz) {
-                                frequencyInput.max = response.data.max_frequency_hz;
-                                addLogEntry(`舵机控制器支持的最大频率: ${response.data.max_frequency_hz} Hz`, 'info');
-                            }
-                        }
-                    })
-                    .catch(error => {
-                        addLogEntry(`获取舵机状态失败: ${error.message}`, 'error');
-                    });
-            },
-            onMessage: (data) => {
-                if (data.status === 'ok') {
-                    if (data.cmd === 'set_angle') {
-                        addLogEntry(`通道 ${data.channel} 角度已设置为 ${data.angle}°`, 'success');
-                    } else if (data.cmd === 'set_frequency') {
-                        frequencyDisplay.textContent = `${data.frequency} Hz`;
-                        addLogEntry(`PWM频率已设置为 ${data.frequency} Hz`, 'success');
-                    }
-                } else if (data.status === 'error') {
-                    addLogEntry(`错误: ${data.message}`, 'error');
-                }
-            },
-            onClose: () => {
-                updateConnectionStatus(false);
-                addLogEntry('与舵机控制WebSocket断开连接', 'error');
-            },
-            onError: (error) => {
-                addLogEntry(`WebSocket错误: ${error.message}`, 'error');
+        try {
+            // 使用WebSocket发送，启用批处理
+            this.api.setServoAngleWs(channel, angle, true);
+        } catch (error) {
+            this.utils.Logger.error(`设置舵机${channel}角度失败: ${error.message}`, error);
+            this.utils.UI.showToast(`设置舵机${channel}角度失败`, 'error');
+            
+            // 尝试重连
+            if (!this.isConnected) {
+                this._initWebSocket();
             }
-        });
-    } catch (error) {
-        addLogEntry(`连接WebSocket失败: ${error.message}`, 'error');
+        }
     }
     
-    // 页面关闭时断开连接
-    window.addEventListener('beforeunload', () => {
-        window.xiaozhi.api.disconnectAllWebSockets();
-    });
+    /**
+     * 设置舵机PWM频率
+     * @public
+     * @param {number} frequency - 频率值(Hz)
+     */
+    setFrequency(frequency) {
+        // 验证频率范围
+        if (frequency < 50 || frequency > 300) {
+            this.utils.UI.showToast(`频率值${frequency}Hz超出范围(50-300Hz)`, 'warning');
+            return;
+        }
+        
+        // 检查连接状态
+        if (!this.isConnected) {
+            this.utils.UI.showToast('舵机控制器未连接', 'warning');
+            return;
+        }
+        
+        try {
+            // 使用WebSocket发送
+            this.api.setServoFrequencyWs(frequency);
+            this.utils.Logger.info(`设置舵机频率为${frequency}Hz`);
+        } catch (error) {
+            this.utils.Logger.error(`设置舵机频率失败: ${error.message}`, error);
+            this.utils.UI.showToast('设置舵机频率失败', 'error');
+        }
+    }
+    
+    /**
+     * 应用舵机预设
+     * @public
+     * @param {Object} preset - 预设数据，包含多个舵机角度
+     */
+    applyPreset(preset) {
+        if (!preset || typeof preset !== 'object') {
+            this.utils.Logger.warn('无效的预设数据', preset);
+            return;
+        }
+        
+        // 检查连接状态
+        if (!this.isConnected) {
+            this.utils.UI.showToast('舵机控制器未连接', 'warning');
+            return;
+        }
+        
+        try {
+            this.utils.Logger.info('应用舵机预设', preset);
+            
+            // 标记开始批量更新
+            this.pendingUpdates = true;
+            
+            // 应用每个通道的设置
+            Object.keys(preset).forEach(channel => {
+                const angle = preset[channel];
+                
+                // 更新UI
+                this._updateServoPosition(parseInt(channel, 10), angle);
+                
+                // 发送命令
+                try {
+                    this.api.setServoAngleWs(parseInt(channel, 10), angle, true);
+                } catch (error) {
+                    this.utils.Logger.error(`设置舵机${channel}预设失败`, error);
+                }
+            });
+            
+            // 显示提示
+            this.utils.UI.showToast('已应用舵机预设', 'success');
+            
+        } catch (error) {
+            this.utils.Logger.error('应用预设失败', error);
+            this.utils.UI.showToast('应用预设失败: ' + error.message, 'error');
+        } finally {
+            // 完成批量更新
+            this.pendingUpdates = false;
+        }
+    }
+    
+    /**
+     * 连接到舵机控制器
+     * @public
+     */
+    connect() {
+        if (!this.isConnected) {
+            this._initWebSocket();
+        }
+    }
+    
+    /**
+     * 断开与舵机控制器的连接
+     * @public
+     */
+    disconnect() {
+        if (this.isConnected) {
+            try {
+                this.api.disconnectWebSocket('/servo');
+                this.isConnected = false;
+                this.updateConnectionStatus('disconnected');
+                this.utils.UI.showToast('已断开舵机控制器连接', 'info');
+            } catch (error) {
+                this.utils.Logger.error('断开舵机控制器连接失败', error);
+                this.utils.UI.showToast('断开连接失败', 'error');
+            }
+        }
+    }
+    
+    /**
+     * 更新连接状态显示
+     * @param {string} status - 连接状态 (connected|disconnected|connecting|error)
+     */
+    updateConnectionStatus(status) {
+        if (!this.connectionStatus) return;
+        
+        // 移除现有状态类
+        this.connectionStatus.classList.remove(
+            'status-connected', 
+            'status-disconnected', 
+            'status-connecting',
+            'status-error'
+        );
+        
+        // 添加新状态类
+        this.connectionStatus.classList.add('status-' + status);
+        
+        // 更新状态文本
+        let statusText = '';
+        switch(status) {
+            case 'connected':
+                statusText = '已连接';
+                break;
+            case 'disconnected':
+                statusText = '已断开';
+                break;
+            case 'connecting':
+                statusText = '连接中...';
+                break;
+            case 'error':
+                statusText = '连接错误';
+                break;
+            default:
+                statusText = status;
+        }
+        
+        this.connectionStatus.textContent = statusText;
+        
+        // 更新连接按钮
+        const connectBtn = document.getElementById('connect-btn');
+        if (connectBtn) {
+            connectBtn.textContent = this.isConnected ? '断开连接' : '连接';
+            connectBtn.classList.toggle('btn-danger', this.isConnected);
+            connectBtn.classList.toggle('btn-success', !this.isConnected);
+        }
+    }
 }
 
-// 页面加载完成后初始化
-document.addEventListener('DOMContentLoaded', initPage); 
+// 当页面加载完成时初始化舵机控制器
+document.addEventListener('DOMContentLoaded', function() {
+    // 确保API和工具库已加载
+    if (window.xiaozhi && window.xiaozhi.api) {
+        // 初始化控制器
+        window.servoController = new ServoController();
+    } else {
+        console.error('无法初始化舵机控制器: API客户端未加载');
+        // 设置重试
+        setTimeout(() => {
+            if (window.xiaozhi && window.xiaozhi.api) {
+                window.servoController = new ServoController();
+            } else {
+                console.error('加载舵机控制器失败: API客户端不可用');
+                alert('加载舵机控制组件失败，请刷新页面重试');
+            }
+        }, 1000);
+    }
+}); 

@@ -1,10 +1,11 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Vehicle Control - ESP32 Vehicle Control System</title>
+    <title>车辆控制</title>
     <link rel="stylesheet" href="css/bootstrap.min.css">
+    <link rel="stylesheet" href="css/common.css">
     <link rel="stylesheet" href="css/main.css">
     <link rel="stylesheet" href="css/vehicle.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
@@ -225,23 +226,35 @@
                         <i class="bi bi-speedometer2"></i> Vehicle Status
                     </div>
                     <div class="card-body">
-                        <div class="status-item">
-                            <span class="status-label">Speed:</span>
-                            <span id="speed-value">0 m/s</span>
-                        </div>
-                        <div class="status-item">
-                            <span class="status-label">Battery:</span>
-                            <div class="progress">
-                                <div class="progress-bar bg-success" id="battery-level" role="progressbar" style="width: 75%;" aria-valuenow="75" aria-valuemin="0" aria-valuemax="100">75%</div>
-                            </div>
-                        </div>
-                        <div class="status-item">
-                            <span class="status-label">Distance:</span>
+                        <section class="card status-panel">
+                            <h2>车辆状态</h2>
                             <div class="row">
-                                <div class="col-6">Front: <span id="front-distance">25cm</span></div>
-                                <div class="col-6">Rear: <span id="rear-distance">40cm</span></div>
+                                <div class="col-6">
+                                    <p>电池电量: <span class="battery-indicator"><span class="battery-level" id="batteryLevel" style="width:75%"></span></span> <span id="batteryPercent" class="status-value">75%</span></p>
+                                    <p>当前速度: <span id="speedValue" class="status-value">0</span> km/h</p>
+                                </div>
+                                <div class="col-6">
+                                    <p>前方距离: <span id="frontDistance" class="status-value">25</span> cm</p>
+                                    <p>后方距离: <span id="rearDistance" class="status-value">40</span> cm</p>
+                        </div>
+                            </div>
+                            
+                            <!-- 添加障碍物指示器 -->
+                            <div class="row mt-3">
+                                <div class="col-6">
+                                    <div class="obstacle-indicator">
+                                        <div class="obstacle-label">前方:</div>
+                                        <div id="front-obstacle" class="obstacle-status">安全</div>
+                                    </div>
+                                </div>
+                                <div class="col-6">
+                                    <div class="obstacle-indicator">
+                                        <div class="obstacle-label">后方:</div>
+                                        <div id="rear-obstacle" class="obstacle-status">安全</div>
                             </div>
                         </div>
+                            </div>
+                        </section>
                     </div>
                 </div>
             </div>
@@ -256,285 +269,6 @@
     <script src="js/bootstrap.bundle.min.js"></script>
     <script src="js/nipplejs.min.js"></script>
     <script src="js/main.js"></script>
-    <script>
-        $(document).ready(function() {
-            // Check camera status
-            $.get('/api/camera/status', function(data) {
-                if (!data.has_camera) {
-                    $('#camera-feed').addClass('d-none');
-                    $('#camera-offline').removeClass('d-none');
-                }
-            }).fail(function() {
-                $('#camera-feed').addClass('d-none');
-                $('#camera-offline').removeClass('d-none');
-            });
-
-            // Capture button
-            $('#btn-capture').click(function() {
-                window.open('/api/camera/capture', '_blank');
-            });
-
-            // Toggle stream button
-            let streaming = true;
-            $('#btn-toggle-stream').click(function() {
-                if (streaming) {
-                    $('#camera-feed').attr('src', '');
-                    $(this).html('<i class="bi bi-play-circle"></i>');
-                    streaming = false;
-                } else {
-                    $('#camera-feed').attr('src', '/api/camera/stream');
-                    $(this).html('<i class="bi bi-pause-circle"></i>');
-                    streaming = true;
-                }
-            });
-
-            // Fullscreen button
-            $('#btn-fullscreen').click(function() {
-                const elem = document.getElementById('camera-feed');
-                if (elem.requestFullscreen) {
-                    elem.requestFullscreen();
-                } else if (elem.webkitRequestFullscreen) { /* Safari */
-                    elem.webkitRequestFullscreen();
-                } else if (elem.msRequestFullscreen) { /* IE11 */
-                    elem.msRequestFullscreen();
-                }
-            });
-
-            // Control mode selector
-            $('#control-mode-joystick').change(function() {
-                if ($(this).is(':checked')) {
-                    $('.control-panel').addClass('d-none');
-                    $('#joystick-control').removeClass('d-none');
-                }
-            });
-
-            $('#control-mode-buttons').change(function() {
-                if ($(this).is(':checked')) {
-                    $('.control-panel').addClass('d-none');
-                    $('#button-control').removeClass('d-none');
-                }
-            });
-
-            $('#control-mode-auto').change(function() {
-                if ($(this).is(':checked')) {
-                    $('.control-panel').addClass('d-none');
-                    $('#auto-control').removeClass('d-none');
-                }
-            });
-
-            // Initialize joystick
-            const joystickManager = nipplejs.create({
-                zone: document.getElementById('joystick-zone'),
-                mode: 'static',
-                position: { left: '50%', top: '50%' },
-                color: 'blue',
-                size: 150
-            });
-
-            joystickManager.on('move', function(evt, data) {
-                const angle = data.angle.degree;
-                const force = Math.min(1, data.force / 2);
-                const direction = getDirection(angle);
-                
-                $('#joystick-direction').text(direction);
-                $('#joystick-force').text(Math.round(force * 100) + '%');
-                
-                // Send control command to vehicle
-                sendControlCommand(direction, force);
-            });
-
-            joystickManager.on('end', function() {
-                $('#joystick-direction').text('Center');
-                $('#joystick-force').text('0%');
-                
-                // Send stop command
-                sendControlCommand('stop', 0);
-            });
-
-            function getDirection(angle) {
-                if (angle >= 337.5 || angle < 22.5) return 'Forward';
-                if (angle >= 22.5 && angle < 67.5) return 'Forward Right';
-                if (angle >= 67.5 && angle < 112.5) return 'Right';
-                if (angle >= 112.5 && angle < 157.5) return 'Backward Right';
-                if (angle >= 157.5 && angle < 202.5) return 'Backward';
-                if (angle >= 202.5 && angle < 247.5) return 'Backward Left';
-                if (angle >= 247.5 && angle < 292.5) return 'Left';
-                if (angle >= 292.5 && angle < 337.5) return 'Forward Left';
-                return 'Center';
-            }
-
-            // Button controls
-            $('#btn-forward').on('mousedown touchstart', function() {
-                sendControlCommand('forward', 1);
-            }).on('mouseup touchend', function() {
-                sendControlCommand('stop', 0);
-            });
-
-            $('#btn-backward').on('mousedown touchstart', function() {
-                sendControlCommand('backward', 1);
-            }).on('mouseup touchend', function() {
-                sendControlCommand('stop', 0);
-            });
-
-            $('#btn-left').on('mousedown touchstart', function() {
-                sendControlCommand('left', 1);
-            }).on('mouseup touchend', function() {
-                sendControlCommand('stop', 0);
-            });
-
-            $('#btn-right').on('mousedown touchstart', function() {
-                sendControlCommand('right', 1);
-            }).on('mouseup touchend', function() {
-                sendControlCommand('stop', 0);
-            });
-
-            $('#btn-stop').click(function() {
-                sendControlCommand('stop', 0);
-            });
-
-            // Pan-Tilt controls
-            $('#pan-slider').on('input', function() {
-                const value = $(this).val();
-                $('#pan-value').text(value + '°');
-                sendServoCommand('pan', parseInt(value));
-            });
-
-            $('#tilt-slider').on('input', function() {
-                const value = $(this).val();
-                $('#tilt-value').text(value + '°');
-                sendServoCommand('tilt', parseInt(value));
-            });
-
-            $('#btn-center-servos').click(function() {
-                $('#pan-slider').val(0);
-                $('#tilt-slider').val(0);
-                $('#pan-value').text('0°');
-                $('#tilt-value').text('0°');
-                sendServoCommand('pan', 0);
-                sendServoCommand('tilt', 0);
-            });
-
-            // Auto control buttons
-            $('#auto-follow-line').click(function() {
-                sendAutoCommand('follow_line');
-                $(this).addClass('active').siblings().removeClass('active');
-            });
-
-            $('#auto-obstacle-avoidance').click(function() {
-                sendAutoCommand('obstacle_avoidance');
-                $(this).addClass('active').siblings().removeClass('active');
-            });
-
-            $('#auto-face-tracking').click(function() {
-                sendAutoCommand('face_tracking');
-                $(this).addClass('active').siblings().removeClass('active');
-            });
-
-            $('#auto-color-tracking').click(function() {
-                sendAutoCommand('color_tracking');
-                $(this).addClass('active').siblings().removeClass('active');
-            });
-
-            // Toggle obstacle detection
-            $('#toggle-obstacle-detection').change(function() {
-                const enabled = $(this).is(':checked');
-                sendCommand('set_obstacle_detection', { enabled: enabled });
-            });
-
-            // WebSocket connection for real-time updates
-            const socket = new WebSocket(`ws://${window.location.host}/ws/vehicle`);
-            
-            socket.onopen = function() {
-                console.log('WebSocket connected');
-                $('#status-badge').removeClass('d-none');
-                $('#status-badge-disconnected').addClass('d-none');
-            };
-            
-            socket.onclose = function() {
-                console.log('WebSocket disconnected');
-                $('#status-badge').addClass('d-none');
-                $('#status-badge-disconnected').removeClass('d-none');
-            };
-            
-            socket.onmessage = function(event) {
-                const data = JSON.parse(event.data);
-                
-                if (data.type === 'status') {
-                    updateVehicleStatus(data.data);
-                } else if (data.type === 'obstacle') {
-                    updateObstacleStatus(data.data);
-                }
-            };
-
-            function updateVehicleStatus(status) {
-                // Update battery level
-                if (status.battery) {
-                    const batteryLevel = status.battery;
-                    $('#battery-level').css('width', batteryLevel + '%').text(batteryLevel + '%');
-                    
-                    if (batteryLevel > 60) {
-                        $('#battery-level').removeClass('bg-warning bg-danger').addClass('bg-success');
-                    } else if (batteryLevel > 20) {
-                        $('#battery-level').removeClass('bg-success bg-danger').addClass('bg-warning');
-                    } else {
-                        $('#battery-level').removeClass('bg-success bg-warning').addClass('bg-danger');
-                    }
-                }
-                
-                // Update speed
-                if (status.speed !== undefined) {
-                    $('#speed-value').text(status.speed + ' m/s');
-                }
-                
-                // Update distances
-                if (status.distance) {
-                    $('#front-distance').text(status.distance.front + 'cm');
-                    $('#rear-distance').text(status.distance.rear + 'cm');
-                }
-                
-                // Update camera info
-                if (status.camera) {
-                    if (status.camera.resolution) {
-                        $('#camera-resolution').text(status.camera.resolution);
-                    }
-                    if (status.camera.fps) {
-                        $('#camera-fps').text(status.camera.fps + ' FPS');
-                    }
-                }
-            }
-
-            function updateObstacleStatus(obstacles) {
-                // Update obstacle indicators
-                $('#obstacle-front').toggleClass('active', obstacles.front);
-                $('#obstacle-rear').toggleClass('active', obstacles.rear);
-                $('#obstacle-left').toggleClass('active', obstacles.left);
-                $('#obstacle-right').toggleClass('active', obstacles.right);
-            }
-
-            // Send commands to the server
-            function sendControlCommand(direction, force) {
-                sendCommand('control', { direction: direction, force: force });
-            }
-
-            function sendServoCommand(servo, angle) {
-                sendCommand('servo', { servo: servo, angle: angle });
-            }
-
-            function sendAutoCommand(mode) {
-                sendCommand('auto', { mode: mode });
-            }
-
-            function sendCommand(cmd, params) {
-                if (socket.readyState === WebSocket.OPEN) {
-                    const message = {
-                        cmd: cmd,
-                        ...params
-                    };
-                    socket.send(JSON.stringify(message));
-                }
-            }
-        });
-    </script>
     <script src="js/vehicle.js"></script>
 </body>
 </html>

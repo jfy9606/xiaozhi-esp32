@@ -28,6 +28,12 @@ bool InitializeApi(Web* web) {
     RegisterApiHandler(web, HttpMethod::HTTP_GET, "/config", HandleConfigGet);
     RegisterApiHandler(web, HttpMethod::HTTP_POST, "/config", HandleConfigSet);
     
+    // 注册摄像头API
+    RegisterApiHandler(web, HttpMethod::HTTP_GET, "/camera/status", HandleCameraStatus);
+    RegisterApiHandler(web, HttpMethod::HTTP_GET, "/camera/stream", HandleCameraStream);
+    RegisterApiHandler(web, HttpMethod::HTTP_GET, "/camera/capture", HandleCameraCapture);
+    RegisterApiHandler(web, HttpMethod::HTTP_POST, "/camera/settings", HandleCameraSettings);
+    
     ESP_LOGI(TAG, "API initialization completed");
     return true;
 }
@@ -397,5 +403,157 @@ ApiResponse HandleConfigSet(httpd_req_t* req) {
         return CreateApiSuccessResponse(message);
     } else {
         return CreateApiErrorResponse(400, message.empty() ? "Failed to update configuration" : message);
+    }
+}
+
+// 摄像头状态API
+ApiResponse HandleCameraStatus(httpd_req_t* req) {
+    ESP_LOGI(TAG, "Processing camera status request");
+    
+    // 创建相机状态数据
+    cJSON* data = cJSON_CreateObject();
+    
+    // 这里应从实际的相机组件获取数据
+    // 目前使用模拟数据进行测试
+    bool has_camera = true; // 实际应检测摄像头是否存在
+    bool is_streaming = false; // 实际应检查是否正在流式传输
+    
+    cJSON_AddBoolToObject(data, "has_camera", has_camera);
+    cJSON_AddBoolToObject(data, "is_streaming", is_streaming);
+    cJSON_AddNumberToObject(data, "width", 640); // 模拟数据
+    cJSON_AddNumberToObject(data, "height", 480); // 模拟数据
+    
+    return CreateApiSuccessResponse("Camera status retrieved", data);
+}
+
+// 摄像头流API
+ApiResponse HandleCameraStream(httpd_req_t* req) {
+    ESP_LOGI(TAG, "Processing camera stream request");
+    
+    // 解析查询参数
+    std::map<std::string, std::string> params = Web::ParseQueryParams(req);
+    
+    // 获取分辨率参数(如果指定了)
+    int width = 640; // 默认值
+    int height = 480; // 默认值
+    
+    if (params.find("width") != params.end()) {
+        try {
+            width = std::stoi(params["width"]);
+        } catch (...) {
+            ESP_LOGW(TAG, "Invalid width parameter: %s", params["width"].c_str());
+        }
+    }
+    
+    if (params.find("height") != params.end()) {
+        try {
+            height = std::stoi(params["height"]);
+        } catch (...) {
+            ESP_LOGW(TAG, "Invalid height parameter: %s", params["height"].c_str());
+        }
+    }
+    
+    // 创建响应数据
+    cJSON* data = cJSON_CreateObject();
+    cJSON_AddStringToObject(data, "stream_type", "mjpeg");
+    cJSON_AddStringToObject(data, "url", "/stream");  // 实际流媒体URL
+    cJSON_AddNumberToObject(data, "width", width);
+    cJSON_AddNumberToObject(data, "height", height);
+    
+    return CreateApiSuccessResponse("Camera stream information", data);
+}
+
+// 摄像头捕获API
+ApiResponse HandleCameraCapture(httpd_req_t* req) {
+    ESP_LOGI(TAG, "Processing camera capture request");
+    
+    // 实际上应该捕获一张照片并返回
+    // 目前仅返回模拟数据
+    ApiResponse response;
+    response.status_code = 200;
+    response.type = ApiResponseType::JSON;
+    
+    // 创建响应数据
+    cJSON* data = cJSON_CreateObject();
+    cJSON_AddStringToObject(data, "capture_url", "/captures/latest.jpg");  // 模拟数据
+    cJSON_AddStringToObject(data, "timestamp", "2023-10-18T15:30:45Z");  // 模拟数据
+    
+    char* json_str = cJSON_PrintUnformatted(data);
+    if (json_str) {
+        response.content = json_str;
+        free(json_str);
+    } else {
+        response.content = "{\"success\":true,\"message\":\"Image captured\",\"data\":{\"capture_url\":\"/captures/latest.jpg\"}}";
+    }
+    
+    cJSON_Delete(data);
+    
+    return response;
+}
+
+// 摄像头设置API
+ApiResponse HandleCameraSettings(httpd_req_t* req) {
+    ESP_LOGI(TAG, "Processing camera settings request");
+    
+    // 解析JSON请求体
+    cJSON* json = ParseRequestJson(req);
+    if (!json) {
+        return CreateApiErrorResponse(400, "Invalid JSON request");
+    }
+    
+    // 分析设置项
+    bool success = false;
+    std::string message;
+    
+    // 亮度
+    cJSON* brightness = cJSON_GetObjectItem(json, "brightness");
+    if (brightness && cJSON_IsNumber(brightness)) {
+        int brightness_val = brightness->valueint;
+        // 应用亮度设置，实际应调用相机组件的功能
+        ESP_LOGI(TAG, "Setting camera brightness to: %d", brightness_val);
+        success = true;
+    }
+    
+    // 对比度
+    cJSON* contrast = cJSON_GetObjectItem(json, "contrast");
+    if (contrast && cJSON_IsNumber(contrast)) {
+        int contrast_val = contrast->valueint;
+        // 应用对比度设置，实际应调用相机组件的功能
+        ESP_LOGI(TAG, "Setting camera contrast to: %d", contrast_val);
+        success = true;
+    }
+    
+    // 饱和度
+    cJSON* saturation = cJSON_GetObjectItem(json, "saturation");
+    if (saturation && cJSON_IsNumber(saturation)) {
+        int saturation_val = saturation->valueint;
+        // 应用饱和度设置，实际应调用相机组件的功能
+        ESP_LOGI(TAG, "Setting camera saturation to: %d", saturation_val);
+        success = true;
+    }
+    
+    // 分辨率
+    cJSON* resolution = cJSON_GetObjectItem(json, "resolution");
+    if (resolution && cJSON_IsObject(resolution)) {
+        cJSON* width = cJSON_GetObjectItem(resolution, "width");
+        cJSON* height = cJSON_GetObjectItem(resolution, "height");
+        
+        if (width && cJSON_IsNumber(width) && height && cJSON_IsNumber(height)) {
+            int width_val = width->valueint;
+            int height_val = height->valueint;
+            // 应用分辨率设置，实际应调用相机组件的功能
+            ESP_LOGI(TAG, "Setting camera resolution to: %dx%d", width_val, height_val);
+            success = true;
+        }
+    }
+    
+    cJSON_Delete(json);
+    
+    if (success) {
+        message = "Camera settings updated";
+        return CreateApiSuccessResponse(message);
+    } else {
+        message = "No valid camera settings found in request";
+        return CreateApiErrorResponse(400, message);
     }
 } 

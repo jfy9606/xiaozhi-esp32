@@ -19,6 +19,8 @@
 #include "websocket_protocol.h"
 #include "font_awesome_symbols.h"
 #include "iot/thing_manager.h"
+#include "iot/things/imu.h"
+#include "iot/things/us.h"
 #include "assets/lang_config.h"
 #include "mcp_server.h"
 #include "ext/include/multiplexer.h"
@@ -1576,6 +1578,15 @@ bool Application::InitComponents() {
 #ifdef CONFIG_ENABLE_MOTOR_CONTROLLER
     InitVehicleComponent(web_server);
 #endif
+
+    // 初始化传感器部分
+    // 注册IMU传感器
+    iot::RegisterIMU();
+    ESP_LOGI(TAG, "IMU sensor registered");
+
+    // 注册超声波传感器
+    iot::RegisterUS();
+    ESP_LOGI(TAG, "Ultrasonic sensor registered");
 
     return true;
 }

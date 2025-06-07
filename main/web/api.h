@@ -73,3 +73,9 @@ ApiResponse HandleSystemRestart(httpd_req_t* req);
 ApiResponse HandleServiceStatus(httpd_req_t* req);
 ApiResponse HandleConfigGet(httpd_req_t* req);
 ApiResponse HandleConfigSet(httpd_req_t* req); 
+
+// 摄像头API处理函数
+ApiResponse HandleCameraStatus(httpd_req_t* req);
+ApiResponse HandleCameraStream(httpd_req_t* req);
+ApiResponse HandleCameraCapture(httpd_req_t* req);
+ApiResponse HandleCameraSettings(httpd_req_t* req); 

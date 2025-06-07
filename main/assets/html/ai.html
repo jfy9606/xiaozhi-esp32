@@ -7,10 +7,11 @@
     <link rel="stylesheet" href="css/bootstrap.min.css">
     <link rel="stylesheet" href="css/main.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500&display=swap">
 </head>
 <body>
-    <div class="container-fluid">
-        <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+    <div class="container">
+        <nav class="navbar navbar-expand-lg navbar-dark">
             <div class="container-fluid">
                 <a class="navbar-brand" href="#">
                     <i class="bi bi-robot"></i> ESP32 Vehicle Control
@@ -54,16 +55,16 @@
             </div>
         </nav>
 
-        <div class="row mt-4">
-            <div class="col-md-8">
+        <div class="main-content mt-4">
+            <div class="chat-section">
                 <div class="card">
-                    <div class="card-header bg-primary text-white">
+                    <div class="card-header">
                         <div class="d-flex justify-content-between align-items-center">
                             <div>
                                 <i class="bi bi-chat-dots"></i> AI Assistant
                             </div>
                             <div>
-                                <button class="btn btn-sm btn-light" id="btn-clear-chat">
+                                <button class="btn" id="btn-clear-chat">
                                     <i class="bi bi-trash"></i> Clear
                                 </button>
                             </div>
@@ -85,16 +86,17 @@
                             <button class="btn btn-primary" id="btn-send">
                                 <i class="bi bi-send"></i>
                             </button>
-                            <button class="btn btn-outline-secondary" id="btn-mic">
+                            <button class="btn btn-secondary" id="btn-mic">
                                 <i class="bi bi-mic"></i>
           </button>
         </div>
                     </div>
                 </div>
             </div>
-            <div class="col-md-4">
+            
+            <div class="controls-section">
                 <div class="card">
-                    <div class="card-header bg-success text-white">
+                    <div class="card-header">
                         <i class="bi bi-sliders"></i> Assistant Settings
                     </div>
                     <div class="card-body">
@@ -112,14 +114,14 @@
                                 <span>Speech Rate</span>
                                 <span id="speech-rate-value">1.0</span>
             </label>
-                            <input type="range" class="form-range" id="speech-rate" min="0.5" max="2" step="0.1" value="1">
+                            <input type="range" id="speech-rate" min="0.5" max="2" step="0.1" value="1" class="form-range">
           </div>
                         <div class="mb-3">
                             <label for="speech-pitch" class="form-label d-flex justify-content-between">
                                 <span>Speech Pitch</span>
                                 <span id="speech-pitch-value">1.0</span>
             </label>
-                            <input type="range" class="form-range" id="speech-pitch" min="0.5" max="2" step="0.1" value="1">
+                            <input type="range" id="speech-pitch" min="0.5" max="2" step="0.1" value="1" class="form-range">
                         </div>
                         <div class="mb-3">
                             <div class="form-check form-switch">
@@ -137,7 +139,7 @@
       </div>
       
                 <div class="card mt-3">
-                    <div class="card-header bg-info text-white">
+                    <div class="card-header">
                         <i class="bi bi-lightbulb"></i> Quick Commands
                     </div>
                     <div class="card-body p-0">
@@ -165,7 +167,7 @@
         </div>
         
                 <div class="card mt-3">
-                    <div class="card-header bg-secondary text-white">
+                    <div class="card-header">
                         <i class="bi bi-mic-fill"></i> Voice Recognition Status
                     </div>
                     <div class="card-body">
@@ -191,277 +193,6 @@
     <script src="js/jquery-3.6.0.min.js"></script>
     <script src="js/bootstrap.bundle.min.js"></script>
     <script src="js/main.js"></script>
-    <script>
-        $(document).ready(function() {
-            // Initialize variables
-            let recognition = null;
-            let speechSynthesis = window.speechSynthesis;
-            let isListening = false;
-            let isSpeaking = false;
-            
-            // Check if browser supports speech recognition
-            if ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window) {
-                const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-                recognition = new SpeechRecognition();
-                recognition.continuous = false;
-                recognition.interimResults = true;
-                recognition.lang = 'en-US';
-                
-                recognition.onstart = function() {
-                    isListening = true;
-                    $('#voice-status-indicator').addClass('active');
-                    $('#voice-status-text').text('Listening...');
-                    $('#btn-mic').addClass('btn-danger').removeClass('btn-outline-secondary');
-                    $('#btn-mic i').removeClass('bi-mic').addClass('bi-mic-fill');
-                };
-                
-                recognition.onresult = function(event) {
-                    const transcript = Array.from(event.results)
-                        .map(result => result[0])
-                        .map(result => result.transcript)
-                        .join('');
-                    
-                    $('#transcript-text').text(transcript);
-                    $('#voice-transcript').removeClass('d-none');
-                    
-                    if (event.results[0].isFinal) {
-                        $('#chat-input').val(transcript);
-                    }
-                };
-                
-                recognition.onend = function() {
-                    isListening = false;
-                    $('#voice-status-indicator').removeClass('active');
-                    $('#voice-status-text').text('Voice recognition ready');
-                    $('#btn-mic').removeClass('btn-danger').addClass('btn-outline-secondary');
-                    $('#btn-mic i').removeClass('bi-mic-fill').addClass('bi-mic');
-                    
-                    // If we have a transcript, send the message
-                    if ($('#chat-input').val().trim() !== '') {
-                        $('#btn-send').click();
-                    }
-                    
-                    setTimeout(function() {
-                        $('#voice-transcript').addClass('d-none');
-                    }, 5000);
-                };
-                
-                recognition.onerror = function(event) {
-                    isListening = false;
-                    $('#voice-status-indicator').removeClass('active').addClass('error');
-                    $('#voice-status-text').text('Error: ' + event.error);
-                    $('#btn-mic').removeClass('btn-danger').addClass('btn-outline-secondary');
-                    $('#btn-mic i').removeClass('bi-mic-fill').addClass('bi-mic');
-                    
-                    setTimeout(function() {
-                        $('#voice-status-indicator').removeClass('error');
-                        $('#voice-status-text').text('Voice recognition ready');
-                    }, 3000);
-                };
-            } else {
-                $('#btn-mic').prop('disabled', true);
-                $('#voice-status-text').text('Voice recognition not supported in this browser');
-                $('#toggle-voice-commands').prop('checked', false).prop('disabled', true);
-            }
-            
-            // WebSocket connection for real-time communication
-            const socket = new WebSocket(`ws://${window.location.host}/ws/ai`);
-            
-            socket.onopen = function() {
-                console.log('WebSocket connected');
-                $('#status-badge').removeClass('d-none');
-                $('#status-badge-disconnected').addClass('d-none');
-            };
-            
-            socket.onclose = function() {
-                console.log('WebSocket disconnected');
-                $('#status-badge').addClass('d-none');
-                $('#status-badge-disconnected').removeClass('d-none');
-            };
-            
-            socket.onmessage = function(event) {
-                const data = JSON.parse(event.data);
-                
-                if (data.type === 'ai_response') {
-                    addMessage('ai', data.text);
-                    
-                    // Speak the response if text-to-speech is enabled
-                    if ($('#toggle-speech').is(':checked')) {
-                        speak(data.text);
-                    }
-                }
-            };
-            
-            // Send message function
-            function sendMessage(text) {
-                if (text.trim() === '') return;
-                
-                // Add message to chat
-                addMessage('user', text);
-                
-                // Clear input
-                $('#chat-input').val('');
-                
-                // Send message to server
-                if (socket.readyState === WebSocket.OPEN) {
-                    const message = {
-                        cmd: 'chat',
-                        text: text,
-                        personality: $('#ai-personality').val()
-                    };
-                    socket.send(JSON.stringify(message));
-                }
-            }
-            
-            // Add message to chat
-            function addMessage(type, text) {
-                const time = new Date().toLocaleTimeString();
-                const messageHtml = `
-                    <div class="chat-message ${type}">
-                        <div class="message-content">
-                            ${text}
-        </div>
-                        <div class="message-time">
-                            <small class="text-muted">${time}</small>
-      </div>
-    </div>
-                `;
-                
-                $('#chat-container').append(messageHtml);
-                
-                // Scroll to bottom
-                const chatContainer = document.getElementById('chat-container');
-                chatContainer.scrollTop = chatContainer.scrollHeight;
-            }
-            
-            // Text to speech function
-            function speak(text) {
-                if (isSpeaking) {
-                    speechSynthesis.cancel();
-                }
-                
-                if ('speechSynthesis' in window) {
-                    const utterance = new SpeechSynthesisUtterance(text);
-                    utterance.rate = parseFloat($('#speech-rate').val());
-                    utterance.pitch = parseFloat($('#speech-pitch').val());
-                    utterance.lang = 'en-US';
-                    
-                    utterance.onstart = function() {
-                        isSpeaking = true;
-                    };
-                    
-                    utterance.onend = function() {
-                        isSpeaking = false;
-                    };
-                    
-                    speechSynthesis.speak(utterance);
-                }
-            }
-            
-            // Send button click
-            $('#btn-send').click(function() {
-                const text = $('#chat-input').val();
-                sendMessage(text);
-            });
-            
-            // Enter key press in input
-            $('#chat-input').keypress(function(e) {
-                if (e.which === 13) {
-                    $('#btn-send').click();
-                }
-            });
-            
-            // Microphone button click
-            $('#btn-mic').click(function() {
-                if (!recognition) return;
-                
-                if (isListening) {
-                    recognition.stop();
-                } else {
-                    recognition.start();
-                }
-            });
-            
-            // Clear chat button
-            $('#btn-clear-chat').click(function() {
-                $('#chat-container').empty();
-                addMessage('ai', 'Chat cleared. How can I help you?');
-            });
-            
-            // Speech rate slider
-            $('#speech-rate').on('input', function() {
-                const value = $(this).val();
-                $('#speech-rate-value').text(value);
-            });
-            
-            // Speech pitch slider
-            $('#speech-pitch').on('input', function() {
-                const value = $(this).val();
-                $('#speech-pitch-value').text(value);
-            });
-            
-            // Quick command buttons
-            $('.quick-command').click(function() {
-                const command = $(this).data('command');
-                $('#chat-input').val(command);
-                $('#btn-send').click();
-            });
-            
-            // Voice commands toggle
-            $('#toggle-voice-commands').change(function() {
-                if ($(this).is(':checked')) {
-                    $('#btn-mic').prop('disabled', false);
-                    $('#voice-status-text').text('Voice recognition ready');
-                } else {
-                    $('#btn-mic').prop('disabled', true);
-                    $('#voice-status-text').text('Voice commands disabled');
-                    if (isListening && recognition) {
-                        recognition.stop();
-                    }
-                }
-            });
-            
-            // Add some CSS for voice status
-            const style = document.createElement('style');
-            style.textContent = `
-                .voice-status-indicator {
-                    display: flex;
-                    align-items: center;
-                }
-                
-                .voice-status-dot {
-                    width: 12px;
-                    height: 12px;
-                    border-radius: 50%;
-                    background-color: #ccc;
-                    margin-right: 8px;
-                    transition: background-color 0.3s;
-                }
-                
-                .voice-status-indicator.active .voice-status-dot {
-                    background-color: #dc3545;
-                    animation: pulse 1.5s infinite;
-                }
-                
-                .voice-status-indicator.error .voice-status-dot {
-                    background-color: #dc3545;
-                }
-                
-                @keyframes pulse {
-                    0% { opacity: 1; }
-                    50% { opacity: 0.5; }
-                    100% { opacity: 1; }
-                }
-                
-                .voice-transcript {
-                    padding: 8px;
-                    background-color: #f8f9fa;
-                    border-radius: 4px;
-                    margin-top: 8px;
-                }
-            `;
-            document.head.appendChild(style);
-        });
-    </script>
+    <script src="js/ai.js"></script>
 </body>
 </html>

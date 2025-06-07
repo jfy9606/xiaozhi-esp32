@@ -1,15 +1,23 @@
 #include <memory>
+#include <string>
 #include <cstring>
+#include <cmath>
+#include <algorithm>
+#include <chrono>
+#include <thread>
+#include <atomic>
 
 #include "esp_log.h"
 #include "driver/gpio.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/semphr.h"
 #include "esp_timer.h"
 #include "esp_rom_sys.h"
 
 #include "../boards/common/board.h"
 #include "../thing.h"
+#include "../thing_manager.h"
 #include "ext/include/multiplexer.h"
 #include "ext/include/pcf8575.h"
 
@@ -544,3 +552,15 @@ public:
 } // namespace iot 
 
 DECLARE_THING(UltrasonicSensor);
+
+// 添加 RegisterUS 函数的实现
+namespace iot {
+void RegisterUS() {
+    static UltrasonicSensor* instance = nullptr;
+    if (instance == nullptr) {
+        instance = new UltrasonicSensor();
+        ThingManager::GetInstance().AddThing(instance);
+        ESP_LOGI(TAG, "Ultrasonic Sensor Thing registered to ThingManager");
+    }
+}
+} // namespace iot

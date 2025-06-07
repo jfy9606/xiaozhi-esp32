@@ -212,20 +212,10 @@ void Location::InitHandlers() {
         return ESP_OK;
     });
     
-    // 注册API处理器
+    // 注册API处理器 - 只保留位置获取API
     web_server_->RegisterApiHandler(HttpMethod::HTTP_GET, "/location", 
                                    [this](httpd_req_t* req) {
                                        return HandleGetLocation(req);
-                                   });
-                                   
-    web_server_->RegisterApiHandler(HttpMethod::HTTP_POST, "/location/start", 
-                                   [this](httpd_req_t* req) {
-                                       return HandleStartTracking(req);
-                                   });
-                                   
-    web_server_->RegisterApiHandler(HttpMethod::HTTP_POST, "/location/stop", 
-                                   [this](httpd_req_t* req) {
-                                       return HandleStopTracking(req);
                                    });
                                    
     // 注册WebSocket消息回调
@@ -287,30 +277,6 @@ ApiResponse Location::HandleGetLocation(httpd_req_t* req) {
             location.course, location.valid ? "true" : "false");
             
     return ApiResponse(response);
-}
-
-ApiResponse Location::HandleStartTracking(httpd_req_t* req) {
-    ESP_LOGI(TAG, "Processing start tracking request");
-    
-    bool success = StartGPS();
-    
-    // 构建JSON响应
-    char response[128];
-    snprintf(response, sizeof(response), 
-            "{\"success\":%s,\"message\":\"%s\"}",
-            success ? "true" : "false",
-            success ? "GPS tracking started" : "Failed to start GPS tracking");
-            
-    return ApiResponse(response);
-}
-
-ApiResponse Location::HandleStopTracking(httpd_req_t* req) {
-    ESP_LOGI(TAG, "Processing stop tracking request");
-    
-    StopGPS();
-    
-    // 构建JSON响应
-    return ApiResponse("{\"success\":true,\"message\":\"GPS tracking stopped\"}");
 }
 
 // GPS任务和处理

@@ -64,8 +64,6 @@ protected:
     
     // API响应处理
     ApiResponse HandleGetLocation(httpd_req_t* req);
-    ApiResponse HandleStartTracking(httpd_req_t* req);
-    ApiResponse HandleStopTracking(httpd_req_t* req);
     
     // GPS任务和处理
     static void GpsTask(void* param);

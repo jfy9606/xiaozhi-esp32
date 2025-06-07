@@ -164,12 +164,26 @@ function initDashboard() {
  */
 function fetchSystemInfo() {
     fetch('/api/system/info')
-        .then(response => response.json())
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP error! Status: ${response.status}`);
+            }
+            return response.json();
+        })
         .then(data => {
             updateSystemInfo(data);
         })
         .catch(error => {
             console.error('Error fetching system info:', error);
+            // 使用默认数据以避免界面错误
+            updateSystemInfo({
+                hostname: 'ESP32 Device',
+                version: '1.0.0',
+                ip_address: window.location.hostname,
+                mac: 'Unknown',
+                free_heap: 0,
+                uptime: 0
+            });
         });
 }
 
@@ -446,12 +460,41 @@ function handleSystemStatus(message) {
  * @param {Object} message - The sensor data message
  */
 function handleSensorData(message) {
-    // Update sensor data displays
+    console.log('传感器数据消息:', message);
     
-    // Update ultrasonic sensor displays if available
-    if (message.ultrasonic && window.vehicleSystem) {
-        window.vehicleSystem.updateUltrasonicDisplay(message.ultrasonic);
+    // 更新距离信息
+    if (message.distances) {
+        const frontDist = message.distances.front !== undefined ? message.distances.front + 'cm' : '未知';
+        const rearDist = message.distances.rear !== undefined ? message.distances.rear + 'cm' : '未知';
+        $('#distance-value').text(`前方: ${frontDist}, 后方: ${rearDist}`);
     }
+    
+    // 更新光照信息（可用于演示调整信号强度）
+    if (message.light !== undefined && !window.vehicleSystem) {
+        // 只有在vehicleSystem未定义时才使用光照来演示信号强度
+        let signalStrength = Math.min(100, Math.max(0, message.light / 10));
+        let signalText = 'Very Poor';
+        let signalIcon = 'bi-reception-0';
+        
+        if (signalStrength > 80) {
+            signalText = 'Excellent';
+            signalIcon = 'bi-reception-4';
+        } else if (signalStrength > 60) {
+            signalText = 'Good';
+            signalIcon = 'bi-reception-3';
+        } else if (signalStrength > 40) {
+            signalText = 'Fair';
+            signalIcon = 'bi-reception-2';
+        } else if (signalStrength > 20) {
+            signalText = 'Poor';
+            signalIcon = 'bi-reception-1';
+        }
+        
+        $('.signal-strength i').removeClass().addClass('bi ' + signalIcon);
+        $('#signal-strength').text(signalText);
+    }
+    
+    // 其他传感器数据处理...
 }
 
 /**
@@ -568,4 +611,100 @@ window.app = {
     formatBytes,
     formatUptime,
     showTab
+};
+
+// 创建车辆系统对象
+window.vehicleSystem = {
+    handleStatusMessage: function(message) {
+        console.log('车辆状态消息:', message);
+        
+        // 更新电池电量
+        if (message.batteryLevel !== undefined) {
+            this.updateBatteryLevel(message.batteryLevel);
+        }
+        
+        // 更新车速
+        if (message.speed !== undefined) {
+            $('#speed-value').text(message.speed + ' m/s');
+        }
+        
+        // 更新模式
+        if (message.mode) {
+            $('#mode-value').text(message.mode);
+        }
+        
+        // 更新距离信息
+        if (message.distances) {
+            $('#distance-value').text(`前方: ${message.distances.front}cm, 后方: ${message.distances.rear}cm`);
+        }
+        
+        // 更新车辆状态
+        if (message.readyState) {
+            this.updateVehicleStatus(message.readyState);
+        }
+        
+        // 更新信号强度
+        if (message.signal) {
+            this.updateSignalStrength(message.signal);
+        }
+    },
+    
+    updateBatteryLevel: function(batteryLevel) {
+        const batteryEl = $('#battery-level');
+        if (!batteryEl.length) return;
+        
+        batteryEl.css('width', batteryLevel + '%').text(batteryLevel + '%');
+        
+        if (batteryLevel > 60) {
+            batteryEl.removeClass('bg-warning bg-danger').addClass('bg-success');
+        } else if (batteryLevel > 20) {
+            batteryEl.removeClass('bg-success bg-danger').addClass('bg-warning');
+        } else {
+            batteryEl.removeClass('bg-success bg-warning').addClass('bg-danger');
+        }
+    },
+    
+    updateVehicleStatus: function(status) {
+        const statusEl = $('#vehicle-status');
+        if (!statusEl.length) return;
+        
+        statusEl.text(status);
+        
+        if (status === 'Ready') {
+            statusEl.removeClass('bg-warning bg-danger').addClass('bg-success');
+        } else if (status === 'Moving') {
+            statusEl.removeClass('bg-success bg-danger').addClass('bg-warning');
+        } else if (status === 'Error') {
+            statusEl.removeClass('bg-success bg-warning').addClass('bg-danger');
+        }
+    },
+    
+    updateSignalStrength: function(signal) {
+        const signalEl = $('#signal-strength');
+        const signalIconEl = $('.signal-strength i');
+        if (!signalEl.length) return;
+        
+        let signalIcon = 'bi-reception-0';
+        
+        if (signal === 'Excellent') {
+            signalIcon = 'bi-reception-4';
+        } else if (signal === 'Good') {
+            signalIcon = 'bi-reception-3';
+        } else if (signal === 'Fair') {
+            signalIcon = 'bi-reception-2';
+        } else if (signal === 'Poor') {
+            signalIcon = 'bi-reception-1';
+        }
+        
+        signalIconEl.removeClass().addClass('bi ' + signalIcon);
+        signalEl.text(signal);
+    },
+    
+    updateUltrasonicDisplay: function(data) {
+        if (data.front !== undefined || data.rear !== undefined) {
+            const frontDist = data.front !== undefined ? data.front + 'cm' : '未知';
+            const rearDist = data.rear !== undefined ? data.rear + 'cm' : '未知';
+            $('#distance-value').text(`前方: ${frontDist}, 后方: ${rearDist}`);
+        }
+    }
 }; 

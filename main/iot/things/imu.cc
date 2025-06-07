@@ -10,6 +10,7 @@
 
 #include "../boards/common/board.h"
 #include "../thing.h"
+#include "../thing_manager.h"
 
 static constexpr char TAG[] = "IMU";
 
@@ -652,5 +653,15 @@ private:
 
 // Register the IMU thing
 DECLARE_THING(IMU)
+
+// 添加 RegisterIMU 函数的实现
+void RegisterIMU() {
+    static IMU* instance = nullptr;
+    if (instance == nullptr) {
+        instance = new IMU();
+        ThingManager::GetInstance().AddThing(instance);
+        ESP_LOGI(TAG, "IMU Thing registered to ThingManager");
+    }
+}
 
 }  // namespace iot 

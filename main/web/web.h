@@ -88,6 +88,9 @@ public:
     
     // 内容生成方法
     std::string GetHtml(const std::string& page, const char* accept_language = nullptr);
+    
+    // 路径标准化
+    static std::string NormalizeWebSocketPath(const std::string& uri);
 
 protected:
     // HTTP服务器实例和配置
@@ -106,6 +109,8 @@ protected:
     // 内部方法
     void InitDefaultHandlers();
     void InitApiHandlers();
+    void InitVehicleWebSocketHandlers();
+    void InitSensorHandlers();
     
     // 内部静态HTTP处理器
     static esp_err_t InternalRequestHandler(httpd_req_t* req);

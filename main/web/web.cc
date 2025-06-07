@@ -1,11 +1,42 @@
 #include "web.h"
-#include "esp_log.h"
-#include "esp_http_server.h"
-#include <cJSON.h>
+#include "api.h"
+#include <cmath>   // 添加数学函数头文件，包含NAN和isnan
 #include <algorithm>
 #include <sstream>
 #include <functional>
-#include <string.h>
+#include <cstring>
+#include <cstdlib>
+#include <esp_log.h>
+#include <esp_timer.h>
+#include <esp_http_server.h>
+#include <esp_wifi.h>
+#include <cJSON.h>
+
+#include "../iot/thing.h"
+#include "../iot/thing_manager.h"
+
+// 使用命名空间
+using namespace std;  // 使用标准命名空间
+using iot::Thing;
+using iot::ThingManager;
+
+// 添加安全获取属性值的辅助函数
+float SafeGetValue(Thing* thing, const std::string& property_name) {
+    if (!thing) {
+        return NAN;
+    }
+    
+    // 检查属性是否存在于values映射中（避免在日志中产生警告）
+    const auto& values = thing->GetValues();
+    auto it = values.find(property_name);
+    if (it != values.end()) {
+        return it->second;
+    }
+    
+    // 如果不在map中，不直接使用GetValue（这会产生警告日志）
+    // 而是直接返回NAN表示不可用
+    return NAN;
+}
 
 #define TAG "Web"
 #define WEB_DEFAULT_PORT 8080  // 直接定义默认端口
@@ -81,8 +112,14 @@ bool Web::Start() {
     // Register default handlers
     InitDefaultHandlers();
     
-    // Initialize API handlers
+    // Initialize API handlers - 仅用于获取信息
     InitApiHandlers();
+    
+    // 初始化车辆WebSocket处理程序 - 用于实时控制
+    InitVehicleWebSocketHandlers();
+    
+    // 初始化传感器WebSocket处理程序 - 用于实时数据
+    InitSensorHandlers();
     
     ESP_LOGI(TAG, "Web component started successfully");
     
@@ -99,6 +136,11 @@ bool Web::Start() {
         std::string path = handler.first.substr(0, handler.first.find_last_of(":"));
         std::string method_str = handler.first.substr(handler.first.find_last_of(":") + 1);
         ESP_LOGI(TAG, "  %s [method %s]", path.c_str(), method_str.c_str());
+    }
+    
+    ESP_LOGI(TAG, "Registered WebSocket handlers:");
+    for (const auto& handler : ws_uri_handlers_) {
+        ESP_LOGI(TAG, "  %s", handler.first.c_str());
     }
     
     return true;
@@ -204,24 +246,36 @@ void Web::RegisterApiHandler(HttpMethod method, const std::string& uri, ApiHandl
         return;
     }
     
+    // 确保API URI格式正确，以/api/开头
+    std::string api_uri = uri;
+    if (api_uri.substr(0, 5) != "/api/") {
+        if (api_uri.substr(0, 4) == "/api") {
+            api_uri = "/api/" + api_uri.substr(4);
+        } else {
+            api_uri = "/api/" + (api_uri.front() == '/' ? api_uri.substr(1) : api_uri);
+        }
+    }
+    
+    // 确保键格式一致：/api/xxx:HTTP_METHOD_NUM
+    std::string key = api_uri + ":" + std::to_string(static_cast<int>(method));
+    
     // 检查API处理器是否已注册
-    std::string key = uri + ":" + std::to_string(static_cast<int>(method));
     if (api_handlers_.find(key) != api_handlers_.end()) {
         ESP_LOGW(TAG, "API handler for %s [%d] already registered, skipping", 
-                 uri.c_str(), static_cast<int>(method));
+                 api_uri.c_str(), static_cast<int>(method));
         return;
     }
     
-    // Register API endpoint with /api prefix
-    std::string api_uri = uri.substr(0, 4) == "/api" ? uri : "/api" + uri;
-    RegisterHandler(method, api_uri, [this, uri, handler](httpd_req_t* req) -> esp_err_t {
-        return HandleApiRequest(req, uri);
-    });
-    
-    // Store handler in our API map
+    // 保存处理程序到 API 映射，确保键和实际 URI 匹配
     api_handlers_[key] = handler;
     
-    ESP_LOGI(TAG, "Registered API handler for %s [%d]", uri.c_str(), static_cast<int>(method));
+    // 注册处理程序
+    RegisterHandler(method, api_uri, [this, api_uri, handler](httpd_req_t* req) -> esp_err_t {
+        return HandleApiRequest(req, api_uri);
+    });
+    
+    ESP_LOGI(TAG, "Registered API handler for %s [%d] with key %s", 
+             api_uri.c_str(), static_cast<int>(method), key.c_str());
 }
 
 // WebSocket support
@@ -232,29 +286,75 @@ void Web::RegisterWebSocketMessageCallback(WebSocketMessageCallback callback) {
     }
 }
 
+// 标准化WebSocket路径 - 确保所有WebSocket路径遵循统一格式
+std::string Web::NormalizeWebSocketPath(const std::string& uri) {
+    std::string normalized = uri;
+    
+    // 确保路径以/ws开头
+    if (normalized.find("/ws") != 0) {
+        if (normalized[0] == '/') {
+            normalized = "/ws" + normalized;
+        } else {
+            normalized = "/ws/" + normalized;
+        }
+    }
+    
+    // 确保/ws后面有斜杠（除非只是/ws）
+    if (normalized == "/ws") {
+        return normalized;
+    }
+    
+    if (normalized.length() > 3 && normalized[3] != '/') {
+        normalized.insert(3, "/");
+    }
+    
+    // 移除末尾的斜杠（如果存在）
+    if (normalized.length() > 4 && normalized.back() == '/') {
+        normalized.pop_back();
+    }
+    
+    return normalized;
+}
+
 void Web::RegisterWebSocketHandler(const std::string& uri, WebSocketClientMessageCallback callback) {
     if (callback) {
-        ws_uri_handlers_[uri] = callback;
+        // 使用标准化方法处理URI
+        std::string normalized_uri = NormalizeWebSocketPath(uri);
+        if (uri != normalized_uri) {
+            ESP_LOGI(TAG, "Normalizing WebSocket URI from %s to %s", uri.c_str(), normalized_uri.c_str());
+        }
         
-        // Register the WebSocket handler for this URI
+        ws_uri_handlers_[normalized_uri] = callback;
+        
+        // 注册WebSocket处理程序
         httpd_uri_t ws_uri = {
-            .uri = uri.c_str(),
+            .uri = normalized_uri.c_str(),
             .method = HTTP_GET,
             .handler = &Web::WebSocketHandler,
             .user_ctx = this
         };
         
         if (running_ && server_) {
-            httpd_register_uri_handler(server_, &ws_uri);
+            esp_err_t ret = httpd_register_uri_handler(server_, &ws_uri);
+            if (ret != ESP_OK) {
+                if (ret == ESP_ERR_HTTPD_HANDLER_EXISTS) {
+                    ESP_LOGW(TAG, "WebSocket handler for %s already exists", normalized_uri.c_str());
+                } else {
+                    ESP_LOGE(TAG, "Failed to register WebSocket handler for %s: %s", 
+                             normalized_uri.c_str(), esp_err_to_name(ret));
+                }
+            } else {
+                ESP_LOGI(TAG, "Registered WebSocket handler for URI: %s", normalized_uri.c_str());
+            }
+        } else {
+            ESP_LOGW(TAG, "Server not running, WebSocket registration for %s delayed", normalized_uri.c_str());
         }
-        
-        ESP_LOGI(TAG, "Registered WebSocket handler for URI: %s", uri.c_str());
     }
 }
 
 void Web::BroadcastWebSocketMessage(const std::string& message) {
     if (!running_ || !server_) {
-        ESP_LOGW(TAG, "Cannot broadcast message: web server not running");
+        ESP_LOGD(TAG, "Cannot broadcast message: web server not running");
         return;
     }
     
@@ -268,22 +368,25 @@ void Web::BroadcastWebSocketMessage(const std::string& message) {
     
     // ESP-IDF没有提供向所有客户端广播的API，所以我们需要遍历可能的文件描述符
     int clients = 0;
-    const int max_clients = 8; // 最大客户端数量，可根据实际需求调整
+    const int max_clients = 32; // 增加最大客户端数量
+    
+    // 打印要广播的消息内容（仅用于调试）
+    ESP_LOGI(TAG, "Broadcasting WebSocket message: %s", message.c_str());
     
     // 尝试向每个可能的套接字发送消息
     for (int fd = 0; fd < max_clients; fd++) {
-        if (httpd_ws_get_fd_info(server_, fd) == HTTPD_WS_CLIENT_WEBSOCKET) {
+        int client_info = httpd_ws_get_fd_info(server_, fd);
+        if (client_info == HTTPD_WS_CLIENT_WEBSOCKET) {
             esp_err_t send_ret = httpd_ws_send_frame_async(server_, fd, &ws_frame);
-            if (send_ret != ESP_OK) {
-                ESP_LOGD(TAG, "Failed to send WebSocket message to client %d: %s", 
-                        fd, esp_err_to_name(send_ret));
-            } else {
+            if (send_ret == ESP_OK) {
                 clients++;
+            } else {
+                ESP_LOGW(TAG, "Failed to send WebSocket message to client %d: %s", fd, esp_err_to_name(send_ret));
             }
         }
     }
     
-    ESP_LOGI(TAG, "Broadcast WebSocket message to %d clients", clients);
+    ESP_LOGI(TAG, "WebSocket message broadcasted to %d clients", clients);
 }
 
 void Web::SendWebSocketMessage(httpd_req_t* req, const std::string& message) {
@@ -479,12 +582,18 @@ esp_err_t Web::HandleStaticFile(httpd_req_t* req) {
     }
     
     // 如果是CSS或JS文件，确保路径正确
-    if (is_css && !filename.starts_with("css/")) {
-        // 尝试在css子目录中找到它
+    if (is_css) {
+        // 确保CSS文件在正确的路径
+        if (!filename.starts_with("css/")) {
         filename = "css/" + filename;
-    } else if (is_js && !filename.starts_with("js/")) {
-        // 尝试在js子目录中找到它
+        }
+        ESP_LOGI(TAG, "CSS file path adjusted to: %s", filename.c_str());
+    } else if (is_js) {
+        // 确保JS文件在正确的路径
+        if (!filename.starts_with("js/")) {
         filename = "js/" + filename;
+        }
+        ESP_LOGI(TAG, "JS file path adjusted to: %s", filename.c_str());
     }
     
     // 记录完整路径
@@ -625,11 +734,6 @@ esp_err_t Web::HandleStaticFile(httpd_req_t* req) {
         extern const uint8_t audio_control_js_end[] asm("_binary_audio_control_js_end");
         file_start = audio_control_js_start;
         file_end = audio_control_js_end;
-    } else if (filename == "js/ai-chat.js") {
-        extern const uint8_t ai_chat_js_start[] asm("_binary_ai_chat_js_start");
-        extern const uint8_t ai_chat_js_end[] asm("_binary_ai_chat_js_end");
-        file_start = ai_chat_js_start;
-        file_end = ai_chat_js_end;
     } else if (filename == "js/api_client.js") {
         extern const uint8_t api_client_js_start[] asm("_binary_api_client_js_start");
         extern const uint8_t api_client_js_end[] asm("_binary_api_client_js_end");
@@ -640,11 +744,6 @@ esp_err_t Web::HandleStaticFile(httpd_req_t* req) {
         extern const uint8_t camera_module_js_end[] asm("_binary_camera_module_js_end");
         file_start = camera_module_js_start;
         file_end = camera_module_js_end;
-    } else if (filename == "js/location-module.js") {
-        extern const uint8_t location_module_js_start[] asm("_binary_location_module_js_start");
-        extern const uint8_t location_module_js_end[] asm("_binary_location_module_js_end");
-        file_start = location_module_js_start;
-        file_end = location_module_js_end;
     } else if (filename == "js/settings-module.js") {
         extern const uint8_t settings_module_js_start[] asm("_binary_settings_module_js_start");
         extern const uint8_t settings_module_js_end[] asm("_binary_settings_module_js_end");
@@ -655,6 +754,76 @@ esp_err_t Web::HandleStaticFile(httpd_req_t* req) {
         extern const uint8_t device_config_js_end[] asm("_binary_device_config_js_end");
         file_start = device_config_js_start;
         file_end = device_config_js_end;
+    } else if (filename == "js/jquery-3.6.0.min.js") {
+        // 提供改进的 jQuery 替代品，处理更多边缘情况
+        std::string js = "/* Improved jQuery replacement */\n"
+                       "window.$ = function(selector) {\n"
+                       "  if (!selector) return createWrapper([]);\n"
+                       "  if (selector === document) return createWrapper([document]);\n"
+                       "  if (typeof selector === 'object' && selector.nodeType) return createWrapper([selector]);\n"
+                       "  let elements = [];\n"
+                       "  try {\n"
+                       "    elements = Array.from(document.querySelectorAll(selector));\n"
+                       "  } catch(e) {\n"
+                       "    console.warn('Invalid selector:', selector);\n"
+                       "  }\n"
+                       "  return createWrapper(elements);\n"
+                       "};\n\n"
+                       "function createWrapper(elements) {\n"
+                       "  return {\n"
+                       "    elements: elements,\n"
+                       "    length: elements.length,\n"
+                       "    on: function(event, callback) {\n"
+                       "      elements.forEach(el => el.addEventListener(event, callback));\n"
+                       "      return this;\n"
+                       "    },\n"
+                       "    val: function(value) {\n"
+                       "      if (value === undefined) return elements[0] ? elements[0].value : '';\n"
+                       "      elements.forEach(el => el.value = value);\n"
+                       "      return this;\n"
+                       "    },\n"
+                       "    text: function(value) {\n"
+                       "      if (value === undefined) return elements[0] ? elements[0].textContent : '';\n"
+                       "      elements.forEach(el => el.textContent = value);\n"
+                       "      return this;\n"
+                       "    },\n"
+                       "    html: function(value) {\n"
+                       "      if (value === undefined) return elements[0] ? elements[0].innerHTML : '';\n"
+                       "      elements.forEach(el => el.innerHTML = value);\n"
+                       "      return this;\n"
+                       "    },\n"
+                       "    hide: function() { elements.forEach(el => el.style.display = 'none'); return this; },\n"
+                       "    show: function() { elements.forEach(el => el.style.display = ''); return this; },\n"
+                       "    addClass: function(cls) { elements.forEach(el => el.classList.add(cls)); return this; },\n"
+                       "    removeClass: function(cls) { elements.forEach(el => el.classList.remove(cls)); return this; },\n"
+                       "    ready: function(fn) { if (document.readyState !== 'loading') fn(); else document.addEventListener('DOMContentLoaded', fn); return this; },\n"
+                       "  };\n"
+                       "}\n\n"
+                       "$.ajax = function(options) {\n"
+                       "  const xhr = new XMLHttpRequest();\n"
+                       "  xhr.open(options.type || 'GET', options.url);\n"
+                       "  if (options.contentType) xhr.setRequestHeader('Content-Type', options.contentType);\n"
+                       "  xhr.onload = function() {\n"
+                       "    if (xhr.status >= 200 && xhr.status < 300) {\n"
+                       "      let data = xhr.responseText;\n"
+                       "      if (options.dataType === 'json') {\n"
+                       "        try { data = JSON.parse(data); } catch(e) { console.error('Error parsing JSON:', e); }\n"
+                       "      }\n"
+                       "      if (options.success) options.success(data);\n"
+                       "    } else if (options.error) {\n"
+                       "      options.error(xhr);\n"
+                       "    }\n"
+                       "  };\n"
+                       "  xhr.onerror = function() { if (options.error) options.error(xhr); };\n"
+                       "  xhr.send(options.data);\n"
+                       "};\n"
+                       "$.get = function(url, success) { $.ajax({url: url, success: success}); };\n"
+                       "$.post = function(url, data, success) { $.ajax({url: url, type: 'POST', data: data, success: success}); };\n"
+                       "$.ready = function(fn) { $(document).ready(fn); };";
+        httpd_resp_set_type(req, "application/javascript");
+        httpd_resp_set_hdr(req, "Cache-Control", "max-age=86400");
+        httpd_resp_sendstr(req, js.c_str());
+        return ESP_OK;
     }
     
     // 如果没有找到嵌入式文件，尝试使用GetHtml生成
@@ -753,6 +922,11 @@ void Web::InitDefaultHandlers() {
     // 添加用于调试的主路由
     RegisterHandler(HttpMethod::HTTP_GET, "/index.html", RootHandler);
     
+    // 先添加WebSocket支持 - 确保这些处理程序有最高优先级
+    // 注意：先注册具体路径，再注册通配符路径
+    RegisterHandler(HttpMethod::HTTP_GET, "/ws", WebSocketHandler);  // 处理纯/ws路径
+    RegisterHandler(HttpMethod::HTTP_GET, "/ws/*", WebSocketHandler); // 处理/ws/子路径
+    
     // 为常用URL路径添加处理器
     RegisterHandler(HttpMethod::HTTP_GET, "/cam", VisionHandler);
     RegisterHandler(HttpMethod::HTTP_GET, "/vision", VisionHandler);
@@ -764,9 +938,6 @@ void Web::InitDefaultHandlers() {
     
     // 添加可能的拼写错误处理
     RegisterHandler(HttpMethod::HTTP_GET, "/vechicle", CarHandler);
-    
-    // 添加WebSocket支持
-    RegisterHandler(HttpMethod::HTTP_GET, "/ws/*", WebSocketHandler);
     
     // 添加静态文件支持 - 使用lambda包装非静态成员函数
     RegisterHandler(HttpMethod::HTTP_GET, "/css/*", [this](httpd_req_t* req) -> esp_err_t {
@@ -791,32 +962,73 @@ void Web::InitDefaultHandlers() {
 }
 
 void Web::InitApiHandlers() {
-    // Define basic API endpoints
+    ESP_LOGI(TAG, "Initializing API handlers");
     
-    // System info
-    RegisterApiHandler(HttpMethod::HTTP_GET, "/system/info", [](httpd_req_t* req) -> ApiResponse {
+    // 系统信息API
+    RegisterApiHandler(HttpMethod::HTTP_GET, "/api/system/info", [](httpd_req_t* req) -> ApiResponse {
+        ESP_LOGI(TAG, "Handling /api/system/info request");
+        
         cJSON* data = cJSON_CreateObject();
         
         // System info
         cJSON_AddStringToObject(data, "version", "1.0.0");
         cJSON_AddNumberToObject(data, "uptime_ms", esp_timer_get_time() / 1000);
         cJSON_AddNumberToObject(data, "free_heap", esp_get_free_heap_size());
+        cJSON_AddStringToObject(data, "build_time", __DATE__ " " __TIME__);
         
         ApiResponse response;
         response.content = cJSON_PrintUnformatted(data);
         cJSON_Delete(data);
         
+        ESP_LOGI(TAG, "Sending system info response: %s", response.content.c_str());
         return response;
     });
     
-    // Additional API endpoints would be registered here
-    // Test API endpoint
-    RegisterApiHandler(HttpMethod::HTTP_GET, "/test", [](httpd_req_t* req) -> ApiResponse {
+    // 摄像头API现在由api.cc中的HandleCameraStream函数处理
+    
+    // 添加位置API
+    RegisterApiHandler(HttpMethod::HTTP_GET, "/api/location", [](httpd_req_t* req) -> ApiResponse {
+        ESP_LOGI(TAG, "Handling /api/location request");
+        ApiResponse response;
+        response.content = "{\"status\":\"ok\",\"latitude\":30.2825,\"longitude\":120.1253,\"accuracy\":10.5}";
+        return response;
+    });
+    
+    // 测试API - 用于测试API系统是否正常工作
+    RegisterApiHandler(HttpMethod::HTTP_GET, "/api/test", [](httpd_req_t* req) -> ApiResponse {
+        ESP_LOGI(TAG, "Handling /api/test request");
         ApiResponse response;
         response.content = "{\"status\":\"ok\",\"message\":\"API is working!\"}";
         return response;
     });
+    
+    // 注意：所有用于控制电机和舵机的API端点已被移除
+    // 这些功能现在通过WebSocket连接实现，以获得更好的实时性能
+    
     ESP_LOGI(TAG, "Registered API handlers");
+    
+    // 摄像头流处理程序 - 添加在InitApiHandlers方法中其他API处理程序后面
+    RegisterApiHandler(HttpMethod::HTTP_GET, "/api/camera/stream", [](httpd_req_t* req) -> ApiResponse {
+        ESP_LOGI(TAG, "Handling camera stream request");
+        
+        // 这里只返回一个占位信息，真正的摄像头流可能需要单独的处理器来支持MJPEG或其他流格式
+        ApiResponse response;
+        response.status_code = 200;
+        response.type = ApiResponseType::JSON;
+        
+        // 创建JSON响应
+        cJSON* json = cJSON_CreateObject();
+        cJSON_AddStringToObject(json, "status", "Camera stream not implemented yet");
+        cJSON_AddStringToObject(json, "message", "This is a placeholder for camera stream API");
+        
+        // 转换为字符串
+        char* json_str = cJSON_PrintUnformatted(json);
+        response.content = json_str;
+        cJSON_Delete(json);
+        free(json_str);
+        
+        return response;
+    });
 }
 
 // Static HTTP handlers
@@ -849,12 +1061,12 @@ esp_err_t Web::InternalRequestHandler(httpd_req_t* req) {
     std::string key = uri + ":" + std::to_string(req->method);
     
     // 特殊处理 API 请求
-    if (uri.starts_with("/api/")) {
+    if (uri.starts_with("/api")) {
         return web->HandleApiRequest(req, uri);
     }
     
-    // 特殊处理 WebSocket 请求
-    if (uri.starts_with("/ws/")) {
+    // 特殊处理 WebSocket 请求 - 同时处理 /ws 和 /ws/* 路径
+    if (uri == "/ws" || uri.starts_with("/ws/")) {
         return web->WebSocketHandler(req);
     }
     
@@ -950,20 +1162,58 @@ esp_err_t Web::WebSocketHandler(httpd_req_t* req) {
     std::string message((char*)payload, ws_frame.len);
     free(payload);
     
-    // 获取URI
+    // 获取并标准化URI
     std::string uri = req->uri;
+    std::string normalized_uri = NormalizeWebSocketPath(uri);
+    ESP_LOGI(TAG, "WebSocket message received on URI: %s (normalized: %s), message: %s", 
+             uri.c_str(), normalized_uri.c_str(), message.c_str());
     
     // 检查是否有URI特定处理器
-    auto it = current_instance_->ws_uri_handlers_.find(uri);
-    if (it != current_instance_->ws_uri_handlers_.end()) {
-        // 获取客户端索引
-        int client_index = httpd_req_to_sockfd(req);
-        it->second(client_index, message);
+    bool handled = false;
+    
+    // 获取客户端索引
+    int client_index = httpd_req_to_sockfd(req);
+    
+    // 针对根WebSocket路径，发送给所有注册的回调
+    if (normalized_uri == "/ws") {
+        for (auto& callback : current_instance_->ws_callbacks_) {
+            callback(req, message);
+            handled = true;
+        }
     }
     
-    // 调用通用回调
-    for (auto& callback : current_instance_->ws_callbacks_) {
-        callback(req, message);
+    // 检查特定路径处理程序 - 使用精确匹配
+    auto it = current_instance_->ws_uri_handlers_.find(normalized_uri);
+    if (it != current_instance_->ws_uri_handlers_.end()) {
+        ESP_LOGI(TAG, "Found exact handler for WebSocket path: %s", normalized_uri.c_str());
+        it->second(client_index, message);
+        handled = true;
+    } 
+    // 如果没有精确匹配，尝试前缀匹配
+    else {
+        for (auto& handler_pair : current_instance_->ws_uri_handlers_) {
+            // 检查是否是路径前缀
+            if (normalized_uri.find(handler_pair.first + "/") == 0 || 
+                normalized_uri == handler_pair.first) {
+                ESP_LOGI(TAG, "Found prefix handler for WebSocket path: %s (prefix: %s)", 
+                         normalized_uri.c_str(), handler_pair.first.c_str());
+                handler_pair.second(client_index, message);
+                handled = true;
+                break;
+            }
+        }
+    }
+    
+    // 如果没有任何处理程序处理消息，记录警告
+    if (!handled) {
+        ESP_LOGW(TAG, "No handler found for WebSocket message on %s (normalized: %s)", 
+                 uri.c_str(), normalized_uri.c_str());
+        
+        // 列出所有已注册的处理程序供调试
+        ESP_LOGW(TAG, "Registered WebSocket handlers:");
+        for (const auto& h : current_instance_->ws_uri_handlers_) {
+            ESP_LOGW(TAG, "  - %s", h.first.c_str());
+        }
     }
     
     return ESP_OK;
@@ -971,9 +1221,60 @@ esp_err_t Web::WebSocketHandler(httpd_req_t* req) {
 
 // API request handling
 esp_err_t Web::HandleApiRequest(httpd_req_t* req, const std::string& uri) {
-    // Find appropriate API handler
+    ESP_LOGI(TAG, "API Request received: %s", uri.c_str());
+    
+    // 确保URI格式正确 - 必须以/api/开头
+    std::string normalized_uri = uri;
+    
+    // 直接使用请求的URI作为键，不做任何修改
     std::string key = uri + ":" + std::to_string(req->method);
+    ESP_LOGI(TAG, "Looking for API handler with key: %s", key.c_str());
+    
     auto it = api_handlers_.find(key);
+    
+    // 如果找不到，尝试检查是否存在路径问题
+    if (it == api_handlers_.end()) {
+        // 检查路径是否有/api前缀，如果没有尝试添加
+        if (normalized_uri.substr(0, 5) != "/api/") {
+            if (normalized_uri.substr(0, 4) == "/api") {
+                normalized_uri = "/api/" + normalized_uri.substr(4);
+            } else {
+                normalized_uri = "/api/" + (normalized_uri.front() == '/' ? normalized_uri.substr(1) : normalized_uri);
+            }
+            key = normalized_uri + ":" + std::to_string(req->method);
+            ESP_LOGI(TAG, "Trying with normalized URI: %s", normalized_uri.c_str());
+            it = api_handlers_.find(key);
+        }
+        
+        // 如果还是找不到，尝试处理末尾的斜杠问题
+        if (it == api_handlers_.end()) {
+            std::string alt_uri = normalized_uri;
+            if (alt_uri.back() == '/') {
+                alt_uri.pop_back();
+            } else {
+                alt_uri += "/";
+            }
+            std::string alt_key = alt_uri + ":" + std::to_string(req->method);
+            ESP_LOGI(TAG, "Trying alternative key: %s", alt_key.c_str());
+            it = api_handlers_.find(alt_key);
+        }
+        
+        // 记录所有已注册的 API 处理程序以便调试
+        if (it == api_handlers_.end()) {
+            ESP_LOGW(TAG, "API handler still not found, registered handlers:");
+            for (const auto& h : api_handlers_) {
+                ESP_LOGW(TAG, "  - %s", h.first.c_str());
+            }
+            
+            // 再尝试一次最后的修复 - 查找不带方法的匹配项
+            for (const auto& h : api_handlers_) {
+                std::string handler_path = h.first.substr(0, h.first.find_last_of(":"));
+                if (handler_path == normalized_uri || handler_path == uri) {
+                    ESP_LOGI(TAG, "Found handler with matching path but different method: %s", h.first.c_str());
+                }
+            }
+        }
+    }
     
     if (it == api_handlers_.end()) {
         ESP_LOGW(TAG, "API handler not found for %s [method %d]", uri.c_str(), req->method);
@@ -1187,4 +1488,382 @@ std::string Web::GetHtml(const std::string& page, const char* accept_language) {
            "<div class='card'><h2>Camera</h2><p><a href='/vision'>View Camera</a></p></div>"
            "<p>Server running on port " + std::to_string(port_) + "</p>"
            "</body></html>";
-} 
+}
+
+// 车辆控制WebSocket处理程序
+void Web::InitVehicleWebSocketHandlers() {
+    ESP_LOGI(TAG, "Initializing vehicle WebSocket handlers");
+    
+    // 初始化随机数种子
+    srand(esp_timer_get_time());
+    
+    // 小车实时控制 WebSocket 处理程序
+    RegisterWebSocketHandler("/ws/motor", [](int client_index, const std::string& message) {
+        ESP_LOGI(TAG, "Motor control WebSocket message from client %d: %s", client_index, message.c_str());
+        
+        // 解析JSON控制命令
+        cJSON* root = cJSON_Parse(message.c_str());
+        if (!root) {
+            ESP_LOGW(TAG, "Failed to parse motor control message as JSON");
+            return;
+        }
+        
+        // 提取控制参数
+        cJSON* cmd = cJSON_GetObjectItem(root, "cmd");
+        if (cmd && cJSON_IsString(cmd)) {
+            std::string cmd_str = cmd->valuestring;
+            
+            if (cmd_str == "move") {
+                // 移动命令处理
+                int speed = 0, direction = 0;
+                cJSON* speed_obj = cJSON_GetObjectItem(root, "speed");
+                cJSON* dir_obj = cJSON_GetObjectItem(root, "direction");
+                
+                if (speed_obj && cJSON_IsNumber(speed_obj)) {
+                    speed = speed_obj->valueint;
+                }
+                if (dir_obj && cJSON_IsNumber(dir_obj)) {
+                    direction = dir_obj->valueint;
+                }
+                
+                ESP_LOGI(TAG, "Motor move command: speed=%d, direction=%d", speed, direction);
+                
+                // TODO: 在这里添加实际的电机控制代码
+                // 例如: vehicle_controller->Move(speed, direction);
+            } 
+            else if (cmd_str == "stop") {
+                ESP_LOGI(TAG, "Motor stop command");
+                // TODO: 在这里添加停止电机的代码
+                // 例如: vehicle_controller->Stop();
+            }
+        }
+        
+        cJSON_Delete(root);
+    });
+    
+    // 舵机实时控制 WebSocket 处理程序
+    RegisterWebSocketHandler("/ws/servo", [](int client_index, const std::string& message) {
+        ESP_LOGI(TAG, "Servo control WebSocket message from client %d: %s", client_index, message.c_str());
+        
+        // 解析JSON控制命令
+        cJSON* root = cJSON_Parse(message.c_str());
+        if (!root) {
+            ESP_LOGW(TAG, "Failed to parse servo control message as JSON");
+            return;
+        }
+        
+        // 提取舵机控制参数
+        cJSON* cmd = cJSON_GetObjectItem(root, "cmd");
+        if (cmd && cJSON_IsString(cmd)) {
+            std::string cmd_str = cmd->valuestring;
+            
+            if (cmd_str == "set") {
+                // 设置舵机角度
+                int servo_id = 0, angle = 0, speed = 100;
+                cJSON* id_obj = cJSON_GetObjectItem(root, "id");
+                cJSON* angle_obj = cJSON_GetObjectItem(root, "angle");
+                cJSON* speed_obj = cJSON_GetObjectItem(root, "speed");
+                
+                if (id_obj && cJSON_IsNumber(id_obj)) {
+                    servo_id = id_obj->valueint;
+                }
+                if (angle_obj && cJSON_IsNumber(angle_obj)) {
+                    angle = angle_obj->valueint;
+                }
+                if (speed_obj && cJSON_IsNumber(speed_obj)) {
+                    speed = speed_obj->valueint;
+                }
+                
+                ESP_LOGI(TAG, "Servo command: id=%d, angle=%d, speed=%d", servo_id, angle, speed);
+                
+                // TODO: 在这里添加实际的舵机控制代码
+                // 例如: servo_controller->SetAngle(servo_id, angle, speed);
+            }
+        }
+        
+        cJSON_Delete(root);
+    });
+    
+    // 车辆一般状态 WebSocket 处理程序 - 可用于发送车辆状态更新
+    RegisterWebSocketHandler("/ws/vehicle", [](int client_index, const std::string& message) {
+        ESP_LOGI(TAG, "Vehicle status WebSocket message from client %d: %s", client_index, message.c_str());
+        
+        // 解析JSON命令
+        cJSON* root = cJSON_Parse(message.c_str());
+        if (!root) {
+            ESP_LOGW(TAG, "Failed to parse vehicle status message as JSON");
+            return;
+        }
+        
+        // 提取命令
+        cJSON* cmd = cJSON_GetObjectItem(root, "cmd");
+        if (cmd && cJSON_IsString(cmd)) {
+            std::string cmd_str = cmd->valuestring;
+            
+            if (cmd_str == "getStatus" || cmd_str == "register") {
+                // 返回车辆状态
+                ESP_LOGI(TAG, "Vehicle status request received");
+                
+                // 获取实时数据
+                static int battery_level = 75;
+                static int speed = 0;
+                static int front_distance = 25;
+                static int rear_distance = 40;
+                
+                // 创建状态响应JSON
+                cJSON* status = cJSON_CreateObject();
+                cJSON_AddStringToObject(status, "type", "vehicle_status");
+                cJSON_AddStringToObject(status, "status", "ok");
+                cJSON_AddBoolToObject(status, "connected", true);
+                cJSON_AddNumberToObject(status, "batteryLevel", battery_level);
+                cJSON_AddNumberToObject(status, "speed", speed);
+                
+                // 添加障碍物传感器数据
+                cJSON* distances = cJSON_CreateObject();
+                cJSON_AddNumberToObject(distances, "front", front_distance);
+                cJSON_AddNumberToObject(distances, "rear", rear_distance);
+                cJSON_AddItemToObject(status, "distances", distances);
+                
+                // 添加更多状态信息
+                cJSON_AddStringToObject(status, "mode", "Manual Control");
+                cJSON_AddStringToObject(status, "signal", "Excellent");
+                cJSON_AddStringToObject(status, "readyState", "Ready");
+                
+                // 发送状态响应
+                char* status_str = cJSON_PrintUnformatted(status);
+                if (status_str) {
+                    if (Web::current_instance_) {
+                        Web::current_instance_->SendWebSocketMessage(client_index, status_str);
+                    }
+                    free(status_str);
+                }
+                
+                cJSON_Delete(status);
+                
+                // 模拟数据变化
+                battery_level = (battery_level + 1) % 100;
+                speed = (speed + 3) % 40;
+                front_distance = 15 + (rand() % 40);
+                rear_distance = 20 + (rand() % 40);
+            }
+        }
+        
+        cJSON_Delete(root);
+    });
+    
+    ESP_LOGI(TAG, "Vehicle WebSocket handlers initialized");
+    
+    // 启动定期状态更新任务
+    esp_timer_handle_t status_timer;
+    esp_timer_create_args_t timer_args = {
+        .callback = [](void* arg) {
+            if (!Web::current_instance_ || !Web::current_instance_->IsRunning()) {
+                return;
+            }
+            
+            // 创建状态消息
+            cJSON* status = cJSON_CreateObject();
+            cJSON_AddStringToObject(status, "type", "vehicle_status");
+            cJSON_AddStringToObject(status, "status", "ok");
+            cJSON_AddBoolToObject(status, "connected", true);
+            
+            // 从电池组件获取数据
+            Thing* battery_thing = ThingManager::GetInstance().FindThingByName("Battery");
+            if (battery_thing) {
+                float percentage = SafeGetValue(battery_thing, "percentage");
+                if (!std::isnan(percentage)) {
+                    cJSON_AddNumberToObject(status, "batteryLevel", (int)percentage);
+                }
+                
+                float voltage = SafeGetValue(battery_thing, "voltage");
+                if (!std::isnan(voltage)) {
+                    cJSON_AddNumberToObject(status, "batteryVoltage", voltage);
+                }
+            }
+            
+            // 从电机组件获取速度信息
+            Thing* motor_thing = ThingManager::GetInstance().FindThingByName("Motor");
+            if (motor_thing) {
+                float speed = SafeGetValue(motor_thing, "speed");
+                if (!std::isnan(speed)) {
+                    cJSON_AddNumberToObject(status, "speed", speed);
+                    // 根据速度设置状态
+                    cJSON_AddStringToObject(status, "readyState", speed > 0.5f ? "Moving" : "Ready");
+                } else {
+                    cJSON_AddStringToObject(status, "readyState", "Ready");
+                }
+            } else {
+                cJSON_AddStringToObject(status, "readyState", "Ready");
+            }
+            
+            // 从超声波传感器获取距离数据
+            Thing* us_thing = ThingManager::GetInstance().FindThingByName("UltrasonicSensor");
+            if (us_thing) {
+                float front_distance = SafeGetValue(us_thing, "front_distance");
+                float rear_distance = SafeGetValue(us_thing, "rear_distance");
+                
+                if (!std::isnan(front_distance) || !std::isnan(rear_distance)) {
+                    cJSON* distances = cJSON_CreateObject();
+                    
+                    if (!std::isnan(front_distance)) {
+                        cJSON_AddNumberToObject(distances, "front", front_distance);
+                    }
+                    
+                    if (!std::isnan(rear_distance)) {
+                        cJSON_AddNumberToObject(distances, "rear", rear_distance);
+                    }
+                    
+                    cJSON_AddItemToObject(status, "distances", distances);
+                }
+            }
+            
+            // 添加基本信息
+            cJSON_AddStringToObject(status, "mode", "Manual Control");
+            cJSON_AddStringToObject(status, "signal", "Excellent");
+            
+            // 转换为字符串并广播
+            char* status_str = cJSON_PrintUnformatted(status);
+            if (status_str) {
+                Web::current_instance_->BroadcastWebSocketMessage(status_str);
+                free(status_str);
+            }
+            
+            cJSON_Delete(status);
+        },
+        .arg = nullptr,
+        .name = "vehicle_status"
+    };
+    
+    // 创建并启动计时器，每2秒发送一次状态更新
+    ESP_ERROR_CHECK(esp_timer_create(&timer_args, &status_timer));
+    ESP_ERROR_CHECK(esp_timer_start_periodic(status_timer, 2000000)); // 2秒 = 2000000微秒
+}
+
+// 传感器数据WebSocket处理程序
+void Web::InitSensorHandlers() {
+    ESP_LOGI(TAG, "Initializing sensor WebSocket handlers");
+    
+    // 设置定期广播传感器数据的计时器
+    esp_timer_handle_t sensor_timer;
+    esp_timer_create_args_t timer_args = {
+        .callback = [](void* arg) {
+            if (!Web::current_instance_ || !Web::current_instance_->IsRunning()) {
+                return;
+            }
+            
+            // 创建传感器数据JSON
+            cJSON* sensor_data = cJSON_CreateObject();
+            cJSON_AddStringToObject(sensor_data, "type", "sensor_data");
+            
+            // 从IMU传感器读取数据
+            Thing* imu_thing = ThingManager::GetInstance().FindThingByName("IMU");
+            if (imu_thing) {
+                // 获取IMU数据
+                float accel_x = SafeGetValue(imu_thing, "accel_x");
+                if (!std::isnan(accel_x)) cJSON_AddNumberToObject(sensor_data, "accelX", accel_x);
+                
+                float accel_y = SafeGetValue(imu_thing, "accel_y");
+                if (!std::isnan(accel_y)) cJSON_AddNumberToObject(sensor_data, "accelY", accel_y);
+                
+                float accel_z = SafeGetValue(imu_thing, "accel_z");
+                if (!std::isnan(accel_z)) cJSON_AddNumberToObject(sensor_data, "accelZ", accel_z);
+                
+                float gyro_x = SafeGetValue(imu_thing, "gyro_x");
+                if (!std::isnan(gyro_x)) cJSON_AddNumberToObject(sensor_data, "gyroX", gyro_x);
+                
+                float gyro_y = SafeGetValue(imu_thing, "gyro_y");
+                if (!std::isnan(gyro_y)) cJSON_AddNumberToObject(sensor_data, "gyroY", gyro_y);
+                
+                float gyro_z = SafeGetValue(imu_thing, "gyro_z");
+                if (!std::isnan(gyro_z)) cJSON_AddNumberToObject(sensor_data, "gyroZ", gyro_z);
+                
+                float mag_x = SafeGetValue(imu_thing, "mag_x");
+                if (!std::isnan(mag_x)) cJSON_AddNumberToObject(sensor_data, "magX", mag_x);
+                
+                float mag_y = SafeGetValue(imu_thing, "mag_y");
+                if (!std::isnan(mag_y)) cJSON_AddNumberToObject(sensor_data, "magY", mag_y);
+                
+                float mag_z = SafeGetValue(imu_thing, "mag_z");
+                if (!std::isnan(mag_z)) cJSON_AddNumberToObject(sensor_data, "magZ", mag_z);
+                
+                float temperature = SafeGetValue(imu_thing, "temperature");
+                if (!std::isnan(temperature)) cJSON_AddNumberToObject(sensor_data, "temperature", temperature);
+                
+                float pressure = SafeGetValue(imu_thing, "pressure");
+                if (!std::isnan(pressure)) cJSON_AddNumberToObject(sensor_data, "pressure", pressure);
+                
+                float altitude = SafeGetValue(imu_thing, "altitude");
+                if (!std::isnan(altitude)) cJSON_AddNumberToObject(sensor_data, "altitude", altitude);
+            }
+            
+            // 从超声波传感器读取数据
+            Thing* us_thing = ThingManager::GetInstance().FindThingByName("UltrasonicSensor");
+            if (us_thing) {
+                // 获取超声波数据
+                float front_distance = SafeGetValue(us_thing, "front_distance");
+                float rear_distance = SafeGetValue(us_thing, "rear_distance");
+                
+                if (!std::isnan(front_distance) || !std::isnan(rear_distance)) {
+                    // 如果至少有一个距离值可用，创建距离对象
+                    cJSON* distances = cJSON_CreateObject();
+                    
+                    if (!std::isnan(front_distance)) {
+                        cJSON_AddNumberToObject(distances, "front", front_distance);
+                    }
+                    
+                    if (!std::isnan(rear_distance)) {
+                        cJSON_AddNumberToObject(distances, "rear", rear_distance);
+                    }
+                    
+                    cJSON_AddItemToObject(sensor_data, "distances", distances);
+                    
+                    // 计算平均距离（如果两个传感器都有值）
+                    if (!std::isnan(front_distance) && !std::isnan(rear_distance)) {
+                        cJSON_AddNumberToObject(sensor_data, "distance", (front_distance + rear_distance) / 2);
+                    } else if (!std::isnan(front_distance)) {
+                        cJSON_AddNumberToObject(sensor_data, "distance", front_distance);
+                    } else if (!std::isnan(rear_distance)) {
+                        cJSON_AddNumberToObject(sensor_data, "distance", rear_distance);
+                    }
+                    
+                    // 添加安全距离（固定值）
+                    cJSON_AddNumberToObject(sensor_data, "safeDistance", 20.0f);
+                    
+                    // 障碍物检测 - 假设超声波Thing有这些布尔值属性
+                    // 如果没有，可以根据距离计算
+                    bool front_obstacle = (front_distance < 20.0f) && !std::isnan(front_distance);
+                    bool rear_obstacle = (rear_distance < 20.0f) && !std::isnan(rear_distance);
+                    
+                    cJSON_AddBoolToObject(sensor_data, "frontObstacle", front_obstacle);
+                    cJSON_AddBoolToObject(sensor_data, "rearObstacle", rear_obstacle);
+                }
+            }
+            
+            // 从光线传感器读取数据
+            Thing* light_thing = ThingManager::GetInstance().FindThingByName("Light");
+            if (light_thing) {
+                float light = SafeGetValue(light_thing, "light");
+                if (!std::isnan(light)) {
+                    cJSON_AddNumberToObject(sensor_data, "light", light);
+                }
+            }
+            
+            // 转换为字符串并广播
+            char* sensor_str = cJSON_PrintUnformatted(sensor_data);
+            if (sensor_str) {
+                Web::current_instance_->BroadcastWebSocketMessage(sensor_str);
+                free(sensor_str);
+            }
+            
+            cJSON_Delete(sensor_data);
+        },
+        .arg = nullptr,
+        .name = "sensor_data"
+    };
+    
+    // 创建并启动计时器，每秒发送一次传感器数据
+    ESP_ERROR_CHECK(esp_timer_create(&timer_args, &sensor_timer));
+    ESP_ERROR_CHECK(esp_timer_start_periodic(sensor_timer, 1000000)); // 1秒 = 1000000微秒
+    
+    ESP_LOGI(TAG, "Sensor WebSocket handlers initialized");
+}
