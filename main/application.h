@@ -24,6 +24,7 @@
 #include "audio_processor.h"
 #include "components.h"
 #include "wake_word.h"
+#include "audio_debugger.h"
 
 // 只有在电机控制器启用时才包含相关头文件
 #if defined(CONFIG_ENABLE_MOTOR_CONTROLLER)
@@ -106,6 +107,7 @@ private:
 
     std::unique_ptr<WakeWord> wake_word_;
     std::unique_ptr<AudioProcessor> audio_processor_;
+    std::unique_ptr<AudioDebugger> audio_debugger_;
     Ota ota_;
     std::mutex mutex_;
     std::list<std::function<void()>> main_tasks_;
