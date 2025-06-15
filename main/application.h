@@ -56,11 +56,13 @@ enum DeviceState {
     kDeviceStateSpeaking,
     kDeviceStateUpgrading,
     kDeviceStateActivating,
+    kDeviceStateAudioTesting,
     kDeviceStateFatalError
 };
 
 #define OPUS_FRAME_DURATION_MS 60
 #define MAX_AUDIO_PACKETS_IN_QUEUE (2400 / OPUS_FRAME_DURATION_MS)
+#define AUDIO_TESTING_MAX_DURATION_MS 10000
 
 class Application {
 public:
@@ -131,6 +133,7 @@ private:
     std::list<AudioStreamPacket> audio_send_queue_;
     std::list<AudioStreamPacket> audio_decode_queue_;
     std::condition_variable audio_decode_cv_;
+    std::list<AudioStreamPacket> audio_testing_queue_;
 
     // 用于维护音频包的timestamp队列
     std::deque<uint32_t> timestamp_queue_;
@@ -161,6 +164,8 @@ private:
 #endif
 
     void CleanupComponents();
+    void EnterAudioTestingMode();
+    void ExitAudioTestingMode();
 };
 
 #endif // _APPLICATION_H_
