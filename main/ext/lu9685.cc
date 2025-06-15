@@ -11,6 +11,7 @@
 #include "esp_log.h"
 #include "esp_err.h"
 #include "include/multiplexer.h" // 添加对多路复用器的支持
+#include "include/pca9548a.h" // 添加对PCA9548A的支持
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_rom_sys.h" // 用于esp_rom_delay_us
@@ -40,7 +41,7 @@ static esp_err_t select_pca9548a_channel(lu9685_dev_t *dev)
     
     // 使用PCA9548A选择通道
     uint8_t channel_mask = (1 << dev->pca9548a_channel);
-    esp_err_t ret = pca9548a_select_channel(channel_mask);
+    esp_err_t ret = pca9548a_select_channels(pca9548a_get_handle(), channel_mask);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "PCA9548A选择通道 %d 失败: %s", dev->pca9548a_channel, esp_err_to_name(ret));
         return ret;

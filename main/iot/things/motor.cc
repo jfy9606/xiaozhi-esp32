@@ -2,6 +2,7 @@
 #include "../thing.h"
 #include "ext/include/pcf8575.h"
 #include "esp_timer.h"
+#include "sdkconfig.h"
 
 #ifdef CONFIG_MOTOR_CONNECTION_PCF8575
 // 外部函数声明
@@ -48,6 +49,23 @@ extern "C" {
 
 // PCF8575引脚定义 - 将使用menuconfig配置
 #ifdef CONFIG_MOTOR_CONNECTION_PCF8575
+// 如果没有定义配置，使用默认值
+#ifndef CONFIG_MOTOR_PCF8575_IN1_PIN
+#define CONFIG_MOTOR_PCF8575_IN1_PIN 0
+#endif
+
+#ifndef CONFIG_MOTOR_PCF8575_IN2_PIN
+#define CONFIG_MOTOR_PCF8575_IN2_PIN 1
+#endif
+
+#ifndef CONFIG_MOTOR_PCF8575_IN3_PIN
+#define CONFIG_MOTOR_PCF8575_IN3_PIN 2
+#endif
+
+#ifndef CONFIG_MOTOR_PCF8575_IN4_PIN
+#define CONFIG_MOTOR_PCF8575_IN4_PIN 3
+#endif
+
 #define MOTOR_PCF8575_IN1_PIN CONFIG_MOTOR_PCF8575_IN1_PIN
 #define MOTOR_PCF8575_IN2_PIN CONFIG_MOTOR_PCF8575_IN2_PIN
 #define MOTOR_PCF8575_IN3_PIN CONFIG_MOTOR_PCF8575_IN3_PIN
@@ -351,10 +369,18 @@ private:
             pcf8575_handle_t pcf_handle = pcf8575_get_handle();
             if (pcf_handle) {
                 // 通过PCF8575设置电机控制引脚
-                pcf8575_set_level(pcf_handle, MOTOR_PCF8575_IN1_PIN, in1);
-                pcf8575_set_level(pcf_handle, MOTOR_PCF8575_IN2_PIN, in2);
-                pcf8575_set_level(pcf_handle, MOTOR_PCF8575_IN3_PIN, in3);
-                pcf8575_set_level(pcf_handle, MOTOR_PCF8575_IN4_PIN, in4);
+                #ifdef CONFIG_MOTOR_PCF8575_IN1_PIN
+                pcf8575_set_level(pcf_handle, CONFIG_MOTOR_PCF8575_IN1_PIN, in1);
+                #endif
+                #ifdef CONFIG_MOTOR_PCF8575_IN2_PIN
+                pcf8575_set_level(pcf_handle, CONFIG_MOTOR_PCF8575_IN2_PIN, in2);
+                #endif
+                #ifdef CONFIG_MOTOR_PCF8575_IN3_PIN
+                pcf8575_set_level(pcf_handle, CONFIG_MOTOR_PCF8575_IN3_PIN, in3);
+                #endif
+                #ifdef CONFIG_MOTOR_PCF8575_IN4_PIN
+                pcf8575_set_level(pcf_handle, CONFIG_MOTOR_PCF8575_IN4_PIN, in4);
+                #endif
                 return;
             }
         }

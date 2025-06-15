@@ -328,21 +328,14 @@ public:
     UltrasonicSensor() : Thing("UltrasonicSensor", "Ultrasonic distance sensor") {}
     
     bool init() {
-        ESP_LOGI(TAG, "Initializing ultrasonic sensors");
-        
-        // 创建互斥锁
-        measure_mutex_ = xSemaphoreCreateMutex();
-        if (!measure_mutex_) {
-            ESP_LOGE(TAG, "Failed to create measure mutex");
-            return false;
-        }
-        
-        // 计算需要的传感器数量
-        size_t count = 0;
-        
-#ifdef CONFIG_US_CONNECTION_DIRECT
-        if (CONFIG_US_FRONT_TRIG_GPIO >= 0 && CONFIG_US_FRONT_ECHO_GPIO >= 0) count++;
-        if (CONFIG_US_REAR_TRIG_GPIO >= 0 && CONFIG_US_REAR_ECHO_GPIO >= 0) count++;
+        ESP_LOGI(TAG, "Initializing UltrasonicSensor");
+        int count = 0;
+        // 检查是否有有效的传感器配置
+#ifdef CONFIG_US_FRONT_TRIG_PIN
+        if (CONFIG_US_FRONT_TRIG_PIN >= 0 && CONFIG_US_FRONT_ECHO_PIN >= 0) count++;
+#endif
+#ifdef CONFIG_US_REAR_TRIG_PIN
+        if (CONFIG_US_REAR_TRIG_PIN >= 0 && CONFIG_US_REAR_ECHO_PIN >= 0) count++;
 #endif
 
 #ifdef CONFIG_US_CONNECTION_PCF8575
@@ -373,11 +366,11 @@ public:
         
 #ifdef CONFIG_US_CONNECTION_DIRECT
         // 直接GPIO连接的传感器配置
-        if (CONFIG_US_FRONT_TRIG_GPIO >= 0 && CONFIG_US_FRONT_ECHO_GPIO >= 0) {
+        if (CONFIG_US_FRONT_TRIG_PIN >= 0 && CONFIG_US_FRONT_ECHO_PIN >= 0) {
             sensors_[index].position = USP_FRONT;
             sensors_[index].connection_type = DIRECT_GPIO;
-            sensors_[index].gpio.trigger_pin = static_cast<gpio_num_t>(CONFIG_US_FRONT_TRIG_GPIO);
-            sensors_[index].gpio.echo_pin = static_cast<gpio_num_t>(CONFIG_US_FRONT_ECHO_GPIO);
+            sensors_[index].gpio.trigger_pin = static_cast<gpio_num_t>(CONFIG_US_FRONT_TRIG_PIN);
+            sensors_[index].gpio.echo_pin = static_cast<gpio_num_t>(CONFIG_US_FRONT_ECHO_PIN);
             sensors_[index].max_distance_cm = DEFAULT_MAX_DISTANCE_CM;
             sensors_[index].min_distance_cm = DEFAULT_MIN_DISTANCE_CM;
             sensors_[index].echo_timeout_us = DEFAULT_ECHO_TIMEOUT_US;
@@ -390,11 +383,11 @@ public:
             }
         }
         
-        if (CONFIG_US_REAR_TRIG_GPIO >= 0 && CONFIG_US_REAR_ECHO_GPIO >= 0) {
+        if (CONFIG_US_REAR_TRIG_PIN >= 0 && CONFIG_US_REAR_ECHO_PIN >= 0) {
             sensors_[index].position = USP_REAR;
             sensors_[index].connection_type = DIRECT_GPIO;
-            sensors_[index].gpio.trigger_pin = static_cast<gpio_num_t>(CONFIG_US_REAR_TRIG_GPIO);
-            sensors_[index].gpio.echo_pin = static_cast<gpio_num_t>(CONFIG_US_REAR_ECHO_GPIO);
+            sensors_[index].gpio.trigger_pin = static_cast<gpio_num_t>(CONFIG_US_REAR_TRIG_PIN);
+            sensors_[index].gpio.echo_pin = static_cast<gpio_num_t>(CONFIG_US_REAR_ECHO_PIN);
             sensors_[index].max_distance_cm = DEFAULT_MAX_DISTANCE_CM;
             sensors_[index].min_distance_cm = DEFAULT_MIN_DISTANCE_CM;
             sensors_[index].echo_timeout_us = DEFAULT_ECHO_TIMEOUT_US;

@@ -1,17 +1,3 @@
-// Copyright 2023-2024 Espressif Systems
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
 #pragma once
 
 /**
@@ -155,6 +141,15 @@ typedef struct {
  * @return ESP_OK on success, or an error code if selection failed
  */
 esp_err_t pca9548a_select_channel(uint8_t channel);
+
+/**
+ * @brief Select specific channels on the PCA9548A multiplexer (compatibility with newer API)
+ * 
+ * @param handle PCA9548A handle
+ * @param channels The channels to select (can be OR'ed together)
+ * @return ESP_OK on success, or an error code if selection failed
+ */
+esp_err_t pca9548a_select_channels(pca9548a_handle_t handle, uint8_t channels);
 
 /**
  * @brief Select a cascade path through multiple PCA9548A multiplexers

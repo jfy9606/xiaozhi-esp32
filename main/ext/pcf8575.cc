@@ -4,6 +4,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
+#include "esp_system.h"
 #include "../boards/common/board.h"
 #include "include/pcf8575.h"
 #include "include/pca9548a.h"
@@ -30,28 +31,24 @@ static pcf8575_handle_t pcf8575_global_handle = NULL;
  * @param dev PCF8575设备结构体指针
  * @return esp_err_t 操作结果
  */
-static esp_err_t select_pcf8575_channel(pcf8575_dev_t *dev)
-{
-    if (dev == NULL || !dev->use_pca9548a) {
-        return ESP_OK; // 不使用PCA9548A，直接返回OK
-    }
+static esp_err_t select_pcf8575_channel(pcf8575_dev_t* dev) {
+    if (!dev || !dev->use_pca9548a) return ESP_OK;
     
-    // 检查PCA9548A是否初始化
-    if (!pca9548a_is_initialized()) {
-        ESP_LOGE(TAG, "PCA9548A未初始化，无法选择通道");
+    uint8_t channel_mask = (1 << dev->pca9548a_channel);
+    ESP_LOGD(TAG, "Selecting PCA9548A channel: mask=0x%02x", channel_mask);
+    
+    // 获取PCA9548A句柄并使用正确的函数
+    pca9548a_handle_t handle = pca9548a_get_handle();
+    if (!handle) {
+        ESP_LOGE(TAG, "PCA9548A handle is NULL");
         return ESP_ERR_INVALID_STATE;
     }
-
-    // 使用PCA9548A选择通道
-    uint8_t channel_mask = (1 << dev->pca9548a_channel);
-    esp_err_t ret = pca9548a_select_channel(channel_mask);
+    
+    esp_err_t ret = pca9548a_select_channels(handle, channel_mask);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "PCA9548A选择通道 %d 失败: %s", dev->pca9548a_channel, esp_err_to_name(ret));
+        ESP_LOGE(TAG, "Failed to select PCA9548A channel: %s", esp_err_to_name(ret));
         return ret;
     }
-
-    // 通道选择后短暂延时以稳定
-    vTaskDelay(pdMS_TO_TICKS(1));
     return ESP_OK;
 }
 

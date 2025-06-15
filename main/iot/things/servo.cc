@@ -12,6 +12,7 @@
 #include "ext/include/i2c_utils.h"  // 新添加的I2C工具头文件
 #include "sdkconfig.h"
 #include "include/multiplexer.h"
+#include "ext/include/pca9548a.h"
 
 #include <esp_log.h>
 #include <cmath>
@@ -62,6 +63,15 @@ extern "C" {
 #define SERVO_LEDC_CHANNEL_RIGHT LEDC_CHANNEL_1
 #define SERVO_LEDC_CHANNEL_UP LEDC_CHANNEL_2
 #define SERVO_LEDC_CHANNEL_DOWN LEDC_CHANNEL_3
+
+// 如果没有定义配置值，使用合理的默认值
+#ifndef CONFIG_LU9685_PCA9548A_CHANNEL
+#define CONFIG_LU9685_PCA9548A_CHANNEL 1
+#endif
+
+#ifndef CONFIG_LU9685_I2C_ADDR
+#define CONFIG_LU9685_I2C_ADDR 0x40  // LU9685的默认7位I2C地址
+#endif
 
 // 舵机控制器结构体
 typedef struct servo_controller_t {
@@ -294,7 +304,15 @@ static esp_err_t init_lu9685_servo(servo_controller_t *controller) {
     // LU9685通常连接在PCA9548A的通道1(SC1,SD1)
     if (pca9548a_is_initialized()) {
         ESP_LOGI(TAG_CTRL, "Selecting multiplexer channel %d for LU9685", CONFIG_LU9685_PCA9548A_CHANNEL);
-        esp_err_t ret = pca9548a_select_channel(1 << CONFIG_LU9685_PCA9548A_CHANNEL);
+        
+        // 获取PCA9548A句柄
+        pca9548a_handle_t handle = pca9548a_get_handle();
+        if (!handle) {
+            ESP_LOGE(TAG_CTRL, "PCA9548A handle is NULL");
+            return ESP_ERR_INVALID_STATE;
+        }
+        
+        esp_err_t ret = pca9548a_select_channels(handle, 1 << CONFIG_LU9685_PCA9548A_CHANNEL);
         if (ret != ESP_OK) {
             ESP_LOGE(TAG_CTRL, "Failed to select multiplexer channel: %s", esp_err_to_name(ret));
             return ret;

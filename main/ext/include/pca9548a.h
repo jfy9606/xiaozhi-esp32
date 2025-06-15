@@ -127,6 +127,14 @@ esp_err_t pca9548a_reset(pca9548a_handle_t handle);
 bool pca9548a_is_initialized(void);
 
 /**
+ * @brief Select channels on PCA9548A I2C multiplexer (compatibility function)
+ * 
+ * @param channel_mask Channels to select (can be OR'ed together)
+ * @return ESP_OK on success, or an error code
+ */
+esp_err_t pca9548a_select_channel(uint8_t channel_mask);
+
+/**
  * @brief Get the handle for direct operations
  * 
  * @note This is exposed for use in low-level operations, 

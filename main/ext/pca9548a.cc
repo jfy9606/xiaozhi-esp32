@@ -11,6 +11,10 @@ static const char *TAG = "pca9548a";
 extern i2c_master_dev_handle_t i2c_dev_handle;
 extern i2c_master_bus_handle_t i2c_bus_handle;
 
+// 全局变量
+static pca9548a_handle_t pca9548a_handle = NULL;
+extern bool g_pca9548a_initialized;
+
 /**
  * @brief PCA9548A device structure
  */
@@ -24,7 +28,7 @@ struct pca9548a_dev_t {
 /**
  * @brief Write control register to select channels
  */
-static esp_err_t pca9548a_write_control(pca9548a_handle_t handle, uint8_t value)
+esp_err_t pca9548a_write_control(pca9548a_handle_t handle, uint8_t value)
 {
     if (handle == NULL || i2c_dev_handle == NULL) {
         return ESP_ERR_INVALID_ARG;
@@ -49,7 +53,7 @@ static esp_err_t pca9548a_write_control(pca9548a_handle_t handle, uint8_t value)
 /**
  * @brief Read control register to get current channel selection
  */
-static esp_err_t pca9548a_read_control(pca9548a_handle_t handle, uint8_t *value)
+esp_err_t pca9548a_read_control(pca9548a_handle_t handle, uint8_t *value)
 {
     if (handle == NULL || value == NULL || i2c_dev_handle == NULL) {
         return ESP_ERR_INVALID_ARG;
@@ -145,10 +149,20 @@ esp_err_t pca9548a_delete(pca9548a_handle_t handle)
 
 esp_err_t pca9548a_select_channels(pca9548a_handle_t handle, uint8_t channels)
 {
-    if (handle == NULL) {
+    if (!g_pca9548a_initialized) {
+        ESP_LOGE(TAG, "PCA9548A not initialized");
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    if (!handle) {
+        ESP_LOGE(TAG, "Invalid handle");
         return ESP_ERR_INVALID_ARG;
     }
-
+    
+    // 使用传入的句柄
+    pca9548a_dev_t *dev = (pca9548a_dev_t *)handle;
+    
+    // 直接使用 pca9548a_write_control 函数
     return pca9548a_write_control(handle, channels);
 }
 
@@ -197,4 +211,32 @@ esp_err_t pca9548a_reset(pca9548a_handle_t handle)
     handle->current_channels = 0;
 
     return ESP_OK;
+}
+
+/**
+ * @brief 选择PCA9548A通道 (兼容旧API)
+ * 
+ * @param channel_mask 要选择的通道掩码
+ * @return esp_err_t 
+ */
+esp_err_t pca9548a_select_channel(uint8_t channel_mask)
+{
+    if (!g_pca9548a_initialized || pca9548a_handle == NULL) {
+        ESP_LOGE(TAG, "PCA9548A not initialized, cannot select channel");
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    ESP_LOGI(TAG, "Selecting PCA9548A channel: 0x%02X", channel_mask);
+    
+    return pca9548a_select_channels(pca9548a_handle, channel_mask);
+}
+
+bool pca9548a_is_initialized(void)
+{
+    return g_pca9548a_initialized;
+}
+
+pca9548a_handle_t pca9548a_get_handle(void)
+{
+    return pca9548a_handle;
 } 

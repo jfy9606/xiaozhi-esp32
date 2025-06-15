@@ -1,13 +1,17 @@
+#include "include/multiplexer.h"
+#include "include/pca9548a.h"
+#include "include/pcf8575.h"
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
-#include <inttypes.h>
+#include <stdlib.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "esp_log.h"
+#include "esp_err.h"
 #include "driver/i2c_master.h"
 #include "driver/gpio.h"
-#include "esp_log.h"
 #include "esp_adc/adc_oneshot.h"
+#include <inttypes.h>
 #include "esp_adc/adc_cali.h"
 #include "sdkconfig.h"
 
@@ -39,7 +43,7 @@ i2c_master_bus_handle_t lvgl_port_get_i2c_bus_handle(void);
 
 // Multiplexer handles
 #ifdef CONFIG_ENABLE_PCA9548A
-static pca9548a_handle_t pca9548a_handle = NULL;
+pca9548a_handle_t pca9548a_handle = NULL;
 // 修改为全局变量，移除 static 关键字，使之对其他文件可见
 i2c_master_bus_handle_t i2c_bus_handle = NULL;
 i2c_master_dev_handle_t i2c_dev_handle = NULL;
@@ -56,7 +60,7 @@ static int gpio_to_adc_channel(gpio_num_t gpio_num);
 #endif
 
 // 全局状态标志
-static bool g_pca9548a_initialized = false;
+bool g_pca9548a_initialized = false;
 static bool g_hw178_initialized = false;
 static bool g_multiplexer_initialized = false;
 
@@ -532,7 +536,8 @@ esp_err_t multiplexer_init(void)
 #endif
     
     // 如果找不到显示屏I2C总线句柄，回退到使用默认端口方式
-    return multiplexer_init_with_i2c_port(default_i2c_port);
+    // Use I2C_NUM_0 as default I2C port
+    return multiplexer_init_with_i2c_port(0);
 }
 
 // Initialize multiplexer components with specific I2C port
@@ -830,12 +835,16 @@ i2c_master_bus_handle_t lvgl_port_get_i2c_bus_handle(void)
  */
 esp_err_t select_pca9548a_channel(pcf8575_dev_t *dev)
 {
-    if (!g_pca9548a_initialized || !pca9548a_handle) {
+    extern bool g_pca9548a_initialized;
+    extern esp_err_t pca9548a_select_channel(uint8_t channel_mask);
+    
+    if (!g_pca9548a_initialized) {
         ESP_LOGE(TAG, "PCA9548A not initialized");
         return ESP_ERR_INVALID_STATE;
     }
-
-    return pca9548a_select_channel(dev->pca9548a_channel);
+    
+    uint8_t channel_mask = (1 << dev->pca9548a_channel);
+    return pca9548a_select_channel(channel_mask);
 }
 
 /**
