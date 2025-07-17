@@ -10,6 +10,7 @@
 #include <driver/gpio.h>
 #include <vector>
 #include "esp32_camera.h"
+#include <network_interface.h>
 
 #include "led/led.h"
 #include "backlight.h"
@@ -418,10 +419,7 @@ public:
     virtual Display* GetDisplay();
     virtual i2c_master_bus_handle_t GetDisplayI2CBusHandle() { return nullptr; }
     virtual Camera* GetCamera();
-    virtual Http* CreateHttp() = 0;
-    virtual WebSocket* CreateWebSocket() = 0;
-    virtual Mqtt* CreateMqtt() = 0;
-    virtual Udp* CreateUdp() = 0;
+    virtual NetworkInterface* GetNetwork() = 0;
     virtual void StartNetwork() = 0;
     virtual const char* GetNetworkStateIcon() = 0;
     virtual bool GetBatteryLevel(int &level, bool& charging, bool& discharging);

@@ -46,6 +46,12 @@ choice BOARD_TYPE
     config BOARD_TYPE_BREAD_COMPACT_ESP32_LCD
         bool "面包板（WiFi+ LCD） ESP32 DevKit"
         depends on IDF_TARGET_ESP32
+    config BOARD_TYPE_XMINI_C3_V3
+        bool "虾哥 Mini C3 V3"
+        depends on IDF_TARGET_ESP32C3
+    config BOARD_TYPE_XMINI_C3_4G
+        bool "虾哥 Mini C3 4G"
+        depends on IDF_TARGET_ESP32C3
     config BOARD_TYPE_XMINI_C3
         bool "虾哥 Mini C3"
         depends on IDF_TARGET_ESP32C3
@@ -280,6 +286,13 @@ choice BOARD_TYPE
         select LV_GIF_CACHE_DECODE_DATA
     config BOARD_TYPE_JIUCHUAN
         bool "九川智能"
+    config BOARD_TYPE_LABPLUS_MPYTHON_V3
+        bool "labplus mpython_v3 board"
+        depends on IDF_TARGET_ESP32S3
+    config BOARD_TYPE_LABPLUS_LEDONG_V2
+        bool "labplus ledong_v2 board"
+        depends on IDF_TARGET_ESP32S3
+    depends on IDF_TARGET_ESP32S3
     config BOARD_TYPE_SURFER_C3_1_14TFT
         bool "Surfer-C3-1-14TFT"
         depends on IDF_TARGET_ESP32C3

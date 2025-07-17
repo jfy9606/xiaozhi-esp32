@@ -13,7 +13,6 @@
 #include "vehicle/vehicle.h"
 #include "display.h"
 #include "system_info.h"
-#include "ml307_ssl_transport.h"
 #include "audio_codec.h"
 #include "mqtt_protocol.h"
 #include "websocket_protocol.h"
