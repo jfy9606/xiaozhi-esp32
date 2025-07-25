@@ -8,15 +8,11 @@
 
 #include <string>
 #include <mutex>
-#include <list>
+#include <deque>
 #include <vector>
 #include <deque>
 #include <condition_variable>
 #include <memory>
-
-#include <opus_encoder.h>
-#include <opus_decoder.h>
-#include <opus_resampler.h>
 
 #include "protocol.h"
 #include "ota.h"
@@ -39,30 +35,21 @@
 #define SCHEDULE_EVENT (1 << 0)
 #define SEND_AUDIO_EVENT (1 << 1)
 #define CHECK_NEW_VERSION_DONE_EVENT (1 << 2)
+#include "audio_service.h"
+#include "device_state_event.h"
+
+#define MAIN_EVENT_SCHEDULE (1 << 0)
+#define MAIN_EVENT_SEND_AUDIO (1 << 1)
+#define MAIN_EVENT_WAKE_WORD_DETECTED (1 << 2)
+#define MAIN_EVENT_VAD_CHANGE (1 << 3)
+#define MAIN_EVENT_ERROR (1 << 4)
+#define MAIN_EVENT_CHECK_NEW_VERSION_DONE (1 << 5)
 
 enum AecMode {
     kAecOff,
     kAecOnDeviceSide,
     kAecOnServerSide,
 };
-
-enum DeviceState {
-    kDeviceStateUnknown,
-    kDeviceStateStarting,
-    kDeviceStateWifiConfiguring,
-    kDeviceStateIdle,
-    kDeviceStateConnecting,
-    kDeviceStateListening,
-    kDeviceStateSpeaking,
-    kDeviceStateUpgrading,
-    kDeviceStateActivating,
-    kDeviceStateAudioTesting,
-    kDeviceStateFatalError
-};
-
-#define OPUS_FRAME_DURATION_MS 60
-#define MAX_AUDIO_PACKETS_IN_QUEUE (2400 / OPUS_FRAME_DURATION_MS)
-#define AUDIO_TESTING_MAX_DURATION_MS 10000
 
 class Application {
 public:
@@ -76,7 +63,7 @@ public:
 
     void Start();
     DeviceState GetDeviceState() const { return device_state_; }
-    bool IsVoiceDetected() const { return voice_detected_; }
+    bool IsVoiceDetected() const { return audio_service_.IsVoiceDetected(); }
     void Schedule(std::function<void()> callback);
     void SetDeviceState(DeviceState state);
     void Alert(const char* status, const char* message, const char* emotion = "", const std::string_view& sound = "");
@@ -85,10 +72,8 @@ public:
     void ToggleChatState();
     void StartListening();
     void StopListening();
-    void UpdateIotStates();
     void Reboot();
     void WakeWordInvoke(const std::string& wake_word);
-    void PlaySound(const std::string_view& sound);
     bool CanEnterSleepMode();
     
     // Component management methods
@@ -99,31 +84,29 @@ public:
     void SendMcpMessage(const std::string& payload);
     bool InitComponents();
     void SetAecMode(AecMode mode);
-    bool ReadAudio(std::vector<int16_t>& data, int sample_rate, int samples);
     AecMode GetAecMode() const { return aec_mode_; }
     BackgroundTask* GetBackgroundTask() const { return background_task_; }
     void InitVehicleComponent(Web* web_server);
+    void PlaySound(const std::string_view& sound);
+    AudioService& GetAudioService() { return audio_service_; }
 
 private:
     Application();
     ~Application();
 
-    std::unique_ptr<WakeWord> wake_word_;
-    std::unique_ptr<AudioProcessor> audio_processor_;
-    std::unique_ptr<AudioDebugger> audio_debugger_;
     std::mutex mutex_;
-    std::list<std::function<void()>> main_tasks_;
+    std::deque<std::function<void()>> main_tasks_;
     std::unique_ptr<Protocol> protocol_;
     EventGroupHandle_t event_group_ = nullptr;
     esp_timer_handle_t clock_timer_handle_ = nullptr;
     volatile DeviceState device_state_ = kDeviceStateUnknown;
     ListeningMode listening_mode_ = kListeningModeAutoStop;
     AecMode aec_mode_ = kAecOff;
+    std::string last_error_message_;
+    AudioService audio_service_;
 
     bool has_server_time_ = false;
     bool aborted_ = false;
-    bool voice_detected_ = false;
-    bool busy_decoding_audio_ = false;
     int clock_ticks_ = 0;
     TaskHandle_t check_new_version_task_handle_ = nullptr;
 
@@ -148,24 +131,15 @@ private:
     OpusResampler output_resampler_;
 
     void MainEventLoop();
-    void OnAudioInput();
-    void OnAudioOutput();
-    void ResetDecoder();
-    void SetDecodeSampleRate(int sample_rate, int frame_duration);
+    void OnWakeWordDetected();
     void CheckNewVersion(Ota& ota);
     void ShowActivationCode(const std::string& code, const std::string& message);
     void OnClockTimer();
     void SetListeningMode(ListeningMode mode);
-    void AudioLoop();
-
 #ifdef CONFIG_ENABLE_LOCATION_CONTROLLER
     // 初始化位置控制器
     void InitLocationController();
 #endif
-
-    void CleanupComponents();
-    void EnterAudioTestingMode();
-    void ExitAudioTestingMode();
 };
 
 #endif // _APPLICATION_H_

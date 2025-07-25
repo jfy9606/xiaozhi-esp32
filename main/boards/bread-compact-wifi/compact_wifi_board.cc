@@ -1,5 +1,5 @@
 #include "wifi_board.h"
-#include "audio_codecs/no_audio_codec.h"
+#include "codecs/no_audio_codec.h"
 #include "display/oled_display.h"
 #include "system_reset.h"
 #include "application.h"
@@ -7,7 +7,6 @@
 #include "config.h"
 #include "mcp_server.h"
 #include "lamp_controller.h"
-#include "iot/thing_manager.h"
 #include "led/single_led.h"
 #include "assets/lang_config.h"
 #include "../common/esp32_camera.h"
@@ -463,6 +462,9 @@ private:
             });
         }
 #endif
+    // 物联网初始化，逐步迁移到 MCP 协议
+    void InitializeTools() {
+        static LampController lamp(LAMP_GPIO);
     }
 
 public:
@@ -507,6 +509,7 @@ public:
         }
 
         ESP_LOGI(TAG, "Bread Compact WiFi Board Initialized with Camera and Vision support");
+        InitializeTools();
     }
 
     virtual Led* GetLed() override {

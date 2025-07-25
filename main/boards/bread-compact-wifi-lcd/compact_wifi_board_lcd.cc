@@ -551,6 +551,11 @@ private:
         }
     }
 
+    // 物联网初始化，添加对 AI 可见设备
+    void InitializeTools() {
+        static LampController lamp(LAMP_GPIO);
+    }
+
 public:
     CompactWifiBoardLCD() :
         boot_button_(BOOT_BUTTON_GPIO),

@@ -51,8 +51,15 @@ void WifiBoard::EnterWifiConfigMode() {
     // 播报配置 WiFi 的提示
     application.Alert(Lang::Strings::WIFI_CONFIG_MODE, hint.c_str(), "", Lang::Sounds::P3_WIFICONFIG);
 
-    #if USE_ACOUSTIC_WIFI_PROVISIONING
-    audio_wifi_config::ReceiveWifiCredentialsFromAudio(&application, &wifi_ap);
+    #if CONFIG_USE_ACOUSTIC_WIFI_PROVISIONING
+    auto display = Board::GetInstance().GetDisplay();
+    auto codec = Board::GetInstance().GetAudioCodec();
+    int channel = 1;
+    if (codec) {
+        channel = codec->input_channels();
+    }
+    ESP_LOGI(TAG, "Start receiving WiFi credentials from audio, input channels: %d", channel);
+    audio_wifi_config::ReceiveWifiCredentialsFromAudio(&application, &wifi_ap, display, channel);
     #endif
     
     // Wait forever until reset after configuration

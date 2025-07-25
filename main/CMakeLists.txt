@@ -1,11 +1,13 @@
-set(SOURCES "audio_codecs/audio_codec.cc"
-            "audio_codecs/no_audio_codec.cc"
-            "audio_codecs/box_audio_codec.cc"
-            "audio_codecs/es8311_audio_codec.cc"
-            "audio_codecs/es8374_audio_codec.cc"
-            "audio_codecs/es8388_audio_codec.cc"
-            "audio_codecs/dummy_audio_codec.cc"
-            "audio_processing/audio_debugger.cc"
+set(SOURCES "audio/audio_codec.cc"
+            "audio/audio_service.cc"
+            "audio/codecs/no_audio_codec.cc"
+            "audio/codecs/box_audio_codec.cc"
+            "audio/codecs/es8311_audio_codec.cc"
+            "audio/codecs/es8374_audio_codec.cc"
+            "audio/codecs/es8388_audio_codec.cc"
+            "audio/codecs/es8389_audio_codec.cc"
+            "audio/codecs/dummy_audio_codec.cc"
+            "audio/processors/audio_debugger.cc"
             "led/single_led.cc"
             "led/circular_strip.cc"
             "led/gpio_led.cc"
@@ -15,14 +17,12 @@ set(SOURCES "audio_codecs/audio_codec.cc"
             "protocols/protocol.cc"
             "protocols/mqtt_protocol.cc"
             "protocols/websocket_protocol.cc"
-            "iot/thing.cc"
-            "iot/thing_manager.cc"
             "mcp_server.cc"
             "system_info.cc"
             "application.cc"
             "ota.cc"
             "settings.cc"
-            "background_task.cc"
+            "device_state_event.cc"
             "main.cc"
             "components.cc"
             "vehicle/vehicle.cc"
@@ -44,7 +44,7 @@ set(SOURCES "audio_codecs/audio_codec.cc"
             "location/location.cc"
             )
 
-set(INCLUDE_DIRS "." "display" "audio_codecs" "protocols" "audio_processing" "location" "vehicle" "vision" "ai" "web")
+set(INCLUDE_DIRS "." "display" "audio" "protocols" "audio_processing" "location" "vehicle" "vision" "ai" "web")
 
 # HTML文件列表 - 只在启用web内容时使用
 set(EMBED_FILES "")
@@ -228,6 +228,8 @@ elseif(CONFIG_BOARD_TYPE_ECHOEAR)
     set(BOARD_TYPE "echoear")
 elseif(CONFIG_BOARD_TYPE_ESP32S3_Touch_AMOLED_1_8)
     set(BOARD_TYPE "esp32-s3-touch-amoled-1.8")
+elseif(CONFIG_BOARD_TYPE_ESP32S3_Touch_AMOLED_2_06)
+    set(BOARD_TYPE "waveshare-s3-touch-amoled-2.06")
 elseif(CONFIG_BOARD_TYPE_ESP32S3_Touch_AMOLED_1_75)
     set(BOARD_TYPE "waveshare-s3-touch-amoled-1.75")
 elseif(CONFIG_BOARD_TYPE_ESP32S3_Touch_LCD_1_85C)
@@ -274,6 +276,10 @@ elseif(CONFIG_BOARD_TYPE_ATK_DNESP32S3_BOX)
     set(BOARD_TYPE "atk-dnesp32s3-box")
 elseif(CONFIG_BOARD_TYPE_ATK_DNESP32S3_BOX0)
     set(BOARD_TYPE "atk-dnesp32s3-box0")
+elseif(CONFIG_BOARD_TYPE_ATK_DNESP32S3_BOX2_WIFI)
+    set(BOARD_TYPE "atk-dnesp32s3-box2-wifi")
+elseif(CONFIG_BOARD_TYPE_ATK_DNESP32S3_BOX2_4G)
+    set(BOARD_TYPE "atk-dnesp32s3-box2-4g")   
 elseif(CONFIG_BOARD_TYPE_ATK_DNESP32S3M_WIFI)
     set(BOARD_TYPE "atk-dnesp32s3m-wifi")
 elseif(CONFIG_BOARD_TYPE_ATK_DNESP32S3M_4G)
@@ -340,16 +346,16 @@ file(GLOB BOARD_SOURCES
 list(APPEND SOURCES ${BOARD_SOURCES})
 
 if(CONFIG_USE_AUDIO_PROCESSOR)
-    list(APPEND SOURCES "audio_processing/afe_audio_processor.cc")
+    list(APPEND SOURCES "audio/processors/afe_audio_processor.cc")
 else()
-    list(APPEND SOURCES "audio_processing/no_audio_processor.cc")
+    list(APPEND SOURCES "audio/processors/no_audio_processor.cc")
 endif()
 if(CONFIG_USE_AFE_WAKE_WORD)
-    list(APPEND SOURCES "audio_processing/afe_wake_word.cc")
+    list(APPEND SOURCES "audio/wake_words/afe_wake_word.cc")
 elseif(CONFIG_USE_ESP_WAKE_WORD)
-    list(APPEND SOURCES "audio_processing/esp_wake_word.cc")
-else()
-    list(APPEND SOURCES "audio_processing/no_wake_word.cc")
+    list(APPEND SOURCES "audio/wake_words/esp_wake_word.cc")
+elseif(CONFIG_USE_CUSTOM_WAKE_WORD)
+    list(APPEND SOURCES "audio/wake_words/custom_wake_word.cc")
 endif()
 
 # 根据Kconfig选择语言目录
@@ -408,8 +414,9 @@ endif()
 
 # 如果目标芯片是 ESP32，则排除特定文件
 if(CONFIG_IDF_TARGET_ESP32)
-    list(REMOVE_ITEM SOURCES "audio_codecs/box_audio_codec.cc"
-                             "audio_codecs/es8388_audio_codec.cc"
+    list(REMOVE_ITEM SOURCES "audio/codecs/box_audio_codec.cc"
+                             "audio/codecs/es8388_audio_codec.cc"
+                             "audio/codecs/es8389_audio_codec.cc"
                              "led/gpio_led.cc"
                              )
 endif()
