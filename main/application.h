@@ -62,6 +62,7 @@ public:
     Application& operator=(const Application&) = delete;
 
     void Start();
+    void MainEventLoop();
     DeviceState GetDeviceState() const { return device_state_; }
     bool IsVoiceDetected() const { return audio_service_.IsVoiceDetected(); }
     void Schedule(std::function<void()> callback);

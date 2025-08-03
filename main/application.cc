@@ -662,9 +662,6 @@ void Application::Start() {
 
     // Print heap stats
     SystemInfo::PrintHeapStats();
-    
-    // Enter the main event loop
-    MainEventLoop();
 }
 
 void Application::OnClockTimer() {
