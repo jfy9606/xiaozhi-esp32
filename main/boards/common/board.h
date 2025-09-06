@@ -15,6 +15,7 @@
 #include "led/led.h"
 #include "backlight.h"
 #include "camera.h"
+#include "assets.h"
 #include "ext/include/i2c_utils.h"
 #include "sdkconfig.h"
 
@@ -423,10 +424,11 @@ public:
     virtual void StartNetwork() = 0;
     virtual const char* GetNetworkStateIcon() = 0;
     virtual bool GetBatteryLevel(int &level, bool& charging, bool& discharging);
-    virtual std::string GetJson();
+    virtual std::string GetSystemInfoJson();
     virtual void SetPowerSaveMode(bool enabled) = 0;
     virtual std::string GetBoardJson() = 0;
     virtual std::string GetDeviceStatusJson() = 0;
+    virtual Assets* GetAssets();
     
     // 板级配置管理方法
     static board_config_t* GetBoardConfig();

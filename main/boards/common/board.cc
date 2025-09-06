@@ -549,7 +549,7 @@ bool Board::IsI2CDeviceConnected(int port, uint8_t addr) {
     return false;
 }
 
-std::string Board::GetJson() {
+std::string Board::GetSystemInfoJson() {
     /* 
         {
             "version": 2,
@@ -642,4 +642,8 @@ std::string Board::GetJson() {
     // Close the JSON object
     json += R"(})";
     return json;
+}
+
+Assets* Board::GetAssets() {
+    return nullptr;
 }

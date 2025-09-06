@@ -1,5 +1,5 @@
 #include "wifi_board.h"
-#include "audio_codecs/no_audio_codec.h"
+#include "codecs/no_audio_codec.h"
 #include "display/lcd_display.h"
 #include "system_reset.h"
 #include "application.h"
@@ -73,7 +73,6 @@ static const gc9a01_lcd_init_cmd_t gc9107_lcd_init_cmds[] = {
 
 LV_FONT_DECLARE(font_puhui_16_4);
 LV_FONT_DECLARE(font_awesome_16_4);
-
 // 资源冲突管理实现
 static resource_state_t g_resource_state = RESOURCE_IDLE;
 static SemaphoreHandle_t g_resource_mutex = NULL;
@@ -82,7 +81,7 @@ static bool g_resource_initialized = false;
 // 初始化资源管理系统
 static void init_resource_management() {
     if (!g_resource_initialized) {
-        g_resource_mutex = xSemaphoreCreateMutex();
+        g_resource_mutex =SemaphoreCreateMutex();
         if (g_resource_mutex == NULL) {
             ESP_LOGE(TAG, "Failed to create resource mutex!");
         } else {
@@ -134,9 +133,8 @@ bool lock_resource_for_camera(void) {
     
     ESP_LOGE(TAG, "Failed to acquire resource mutex for camera");
     return false;
-}
-
-// 为音频锁定资源
+}// 为
+音频锁定资源
 bool lock_resource_for_audio(void) {
     if (!g_resource_initialized) {
         init_resource_management();
@@ -234,9 +232,8 @@ resource_state_t get_resource_state(void) {
     }
     
     return state;
-}
-
-class CompactWifiBoardLCD : public WifiBoard {
+}cl
+ass CompactWifiBoardLCD : public WifiBoard {
 private:
     i2c_master_bus_handle_t display_i2c_bus_;
     Button boot_button_;
@@ -281,9 +278,8 @@ private:
         buscfg.quadhd_io_num = GPIO_NUM_NC;
         buscfg.max_transfer_sz = DISPLAY_WIDTH * DISPLAY_HEIGHT * sizeof(uint16_t);
         ESP_ERROR_CHECK(spi_bus_initialize(SPI3_HOST, &buscfg, SPI_DMA_CH_AUTO));
-    }
-
-    void InitializeLcdDisplay() {
+    }    
+void InitializeLcdDisplay() {
         esp_lcd_panel_io_handle_t panel_io = nullptr;
         esp_lcd_panel_handle_t panel = nullptr;
         // 液晶屏控制IO初始化
@@ -337,9 +333,8 @@ private:
                                         .emoji_font = DISPLAY_HEIGHT >= 240 ? font_emoji_64_init() : font_emoji_32_init(),
 #endif
                                     });
-    }
-
-    void InitializeButtons() {
+    }    v
+oid InitializeButtons() {
         boot_button_.OnClick([this]() {
             auto& app = Application::GetInstance();
             if (app.GetDeviceState() == kDeviceStateStarting && !WifiStation::GetInstance().IsConnected()) {
@@ -392,9 +387,8 @@ private:
             GetAudioCodec()->SetOutputVolume(0);
             GetDisplay()->ShowNotification(Lang::Strings::MUTED);
         });
-    }
-
-    // 物联网初始化，添加对 AI 可见设备
+    }    /
+/ 物联网初始化，添加对 AI 可见设备
     void InitializeIot() {
 #if CONFIG_IOT_PROTOCOL_XIAOZHI
         auto& thing_manager = iot::ThingManager::GetInstance();
@@ -476,9 +470,8 @@ private:
             });
         }
 #endif
-    }
-
-    void InitializeCamera() {
+    }   
+ void InitializeCamera() {
         ESP_LOGI(TAG, "初始化摄像头...");
         
         // 在初始化摄像头之前锁定资源
@@ -554,9 +547,8 @@ private:
     // 物联网初始化，添加对 AI 可见设备
     void InitializeTools() {
         static LampController lamp(LAMP_GPIO);
-    }
-
-public:
+    }p
+ublic:
     CompactWifiBoardLCD() :
         boot_button_(BOOT_BUTTON_GPIO),
         touch_button_(TOUCH_BUTTON_GPIO),
@@ -603,6 +595,10 @@ public:
         
         // board_config.cc 现在会自动从宏定义读取舵机配置信息
         ESP_LOGI(TAG, "Bread Compact WiFi LCD Board Initialized with Camera, Vision, Servo and Motor support");
+    } 
+   virtual Assets* GetAssets() override {
+        static Assets assets(ASSETS_XIAOZHI_PUHUI_COMMON_16_4_EMOJI_32);
+        return &assets;
     }
 
     virtual Led* GetLed() override {
@@ -635,9 +631,8 @@ public:
 
     virtual Camera* GetCamera() override {
         return camera_;
-    }
-
-    void OnFirmwareUpdate() override {
+    }    v
+oid OnFirmwareUpdate() override {
         ESP_LOGI(TAG, "固件更新中，执行相关操作");
         // 暂时关闭摄像头
         if (camera_) {
