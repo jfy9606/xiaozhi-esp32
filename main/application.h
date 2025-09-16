@@ -114,6 +114,7 @@ private:
     bool aborted_ = false;
     int clock_ticks_ = 0;
     TaskHandle_t check_new_version_task_handle_ = nullptr;
+    TaskHandle_t main_event_loop_task_handle_ = nullptr;
 
     // Audio encode / decode
     TaskHandle_t audio_loop_task_handle_ = nullptr;
@@ -145,6 +146,21 @@ private:
     // 初始化位置控制器
     void InitLocationController();
 #endif
+};
+
+
+class TaskPriorityReset {
+public:
+    TaskPriorityReset(BaseType_t priority) {
+        original_priority_ = uxTaskPriorityGet(NULL);
+        vTaskPrioritySet(NULL, priority);
+    }
+    ~TaskPriorityReset() {
+        vTaskPrioritySet(NULL, original_priority_);
+    }
+
+private:
+    BaseType_t original_priority_;
 };
 
 #endif // _APPLICATION_H_

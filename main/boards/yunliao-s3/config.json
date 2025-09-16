@@ -2,8 +2,9 @@
     "target": "esp32s3",
     "builds": [
         {
-            "name": "echoear",
+            "name": "yunliao-s3",
             "sdkconfig_append": [
+                "CONFIG_USE_DEVICE_AEC=y"
             ]
         }
     ]
