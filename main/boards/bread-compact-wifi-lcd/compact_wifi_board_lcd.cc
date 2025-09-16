@@ -8,11 +8,11 @@
 #include "mcp_server.h"
 #include "lamp_controller.h"
 #include "iot/thing_manager.h"
-#include "led/single_led.h"
 #include "assets/lang_config.h"
 #include "../common/esp32_camera.h"
 #include "vision/vision_controller.h"
 #include "vision/vision_content.h"
+#include "led/single_led.h"
 
 #include <wifi_station.h>
 #include <esp_log.h>
@@ -23,7 +23,6 @@
 #include <driver/spi_common.h>
 #include <freertos/semphr.h>
 
-// 添加多路复用器头文件
 #ifdef CONFIG_ENABLE_PCA9548A
 #include "ext/include/multiplexer.h"
 #endif
@@ -268,6 +267,11 @@ private:
         }
         #endif
     }
+class CompactWifiBoardLCD : public WifiBoard {
+private:
+ 
+    Button boot_button_;
+    LcdDisplay* display_;
 
     void InitializeSpi() {
         spi_bus_config_t buscfg = {};
@@ -278,8 +282,9 @@ private:
         buscfg.quadhd_io_num = GPIO_NUM_NC;
         buscfg.max_transfer_sz = DISPLAY_WIDTH * DISPLAY_HEIGHT * sizeof(uint16_t);
         ESP_ERROR_CHECK(spi_bus_initialize(SPI3_HOST, &buscfg, SPI_DMA_CH_AUTO));
-    }    
-void InitializeLcdDisplay() {
+    }
+
+    void InitializeLcdDisplay() {
         esp_lcd_panel_io_handle_t panel_io = nullptr;
         esp_lcd_panel_handle_t panel = nullptr;
         // 液晶屏控制IO初始化
@@ -313,8 +318,6 @@ void InitializeLcdDisplay() {
 #endif
         
         esp_lcd_panel_reset(panel);
- 
-
         esp_lcd_panel_init(panel);
         esp_lcd_panel_invert_color(panel, DISPLAY_INVERT_COLOR);
         esp_lcd_panel_swap_xy(panel, DISPLAY_SWAP_XY);
@@ -333,8 +336,8 @@ void InitializeLcdDisplay() {
                                         .emoji_font = DISPLAY_HEIGHT >= 240 ? font_emoji_64_init() : font_emoji_32_init(),
 #endif
                                     });
-    }    v
-oid InitializeButtons() {
+    }    
+    void InitializeButtons() {
         boot_button_.OnClick([this]() {
             auto& app = Application::GetInstance();
             if (app.GetDeviceState() == kDeviceStateStarting && !WifiStation::GetInstance().IsConnected()) {
@@ -388,9 +391,9 @@ oid InitializeButtons() {
             GetDisplay()->ShowNotification(Lang::Strings::MUTED);
         });
     }    /
-/ 物联网初始化，添加对 AI 可见设备
+    // 物联网初始化，添加对 AI 可见设备
     void InitializeIot() {
-#if CONFIG_IOT_PROTOCOL_XIAOZHI
+        #if CONFIG_IOT_PROTOCOL_XIAOZHI
         auto& thing_manager = iot::ThingManager::GetInstance();
         thing_manager.AddThing(iot::CreateThing("Speaker"));
         thing_manager.AddThing(iot::CreateThing("Screen"));
@@ -547,8 +550,9 @@ oid InitializeButtons() {
     // 物联网初始化，添加对 AI 可见设备
     void InitializeTools() {
         static LampController lamp(LAMP_GPIO);
-    }p
-ublic:
+    }
+
+public:
     CompactWifiBoardLCD() :
         boot_button_(BOOT_BUTTON_GPIO),
         touch_button_(TOUCH_BUTTON_GPIO),
@@ -556,11 +560,11 @@ ublic:
         volume_down_button_(VOLUME_DOWN_BUTTON_GPIO) {
         // 初始化资源管理系统
         init_resource_management();
-        
         InitializeI2c();
         InitializeSpi();
         InitializeLcdDisplay();
         InitializeButtons();
+        InitializeTools();
         InitializeIot();
         InitializeCamera();
         if (DISPLAY_BACKLIGHT_PIN != GPIO_NUM_NC) {
@@ -628,11 +632,10 @@ ublic:
         }
         return nullptr;
     }
-
     virtual Camera* GetCamera() override {
         return camera_;
-    }    v
-oid OnFirmwareUpdate() override {
+    }    
+    void OnFirmwareUpdate() override {
         ESP_LOGI(TAG, "固件更新中，执行相关操作");
         // 暂时关闭摄像头
         if (camera_) {
