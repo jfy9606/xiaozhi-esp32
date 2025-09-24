@@ -33,6 +33,11 @@
                             </a>
                         </li>
                         <li class="nav-item">
+                            <a class="nav-link" href="servo_control.html">
+                                <i class="bi bi-gear-wide-connected"></i> Servo Control
+                            </a>
+                        </li>
+                        <li class="nav-item">
                             <a class="nav-link" href="location.html">
                                 <i class="bi bi-geo-alt"></i> Location
                             </a>
@@ -198,25 +203,73 @@
                         
                         <hr>
                         
-                        <h6>Pan-Tilt Controls</h6>
-                        <div class="mb-3">
-                            <label for="pan-slider" class="form-label d-flex justify-content-between">
-                                <span>Pan</span>
-                                <span id="pan-value">0°</span>
-                            </label>
-                            <input type="range" class="form-range" id="pan-slider" min="-90" max="90" value="0">
+                        <h6>Enhanced Motor Controls</h6>
+                        <div class="actuator-control mb-3">
+                            <div class="control-group">
+                                <span class="control-label">Left Motor:</span>
+                                <input type="range" class="form-range control-input" id="left-motor-speed" min="-255" max="255" value="0">
+                                <span class="control-value" id="left-motor-value">0</span>
+                                <div class="actuator-status">
+                                    <i class="bi bi-circle-fill text-secondary" id="left-motor-status"></i>
+                                    <span id="left-motor-status-text">Stopped</span>
+                                </div>
+                            </div>
+                            <div class="control-group">
+                                <span class="control-label">Right Motor:</span>
+                                <input type="range" class="form-range control-input" id="right-motor-speed" min="-255" max="255" value="0">
+                                <span class="control-value" id="right-motor-value">0</span>
+                                <div class="actuator-status">
+                                    <i class="bi bi-circle-fill text-secondary" id="right-motor-status"></i>
+                                    <span id="right-motor-status-text">Stopped</span>
+                                </div>
+                            </div>
+                            <div class="text-center mt-2">
+                                <div class="btn-group" role="group">
+                                    <input type="radio" class="btn-check" name="motor-mode" id="motor-mode-direct" checked>
+                                    <label class="btn btn-outline-primary btn-sm" for="motor-mode-direct">Direct</label>
+                                    
+                                    <input type="radio" class="btn-check" name="motor-mode" id="motor-mode-expander">
+                                    <label class="btn btn-outline-primary btn-sm" for="motor-mode-expander">PCF8575</label>
+                                </div>
+                            </div>
                         </div>
-                        <div class="mb-3">
-                            <label for="tilt-slider" class="form-label d-flex justify-content-between">
-                                <span>Tilt</span>
-                                <span id="tilt-value">0°</span>
-                            </label>
-                            <input type="range" class="form-range" id="tilt-slider" min="-90" max="90" value="0">
-                        </div>
-                        <div class="text-center">
-                            <button class="btn btn-sm btn-secondary" id="btn-center-servos">
-                                <i class="bi bi-arrows-angle-contract"></i> Center
-                            </button>
+                        
+                        <h6>Enhanced Servo Controls</h6>
+                        <div class="actuator-control mb-3">
+                            <div class="mb-3">
+                                <label for="pan-slider" class="form-label d-flex justify-content-between">
+                                    <span>Pan Servo</span>
+                                    <span id="pan-value">0°</span>
+                                </label>
+                                <input type="range" class="form-range" id="pan-slider" min="-90" max="90" value="0">
+                                <div class="actuator-status mt-1">
+                                    <i class="bi bi-circle-fill text-secondary" id="pan-servo-status"></i>
+                                    <span id="pan-servo-status-text">Centered</span>
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <label for="tilt-slider" class="form-label d-flex justify-content-between">
+                                    <span>Tilt Servo</span>
+                                    <span id="tilt-value">0°</span>
+                                </label>
+                                <input type="range" class="form-range" id="tilt-slider" min="-90" max="90" value="0">
+                                <div class="actuator-status mt-1">
+                                    <i class="bi bi-circle-fill text-secondary" id="tilt-servo-status"></i>
+                                    <span id="tilt-servo-status-text">Centered</span>
+                                </div>
+                            </div>
+                            <div class="text-center">
+                                <button class="btn btn-sm btn-secondary" id="btn-center-servos">
+                                    <i class="bi bi-arrows-angle-contract"></i> Center
+                                </button>
+                                <div class="btn-group mt-2" role="group">
+                                    <input type="radio" class="btn-check" name="servo-mode" id="servo-mode-direct" checked>
+                                    <label class="btn btn-outline-secondary btn-sm" for="servo-mode-direct">Direct</label>
+                                    
+                                    <input type="radio" class="btn-check" name="servo-mode" id="servo-mode-lu9685">
+                                    <label class="btn btn-outline-secondary btn-sm" for="servo-mode-lu9685">LU9685</label>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -255,6 +308,91 @@
                         </div>
                             </div>
                         </section>
+                    </div>
+                </div>
+                
+                <div class="card mt-3">
+                    <div class="card-header bg-warning text-white">
+                        <i class="bi bi-thermometer-half"></i> Sensor Monitoring
+                    </div>
+                    <div class="card-body">
+                        <div class="row" id="vehicle-sensor-grid">
+                            <div class="col-12 mb-2">
+                                <div class="sensor-item">
+                                    <span class="sensor-label">Temperature:</span>
+                                    <span class="sensor-value" id="vehicle-sensor-temperature">--°C</span>
+                                    <span class="sensor-status" id="vehicle-sensor-temperature-status">
+                                        <i class="bi bi-circle-fill text-secondary"></i>
+                                    </span>
+                                </div>
+                            </div>
+                            <div class="col-12 mb-2">
+                                <div class="sensor-item">
+                                    <span class="sensor-label">Battery Voltage:</span>
+                                    <span class="sensor-value" id="vehicle-sensor-voltage">--V</span>
+                                    <span class="sensor-status" id="vehicle-sensor-voltage-status">
+                                        <i class="bi bi-circle-fill text-secondary"></i>
+                                    </span>
+                                </div>
+                            </div>
+                            <div class="col-12 mb-2">
+                                <div class="sensor-item">
+                                    <span class="sensor-label">Light Level:</span>
+                                    <span class="sensor-value" id="vehicle-sensor-light">--</span>
+                                    <span class="sensor-status" id="vehicle-sensor-light-status">
+                                        <i class="bi bi-circle-fill text-secondary"></i>
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="text-center mt-2">
+                            <small class="text-muted">Last updated: <span id="sensor-last-update">Never</span></small>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="card mt-3">
+                    <div class="card-header bg-secondary text-white">
+                        <i class="bi bi-cpu"></i> Hardware Status
+                    </div>
+                    <div class="card-body">
+                        <div class="hardware-status-grid">
+                            <div class="hardware-status-item">
+                                <h6>PCA9548A Multiplexer</h6>
+                                <div class="status-indicator">
+                                    <i class="bi bi-circle-fill text-secondary" id="pca9548a-status"></i>
+                                    <span id="pca9548a-status-text">Unknown</span>
+                                </div>
+                            </div>
+                            <div class="hardware-status-item">
+                                <h6>PCF8575 GPIO Expander</h6>
+                                <div class="status-indicator">
+                                    <i class="bi bi-circle-fill text-secondary" id="pcf8575-status"></i>
+                                    <span id="pcf8575-status-text">Unknown</span>
+                                </div>
+                            </div>
+                            <div class="hardware-status-item">
+                                <h6>LU9685 PWM Controller</h6>
+                                <div class="status-indicator">
+                                    <i class="bi bi-circle-fill text-secondary" id="lu9685-status"></i>
+                                    <span id="lu9685-status-text">Unknown</span>
+                                </div>
+                            </div>
+                            <div class="hardware-status-item">
+                                <h6>HW178 ADC Multiplexer</h6>
+                                <div class="status-indicator">
+                                    <i class="bi bi-circle-fill text-secondary" id="hw178-status"></i>
+                                    <span id="hw178-status-text">Unknown</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="text-center mt-3">
+                            <button class="btn btn-sm btn-outline-primary" id="refresh-hardware-status">
+                                <i class="bi bi-arrow-clockwise"></i> Refresh Status
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>

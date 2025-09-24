@@ -1,0 +1,104 @@
+{
+  "hardware": {
+    "sensors": [
+      {
+        "id": "temp_ambient",
+        "name": "环境温度传感器",
+        "type": "temperature",
+        "expander": "hw178",
+        "channel": 0,
+        "unit": "°C",
+        "calibration": {
+          "offset": 0.0,
+          "scale": 100.0
+        }
+      },
+      {
+        "id": "humidity_ambient",
+        "name": "环境湿度传感器",
+        "type": "humidity",
+        "expander": "hw178",
+        "channel": 1,
+        "unit": "%",
+        "calibration": {
+          "offset": 0.0,
+          "scale": 1.0
+        }
+      },
+      {
+        "id": "light_level",
+        "name": "光照强度传感器",
+        "type": "light",
+        "expander": "hw178",
+        "channel": 2,
+        "unit": "lux",
+        "calibration": {
+          "offset": 0.0,
+          "scale": 10.0
+        }
+      },
+      {
+        "id": "pressure_atmospheric",
+        "name": "大气压力传感器",
+        "type": "pressure",
+        "expander": "hw178",
+        "channel": 3,
+        "unit": "Pa",
+        "calibration": {
+          "offset": 0.0,
+          "scale": 1000.0
+        }
+      },
+      {
+        "id": "voltage_solar",
+        "name": "太阳能板电压",
+        "type": "voltage",
+        "expander": "hw178",
+        "channel": 4,
+        "unit": "V",
+        "calibration": {
+          "offset": 0.0,
+          "scale": 0.01
+        }
+      },
+      {
+        "id": "current_solar",
+        "name": "太阳能板电流",
+        "type": "current",
+        "expander": "hw178",
+        "channel": 5,
+        "unit": "A",
+        "calibration": {
+          "offset": 0.0,
+          "scale": 0.001
+        }
+      },
+      {
+        "id": "temp_battery",
+        "name": "电池温度",
+        "type": "temperature",
+        "expander": "hw178",
+        "channel": 6,
+        "unit": "°C",
+        "calibration": {
+          "offset": 0.0,
+          "scale": 100.0
+        }
+      },
+      {
+        "id": "voltage_battery",
+        "name": "电池电压",
+        "type": "voltage",
+        "expander": "hw178",
+        "channel": 7,
+        "unit": "V",
+        "calibration": {
+          "offset": 0.0,
+          "scale": 0.01
+        }
+      }
+    ],
+    "motors": [],
+    "servos": []
+  }
+}

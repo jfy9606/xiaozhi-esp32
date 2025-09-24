@@ -1,0 +1,86 @@
+{
+  "hardware": {
+    "sensors": [
+      {
+        "id": "temperature_01",
+        "name": "Environment Temperature",
+        "type": "temperature",
+        "expander": "hw178",
+        "channel": 0,
+        "unit": "°C",
+        "calibration": {
+          "offset": 0.0,
+          "scale": 1.0
+        }
+      },
+      {
+        "id": "voltage_battery",
+        "name": "Battery Voltage",
+        "type": "voltage",
+        "expander": "hw178",
+        "channel": 1,
+        "unit": "V",
+        "calibration": {
+          "offset": 0.0,
+          "scale": 0.01
+        }
+      },
+      {
+        "id": "current_motor",
+        "name": "Motor Current",
+        "type": "current",
+        "expander": "hw178",
+        "channel": 2,
+        "unit": "A",
+        "calibration": {
+          "offset": 0.0,
+          "scale": 0.001
+        }
+      }
+    ],
+    "motors": [
+      {
+        "id": 0,
+        "name": "Left Wheel Motor",
+        "connection_type": "pcf8575",
+        "pins": {
+          "ena": 2,
+          "in1": 0,
+          "in2": 1
+        },
+        "max_speed": 255
+      },
+      {
+        "id": 1,
+        "name": "Right Wheel Motor",
+        "connection_type": "pcf8575",
+        "pins": {
+          "ena": 5,
+          "in1": 3,
+          "in2": 4
+        },
+        "max_speed": 255
+      }
+    ],
+    "servos": [
+      {
+        "id": 0,
+        "name": "Pan Servo",
+        "connection_type": "lu9685",
+        "channel": 0,
+        "min_angle": 0,
+        "max_angle": 180,
+        "center_angle": 90
+      },
+      {
+        "id": 1,
+        "name": "Tilt Servo",
+        "connection_type": "lu9685",
+        "channel": 1,
+        "min_angle": 0,
+        "max_angle": 180,
+        "center_angle": 90
+      }
+    ]
+  }
+}

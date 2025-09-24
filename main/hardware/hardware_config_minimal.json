@@ -1,0 +1,42 @@
+{
+  "hardware": {
+    "sensors": [
+      {
+        "id": "temp_01",
+        "name": "Temperature Sensor",
+        "type": "temperature",
+        "expander": "hw178",
+        "channel": 0,
+        "unit": "°C",
+        "calibration": {
+          "offset": 0.0,
+          "scale": 1.0
+        }
+      }
+    ],
+    "motors": [
+      {
+        "id": 0,
+        "name": "Test Motor",
+        "connection_type": "pcf8575",
+        "pins": {
+          "ena": 2,
+          "in1": 0,
+          "in2": 1
+        },
+        "max_speed": 255
+      }
+    ],
+    "servos": [
+      {
+        "id": 0,
+        "name": "Test Servo",
+        "connection_type": "lu9685",
+        "channel": 0,
+        "min_angle": 0,
+        "max_angle": 180,
+        "center_angle": 90
+      }
+    ]
+  }
+}

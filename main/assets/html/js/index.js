@@ -206,4 +206,171 @@ $(document).ready(function() {
             default: return 'bi-circle text-secondary';
         }
     }
+    
+    // Hardware Manager Integration for Index Page
+    function initHardwareManagerIntegration() {
+        // Sensor refresh button
+        $('#btn-refresh-sensors').click(function() {
+            if (window.HardwareManager) {
+                window.HardwareManager.refreshSensors();
+                addActivityLog({
+                    type: 'info',
+                    message: 'Sensor data refreshed'
+                });
+            }
+        });
+        
+        // Sensor details button
+        $('#btn-sensor-details').click(function() {
+            // This could open a modal or navigate to a detailed sensor page
+            if (window.HardwareManager) {
+                window.HardwareManager.getSensorData()
+                    .then(data => {
+                        if (data.success && data.data) {
+                            showSensorDetailsModal(data.data);
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Failed to get sensor details:', error);
+                    });
+            }
+        });
+        
+        // Initial sensor data load
+        setTimeout(function() {
+            if (window.HardwareManager) {
+                window.HardwareManager.refreshSensors();
+            }
+        }, 2000);
+        
+        // Auto-refresh sensors every 30 seconds
+        setInterval(function() {
+            if (window.HardwareManager) {
+                window.HardwareManager.getSensorData()
+                    .then(data => {
+                        if (data.success && data.data && data.data.sensors) {
+                            updateIndexSensorDisplay(data.data.sensors);
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Auto sensor refresh failed:', error);
+                    });
+            }
+        }, 30000);
+    }
+    
+    // Update sensor display on index page
+    function updateIndexSensorDisplay(sensors) {
+        // Update temperature sensor
+        if (sensors.temperature !== undefined) {
+            updateIndexSensorValue('temperature', sensors.temperature.toFixed(1) + '°C', sensors.temperature_valid);
+        }
+        
+        // Update voltage sensor
+        if (sensors.voltage !== undefined) {
+            updateIndexSensorValue('voltage', sensors.voltage.toFixed(2) + 'V', sensors.voltage_valid);
+        }
+        
+        // Update light sensor
+        if (sensors.light !== undefined) {
+            updateIndexSensorValue('light', sensors.light.toString(), sensors.light_valid);
+        }
+        
+        // Update motion sensor
+        if (sensors.motion !== undefined) {
+            const motionText = sensors.motion ? 'Motion Detected' : 'No Motion';
+            updateIndexSensorValue('motion', motionText, sensors.motion_valid);
+        }
+    }
+    
+    // Update individual sensor value on index page
+    function updateIndexSensorValue(sensorId, value, valid = true) {
+        const valueElement = $(`#sensor-${sensorId}`);
+        const statusElement = $(`#sensor-${sensorId}-status i`);
+        
+        if (valueElement.length) {
+            valueElement.text(value);
+        }
+        
+        if (statusElement.length) {
+            statusElement.removeClass('text-success text-warning text-danger text-secondary');
+            if (valid) {
+                statusElement.addClass('text-success');
+            } else {
+                statusElement.addClass('text-danger');
+            }
+        }
+    }
+    
+    // Show sensor details modal
+    function showSensorDetailsModal(sensorData) {
+        // Create a simple modal to show detailed sensor information
+        const modalHtml = `
+            <div class="modal fade" id="sensorDetailsModal" tabindex="-1">
+                <div class="modal-dialog">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title">Sensor Details</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="sensor-details-content">
+                                ${formatSensorDetails(sensorData)}
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        // Remove existing modal if any
+        $('#sensorDetailsModal').remove();
+        
+        // Add modal to body
+        $('body').append(modalHtml);
+        
+        // Show modal
+        $('#sensorDetailsModal').modal('show');
+    }
+    
+    // Format sensor details for display
+    function formatSensorDetails(sensorData) {
+        let html = '<div class="row">';
+        
+        if (sensorData.sensors) {
+            Object.keys(sensorData.sensors).forEach(key => {
+                const value = sensorData.sensors[key];
+                if (typeof value !== 'boolean' || key.includes('_valid')) {
+                    return; // Skip boolean flags
+                }
+                
+                html += `
+                    <div class="col-md-6 mb-3">
+                        <div class="card">
+                            <div class="card-body">
+                                <h6 class="card-title">${key.charAt(0).toUpperCase() + key.slice(1)}</h6>
+                                <p class="card-text">${value}</p>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+        }
+        
+        html += '</div>';
+        
+        if (sensorData.timestamp) {
+            html += `<p class="text-muted mt-3">Last updated: ${new Date(sensorData.timestamp).toLocaleString()}</p>`;
+        }
+        
+        return html;
+    }
+    
+    // Initialize hardware manager integration when page loads
+    $(document).ready(function() {
+        setTimeout(initHardwareManagerIntegration, 1000);
+    });
 }); 

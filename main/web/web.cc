@@ -1528,13 +1528,13 @@ void Web::InitVehicleWebSocketHandlers() {
                 
                 ESP_LOGI(TAG, "Motor move command: speed=%d, direction=%d", speed, direction);
                 
-                // TODO: 在这里添加实际的电机控制代码
-                // 例如: vehicle_controller->Move(speed, direction);
+                // Note: Motor control is now handled through hardware manager API
+                // Use /api/motors/control endpoint for motor control
             } 
             else if (cmd_str == "stop") {
                 ESP_LOGI(TAG, "Motor stop command");
-                // TODO: 在这里添加停止电机的代码
-                // 例如: vehicle_controller->Stop();
+                // Note: Motor control is now handled through hardware manager API
+                // Use /api/motors/control endpoint for motor control
             }
         }
         
@@ -1576,8 +1576,8 @@ void Web::InitVehicleWebSocketHandlers() {
                 
                 ESP_LOGI(TAG, "Servo command: id=%d, angle=%d, speed=%d", servo_id, angle, speed);
                 
-                // TODO: 在这里添加实际的舵机控制代码
-                // 例如: servo_controller->SetAngle(servo_id, angle, speed);
+                // Note: Servo control is now handled through hardware manager API
+                // Use /api/servos/control endpoint for servo control
             }
         }
         

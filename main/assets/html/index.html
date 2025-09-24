@@ -32,6 +32,11 @@
       </a>
                         </li>
                         <li class="nav-item">
+                            <a class="nav-link" href="servo_control.html">
+                                <i class="bi bi-gear-wide-connected"></i> Servo Control
+      </a>
+                        </li>
+                        <li class="nav-item">
                             <a class="nav-link" href="location.html">
                                 <i class="bi bi-geo-alt"></i> Location
       </a>
@@ -112,6 +117,61 @@
                             <a href="vehicle.html" class="btn btn-primary">
                                 <i class="bi bi-controller"></i> Control Vehicle
                             </a>
+        </div>
+      </div>
+    </div>
+    
+                <div class="card mt-3">
+                    <div class="card-header">
+                        <i class="bi bi-thermometer-half"></i> Sensor Data
+        </div>
+                    <div class="card-body">
+                        <div class="row" id="sensor-data-grid">
+                            <div class="col-md-6 mb-2">
+                                <div class="sensor-item">
+                                    <span class="sensor-label">Temperature:</span>
+                                    <span class="sensor-value" id="sensor-temperature">--°C</span>
+                                    <span class="sensor-status" id="sensor-temperature-status">
+                                        <i class="bi bi-circle-fill text-secondary"></i>
+                                    </span>
+                                </div>
+                            </div>
+                            <div class="col-md-6 mb-2">
+                                <div class="sensor-item">
+                                    <span class="sensor-label">Voltage:</span>
+                                    <span class="sensor-value" id="sensor-voltage">--V</span>
+                                    <span class="sensor-status" id="sensor-voltage-status">
+                                        <i class="bi bi-circle-fill text-secondary"></i>
+                                    </span>
+                                </div>
+                            </div>
+                            <div class="col-md-6 mb-2">
+                                <div class="sensor-item">
+                                    <span class="sensor-label">Light Level:</span>
+                                    <span class="sensor-value" id="sensor-light">--</span>
+                                    <span class="sensor-status" id="sensor-light-status">
+                                        <i class="bi bi-circle-fill text-secondary"></i>
+                                    </span>
+                                </div>
+                            </div>
+                            <div class="col-md-6 mb-2">
+                                <div class="sensor-item">
+                                    <span class="sensor-label">Motion:</span>
+                                    <span class="sensor-value" id="sensor-motion">No Motion</span>
+                                    <span class="sensor-status" id="sensor-motion-status">
+                                        <i class="bi bi-circle-fill text-secondary"></i>
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="text-center mt-3">
+                            <button class="btn btn-sm btn-outline-primary" id="btn-refresh-sensors">
+                                <i class="bi bi-arrow-clockwise"></i> Refresh
+                            </button>
+                            <button class="btn btn-sm btn-outline-secondary" id="btn-sensor-details">
+                                <i class="bi bi-list-ul"></i> Details
+                            </button>
         </div>
       </div>
     </div>

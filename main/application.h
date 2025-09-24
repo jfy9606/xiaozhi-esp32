@@ -37,6 +37,7 @@
 #define CHECK_NEW_VERSION_DONE_EVENT (1 << 2)
 #include "audio_service.h"
 #include "device_state_event.h"
+#include "hardware/hardware_manager.h"
 
 
 #define MAIN_EVENT_SCHEDULE (1 << 0)
@@ -94,6 +95,7 @@ public:
     void InitVehicleComponent(Web* web_server);
     void PlaySound(const std::string_view& sound);
     AudioService& GetAudioService() { return audio_service_; }
+    HardwareManager* GetHardwareManager() { return hardware_manager_; }
 
 private:
     Application();
@@ -119,6 +121,7 @@ private:
     // Audio encode / decode
     TaskHandle_t audio_loop_task_handle_ = nullptr;
     BackgroundTask* background_task_ = nullptr;
+    HardwareManager* hardware_manager_ = nullptr;
     std::chrono::steady_clock::time_point last_output_time_;
     std::list<AudioStreamPacket> audio_send_queue_;
     std::list<AudioStreamPacket> audio_decode_queue_;

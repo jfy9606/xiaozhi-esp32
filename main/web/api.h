@@ -67,6 +67,13 @@ ApiResponse CreateApiErrorResponse(int status_code, const std::string& message);
  */
 cJSON* ParseRequestJson(httpd_req_t* req);
 
+/**
+ * @brief 设置硬件管理器
+ * 
+ * @param manager 硬件管理器指针
+ */
+void SetHardwareManager(class HardwareManager* manager);
+
 // API处理函数声明
 ApiResponse HandleSystemInfo(httpd_req_t* req);
 ApiResponse HandleSystemRestart(httpd_req_t* req);
@@ -78,4 +85,13 @@ ApiResponse HandleConfigSet(httpd_req_t* req);
 ApiResponse HandleCameraStatus(httpd_req_t* req);
 ApiResponse HandleCameraStream(httpd_req_t* req);
 ApiResponse HandleCameraCapture(httpd_req_t* req);
-ApiResponse HandleCameraSettings(httpd_req_t* req); 
+ApiResponse HandleCameraSettings(httpd_req_t* req);
+
+// 硬件API处理函数
+ApiResponse HandleSensorData(httpd_req_t* req);
+ApiResponse HandleSensorDataById(httpd_req_t* req);
+ApiResponse HandleMotorControl(httpd_req_t* req);
+ApiResponse HandleServoControl(httpd_req_t* req);
+ApiResponse HandleHardwareStatus(httpd_req_t* req);
+ApiResponse HandleHardwareConfig(httpd_req_t* req);
+ApiResponse HandleErrorQuery(httpd_req_t* req); 

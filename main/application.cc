@@ -25,6 +25,8 @@
 #include "ext/include/multiplexer.h"
 #include "ext/include/pca9548a.h"
 #include "ext/include/pcf8575.h"
+#include "hardware/hardware_manager.h"
+#include "ai/ai.h"
 #include "iot/things/servo.h"
 #include "audio_debugger.h"
 
@@ -121,6 +123,10 @@ Application::~Application() {
     if (clock_timer_handle_ != nullptr) {
         esp_timer_stop(clock_timer_handle_);
         esp_timer_delete(clock_timer_handle_);
+    }
+    if (hardware_manager_) {
+        delete hardware_manager_;
+        hardware_manager_ = nullptr;
     }
     vEventGroupDelete(event_group_);
 }
@@ -643,6 +649,36 @@ void Application::Start() {
 #endif // CONFIG_ENABLE_PCF8575
 
 #endif // CONFIG_ENABLE_MULTIPLEXER
+
+    // Initialize Hardware Manager after multiplexer initialization
+    ESP_LOGI(TAG, "Initializing Hardware Manager");
+    hardware_manager_ = new HardwareManager();
+    if (hardware_manager_) {
+        esp_err_t hw_ret = hardware_manager_->Initialize();
+        if (hw_ret == ESP_OK) {
+            ESP_LOGI(TAG, "Hardware Manager initialized successfully");
+            
+            // Try to load configuration file
+            esp_err_t config_ret = hardware_manager_->LoadConfiguration("/spiffs/hardware_config.json");
+            if (config_ret != ESP_OK) {
+                ESP_LOGW(TAG, "Failed to load hardware configuration, trying default location");
+                config_ret = hardware_manager_->LoadConfiguration("main/hardware/hardware_config.json");
+                if (config_ret != ESP_OK) {
+                    ESP_LOGW(TAG, "No hardware configuration found, creating default");
+                    hardware_manager_->CreateDefaultConfiguration("/spiffs/hardware_config.json");
+                }
+            }
+            
+            // Set hardware manager for API module
+            extern void SetHardwareManager(HardwareManager* manager);
+            SetHardwareManager(hardware_manager_);
+            ESP_LOGI(TAG, "Hardware Manager set for API module");
+        } else {
+            ESP_LOGE(TAG, "Hardware Manager initialization failed: %s", esp_err_to_name(hw_ret));
+        }
+    } else {
+        ESP_LOGE(TAG, "Failed to create Hardware Manager instance");
+    }
 
     // Initialize PCF8575 if configured
 #ifdef CONFIG_ENABLE_PCF8575
@@ -1359,6 +1395,15 @@ bool Application::InitComponents() {
     static Location* location = new Location(web_server);
     manager.RegisterComponent(location);
 #endif
+
+    // 注册AI组件
+    ESP_LOGI(TAG, "Registering AI component");
+    static AI* ai_component = new AI(web_server);
+    if (ai_component && hardware_manager_) {
+        ai_component->SetHardwareManager(hardware_manager_);
+        ESP_LOGI(TAG, "Hardware manager set for AI component");
+    }
+    manager.RegisterComponent(ai_component);
 
     // 初始化车辆控制组件
 #ifdef CONFIG_ENABLE_MOTOR_CONTROLLER

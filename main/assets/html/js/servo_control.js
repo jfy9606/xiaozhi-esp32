@@ -492,18 +492,205 @@ class ServoController {
     }
 }
 
+// Hardware Manager Integration for Servo Control Page
+class HardwareManagerIntegration {
+    constructor() {
+        this.sensorUpdateInterval = null;
+        this.autoUpdateEnabled = false;
+        this.initializeEventHandlers();
+        this.initializeSensorMonitoring();
+        this.initializeMotorControls();
+    }
+    
+    initializeEventHandlers() {
+        // Motor control sliders
+        $('#motor-0-speed').on('input', (e) => {
+            const speed = parseInt(e.target.value);
+            $('#motor-0-value').text(speed);
+            this.controlMotor(0, speed);
+        });
+        
+        $('#motor-1-speed').on('input', (e) => {
+            const speed = parseInt(e.target.value);
+            $('#motor-1-value').text(speed);
+            this.controlMotor(1, speed);
+        });
+        
+        // Stop all motors button
+        $('#stop-all-motors').click(() => {
+            this.stopAllMotors();
+        });
+        
+        // Sensor refresh button
+        $('#refresh-sensors').click(() => {
+            this.refreshSensors();
+        });
+        
+        // Auto update toggle
+        $('#toggle-sensor-auto-update').click(() => {
+            this.toggleAutoUpdate();
+        });
+    }
+    
+    initializeSensorMonitoring() {
+        // Initial sensor data load
+        this.refreshSensors();
+    }
+    
+    initializeMotorControls() {
+        // Initialize motor status
+        this.updateMotorStatus(0, false, 'Stopped');
+        this.updateMotorStatus(1, false, 'Stopped');
+    }
+    
+    controlMotor(motorId, speed) {
+        if (window.HardwareManager) {
+            window.HardwareManager.controlMotor(motorId, speed)
+                .then(response => {
+                    if (response.success) {
+                        const statusText = speed === 0 ? 'Stopped' : 
+                                         speed > 0 ? 'Forward' : 'Backward';
+                        this.updateMotorStatus(motorId, speed !== 0, statusText);
+                    }
+                })
+                .catch(error => {
+                    console.error(`Failed to control motor ${motorId}:`, error);
+                    this.updateMotorStatus(motorId, false, 'Error');
+                });
+        }
+    }
+    
+    stopAllMotors() {
+        $('#motor-0-speed').val(0);
+        $('#motor-1-speed').val(0);
+        $('#motor-0-value').text('0');
+        $('#motor-1-value').text('0');
+        
+        this.controlMotor(0, 0);
+        this.controlMotor(1, 0);
+    }
+    
+    refreshSensors() {
+        if (window.HardwareManager) {
+            window.HardwareManager.getSensorData()
+                .then(data => {
+                    if (data.success && data.data && data.data.sensors) {
+                        this.updateSensorDisplay(data.data.sensors);
+                    }
+                })
+                .catch(error => {
+                    console.error('Failed to refresh sensors:', error);
+                });
+        }
+    }
+    
+    toggleAutoUpdate() {
+        const button = $('#toggle-sensor-auto-update');
+        const icon = button.find('i');
+        
+        if (this.autoUpdateEnabled) {
+            // Disable auto update
+            if (this.sensorUpdateInterval) {
+                clearInterval(this.sensorUpdateInterval);
+                this.sensorUpdateInterval = null;
+            }
+            this.autoUpdateEnabled = false;
+            button.removeClass('btn-outline-primary').addClass('btn-outline-secondary');
+            icon.removeClass('bi-pause-fill').addClass('bi-play-fill');
+            button.find('span').text(' Auto Update');
+        } else {
+            // Enable auto update
+            this.sensorUpdateInterval = setInterval(() => {
+                this.refreshSensors();
+            }, 2000); // Update every 2 seconds
+            this.autoUpdateEnabled = true;
+            button.removeClass('btn-outline-secondary').addClass('btn-outline-primary');
+            icon.removeClass('bi-play-fill').addClass('bi-pause-fill');
+            button.find('span').text(' Stop Auto');
+        }
+    }
+    
+    updateSensorDisplay(sensors) {
+        // Update temperature sensor
+        if (sensors.temperature !== undefined) {
+            this.updateSensorStatus('temp-sensor', sensors.temperature_valid, 
+                sensors.temperature.toFixed(1) + '°C');
+        }
+        
+        // Update voltage sensor
+        if (sensors.voltage !== undefined) {
+            this.updateSensorStatus('voltage-sensor', sensors.voltage_valid,
+                sensors.voltage.toFixed(2) + 'V');
+        }
+        
+        // Update light sensor
+        if (sensors.light !== undefined) {
+            this.updateSensorStatus('light-sensor', sensors.light_valid,
+                sensors.light.toString());
+        }
+        
+        // Update motion sensor
+        if (sensors.motion !== undefined) {
+            const motionText = sensors.motion ? 'Motion Detected' : 'No Motion';
+            this.updateSensorStatus('motion-sensor', sensors.motion_valid, motionText);
+        }
+    }
+    
+    updateSensorStatus(sensorId, valid, value) {
+        const statusIcon = $(`#${sensorId}-status`);
+        const valueElement = $(`#${sensorId}-value`);
+        
+        if (statusIcon.length) {
+            statusIcon.removeClass('text-success text-danger text-secondary');
+            if (valid) {
+                statusIcon.addClass('text-success');
+            } else {
+                statusIcon.addClass('text-danger');
+            }
+        }
+        
+        if (valueElement.length) {
+            valueElement.text(value);
+        }
+    }
+    
+    updateMotorStatus(motorId, active, statusText) {
+        const statusIcon = $(`#motor-${motorId}-status`);
+        const statusTextElement = $(`#motor-${motorId}-status-text`);
+        
+        if (statusIcon.length) {
+            statusIcon.removeClass('text-success text-danger text-secondary');
+            if (active) {
+                statusIcon.addClass('text-success');
+            } else {
+                statusIcon.addClass('text-secondary');
+            }
+        }
+        
+        if (statusTextElement.length) {
+            statusTextElement.text(statusText);
+        }
+    }
+}
+
 // 当页面加载完成时初始化舵机控制器
 document.addEventListener('DOMContentLoaded', function() {
     // 确保API和工具库已加载
     if (window.xiaozhi && window.xiaozhi.api) {
         // 初始化控制器
         window.servoController = new ServoController();
+        
+        // 初始化硬件管理器集成
+        setTimeout(() => {
+            window.hardwareManagerIntegration = new HardwareManagerIntegration();
+        }, 1000);
     } else {
         console.error('无法初始化舵机控制器: API客户端未加载');
         // 设置重试
         setTimeout(() => {
             if (window.xiaozhi && window.xiaozhi.api) {
                 window.servoController = new ServoController();
+                window.hardwareManagerIntegration = new HardwareManagerIntegration();
             } else {
                 console.error('加载舵机控制器失败: API客户端不可用');
                 alert('加载舵机控制组件失败，请刷新页面重试');

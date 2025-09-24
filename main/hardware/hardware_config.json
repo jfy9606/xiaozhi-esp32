@@ -1,0 +1,118 @@
+{
+  "hardware": {
+    "sensors": [
+      {
+        "id": "temperature_01",
+        "name": "环境温度传感器",
+        "type": "temperature",
+        "expander": "hw178",
+        "channel": 0,
+        "unit": "°C",
+        "calibration": {
+          "offset": 0.0,
+          "scale": 1.0
+        }
+      },
+      {
+        "id": "voltage_battery",
+        "name": "电池电压监测",
+        "type": "voltage",
+        "expander": "hw178",
+        "channel": 1,
+        "unit": "V",
+        "calibration": {
+          "offset": 0.0,
+          "scale": 0.01
+        }
+      },
+      {
+        "id": "current_motor",
+        "name": "电机电流监测",
+        "type": "current",
+        "expander": "hw178",
+        "channel": 2,
+        "unit": "A",
+        "calibration": {
+          "offset": 0.0,
+          "scale": 0.001
+        }
+      },
+      {
+        "id": "light_sensor",
+        "name": "光照传感器",
+        "type": "light",
+        "expander": "hw178",
+        "channel": 3,
+        "unit": "lux",
+        "calibration": {
+          "offset": 0.0,
+          "scale": 1.0
+        }
+      }
+    ],
+    "motors": [
+      {
+        "id": 0,
+        "name": "左轮电机",
+        "connection_type": "pcf8575",
+        "pins": {
+          "ena": 2,
+          "in1": 0,
+          "in2": 1
+        },
+        "max_speed": 255
+      },
+      {
+        "id": 1,
+        "name": "右轮电机",
+        "connection_type": "pcf8575",
+        "pins": {
+          "ena": 5,
+          "in1": 3,
+          "in2": 4
+        },
+        "max_speed": 255
+      },
+      {
+        "id": 2,
+        "name": "升降电机",
+        "connection_type": "direct",
+        "pins": {
+          "ena": 18,
+          "in1": 19,
+          "in2": 21
+        },
+        "max_speed": 200
+      }
+    ],
+    "servos": [
+      {
+        "id": 0,
+        "name": "云台水平舵机",
+        "connection_type": "lu9685",
+        "channel": 0,
+        "min_angle": 0,
+        "max_angle": 180,
+        "center_angle": 90
+      },
+      {
+        "id": 1,
+        "name": "云台垂直舵机",
+        "connection_type": "lu9685",
+        "channel": 1,
+        "min_angle": 0,
+        "max_angle": 180,
+        "center_angle": 90
+      },
+      {
+        "id": 2,
+        "name": "机械臂舵机",
+        "connection_type": "direct",
+        "channel": 22,
+        "min_angle": 0,
+        "max_angle": 270,
+        "center_angle": 135
+      }
+    ]
+  }
+}

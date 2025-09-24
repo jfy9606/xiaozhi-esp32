@@ -57,6 +57,11 @@ function initApp() {
             initSettings();
             break;
             
+        case 'servo_control':
+            // Servo control page
+            console.log('Servo control page initialized');
+            break;
+            
         default:
             console.log(`No specific initialization for page: ${currentPage}`);
     }
@@ -469,6 +474,11 @@ function handleSensorData(message) {
         $('#distance-value').text(`前方: ${frontDist}, 后方: ${rearDist}`);
     }
     
+    // 更新传感器数据显示
+    if (message.sensors) {
+        updateSensorDisplay(message.sensors);
+    }
+    
     // 更新光照信息（可用于演示调整信号强度）
     if (message.light !== undefined && !window.vehicleSystem) {
         // 只有在vehicleSystem未定义时才使用光照来演示信号强度
@@ -495,6 +505,65 @@ function handleSensorData(message) {
     }
     
     // 其他传感器数据处理...
+}
+
+/**
+ * Update sensor display with new data
+ * @param {Object} sensors - Sensor data object
+ */
+function updateSensorDisplay(sensors) {
+    // Update temperature sensor
+    if (sensors.temperature !== undefined) {
+        updateSensorValue('temperature', sensors.temperature.toFixed(1) + '°C', sensors.temperature_valid);
+        updateSensorValue('vehicle-sensor-temperature', sensors.temperature.toFixed(1) + '°C', sensors.temperature_valid);
+    }
+    
+    // Update voltage sensor
+    if (sensors.voltage !== undefined) {
+        updateSensorValue('voltage', sensors.voltage.toFixed(2) + 'V', sensors.voltage_valid);
+        updateSensorValue('vehicle-sensor-voltage', sensors.voltage.toFixed(2) + 'V', sensors.voltage_valid);
+    }
+    
+    // Update light sensor
+    if (sensors.light !== undefined) {
+        updateSensorValue('light', sensors.light.toString(), sensors.light_valid);
+        updateSensorValue('vehicle-sensor-light', sensors.light.toString(), sensors.light_valid);
+    }
+    
+    // Update motion sensor
+    if (sensors.motion !== undefined) {
+        const motionText = sensors.motion ? 'Motion Detected' : 'No Motion';
+        updateSensorValue('motion', motionText, sensors.motion_valid);
+    }
+    
+    // Update last update timestamp
+    const now = new Date();
+    const timeString = now.toLocaleTimeString();
+    $('#sensor-last-update').text(timeString);
+}
+
+/**
+ * Update individual sensor value and status
+ * @param {string} sensorId - Sensor ID
+ * @param {string} value - Sensor value
+ * @param {boolean} valid - Whether the sensor reading is valid
+ */
+function updateSensorValue(sensorId, value, valid = true) {
+    const valueElement = $(`#sensor-${sensorId}`);
+    const statusElement = $(`#sensor-${sensorId}-status i`);
+    
+    if (valueElement.length) {
+        valueElement.text(value);
+    }
+    
+    if (statusElement.length) {
+        statusElement.removeClass('text-success text-warning text-danger text-secondary');
+        if (valid) {
+            statusElement.addClass('text-success');
+        } else {
+            statusElement.addClass('text-danger');
+        }
+    }
 }
 
 /**
@@ -602,6 +671,209 @@ document.addEventListener('DOMContentLoaded', function() {
     initApp();
 });
 
+/**
+ * Hardware Manager API functions
+ */
+const HardwareManager = {
+    /**
+     * Get all sensor data
+     */
+    getSensorData: function() {
+        return fetch('/api/sensors')
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! Status: ${response.status}`);
+                }
+                return response.json();
+            })
+            .catch(error => {
+                console.error('Error fetching sensor data:', error);
+                showNotification('Failed to fetch sensor data', 'error');
+                throw error;
+            });
+    },
+    
+    /**
+     * Get specific sensor data
+     * @param {string} sensorId - Sensor ID
+     */
+    getSensor: function(sensorId) {
+        return fetch(`/api/sensors/${sensorId}`)
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! Status: ${response.status}`);
+                }
+                return response.json();
+            })
+            .catch(error => {
+                console.error(`Error fetching sensor ${sensorId}:`, error);
+                throw error;
+            });
+    },
+    
+    /**
+     * Control motor
+     * @param {number} motorId - Motor ID
+     * @param {number} speed - Motor speed (-255 to 255)
+     */
+    controlMotor: function(motorId, speed) {
+        return fetch('/api/motors/control', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                motor_id: motorId,
+                speed: speed
+            })
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP error! Status: ${response.status}`);
+            }
+            return response.json();
+        })
+        .catch(error => {
+            console.error(`Error controlling motor ${motorId}:`, error);
+            showNotification(`Failed to control motor ${motorId}`, 'error');
+            throw error;
+        });
+    },
+    
+    /**
+     * Control servo
+     * @param {number} servoId - Servo ID
+     * @param {number} angle - Servo angle (0 to 180)
+     */
+    controlServo: function(servoId, angle) {
+        return fetch('/api/servos/control', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                servo_id: servoId,
+                angle: angle
+            })
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP error! Status: ${response.status}`);
+            }
+            return response.json();
+        })
+        .catch(error => {
+            console.error(`Error controlling servo ${servoId}:`, error);
+            showNotification(`Failed to control servo ${servoId}`, 'error');
+            throw error;
+        });
+    },
+    
+    /**
+     * Get hardware status
+     */
+    getHardwareStatus: function() {
+        return fetch('/api/hardware/status')
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! Status: ${response.status}`);
+                }
+                return response.json();
+            })
+            .catch(error => {
+                console.error('Error fetching hardware status:', error);
+                showNotification('Failed to fetch hardware status', 'error');
+                throw error;
+            });
+    },
+    
+    /**
+     * Refresh sensor data and update display
+     */
+    refreshSensors: function() {
+        this.getSensorData()
+            .then(data => {
+                if (data.success && data.data && data.data.sensors) {
+                    updateSensorDisplay(data.data.sensors);
+                    showNotification('Sensor data refreshed', 'success');
+                }
+            })
+            .catch(error => {
+                console.error('Failed to refresh sensors:', error);
+            });
+    },
+    
+    /**
+     * Refresh hardware status and update display
+     */
+    refreshHardwareStatus: function() {
+        this.getHardwareStatus()
+            .then(data => {
+                if (data.success && data.data) {
+                    updateHardwareStatusDisplay(data.data);
+                    showNotification('Hardware status refreshed', 'success');
+                }
+            })
+            .catch(error => {
+                console.error('Failed to refresh hardware status:', error);
+            });
+    }
+};
+
+/**
+ * Update hardware status display
+ * @param {Object} status - Hardware status data
+ */
+function updateHardwareStatusDisplay(status) {
+    // Update PCA9548A status
+    if (status.pca9548a !== undefined) {
+        updateHardwareStatus('pca9548a', status.pca9548a.initialized, 
+            status.pca9548a.initialized ? 'Connected' : 'Disconnected');
+    }
+    
+    // Update PCF8575 status
+    if (status.pcf8575 !== undefined) {
+        updateHardwareStatus('pcf8575', status.pcf8575.initialized,
+            status.pcf8575.initialized ? 'Connected' : 'Disconnected');
+    }
+    
+    // Update LU9685 status
+    if (status.lu9685 !== undefined) {
+        updateHardwareStatus('lu9685', status.lu9685.initialized,
+            status.lu9685.initialized ? 'Connected' : 'Disconnected');
+    }
+    
+    // Update HW178 status
+    if (status.hw178 !== undefined) {
+        updateHardwareStatus('hw178', status.hw178.initialized,
+            status.hw178.initialized ? 'Connected' : 'Disconnected');
+    }
+}
+
+/**
+ * Update individual hardware status
+ * @param {string} hardwareId - Hardware ID
+ * @param {boolean} connected - Whether hardware is connected
+ * @param {string} statusText - Status text
+ */
+function updateHardwareStatus(hardwareId, connected, statusText) {
+    const statusIcon = $(`#${hardwareId}-status`);
+    const statusTextElement = $(`#${hardwareId}-status-text`);
+    
+    if (statusIcon.length) {
+        statusIcon.removeClass('text-success text-danger text-secondary');
+        if (connected) {
+            statusIcon.addClass('text-success');
+        } else {
+            statusIcon.addClass('text-danger');
+        }
+    }
+    
+    if (statusTextElement.length) {
+        statusTextElement.text(statusText);
+    }
+}
+
 // Export common functions to window for global access
 window.app = {
     showNotification,
@@ -612,6 +884,9 @@ window.app = {
     formatUptime,
     showTab
 };
+
+// Export hardware manager
+window.HardwareManager = HardwareManager;
 
 // 创建车辆系统对象
 window.vehicleSystem = {

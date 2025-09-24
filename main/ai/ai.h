@@ -2,6 +2,7 @@
 
 #include "../components.h"
 #include "../web/web.h"
+#include "../hardware/hardware_manager.h"
 #include <functional>
 #include <string>
 #include <memory>
@@ -44,6 +45,24 @@ public:
     // WebSocket方法
     void HandleWebSocketMessage(httpd_req_t* req, const std::string& message);
     
+    // 硬件管理器接口
+    void SetHardwareManager(HardwareManager* hardware_manager);
+    std::string GetSensorDataJson();
+    std::string GetFilteredSensorDataJson(const std::vector<std::string>& sensor_ids);
+    bool ExecuteHardwareCommand(const std::string& command_json);
+    
+    // 传感器数据回调
+    using SensorDataCallback = std::function<void(const std::string&)>;
+    void RegisterSensorDataCallback(SensorDataCallback callback);
+    void StartSensorDataPush(int interval_ms = 1000);
+    void StopSensorDataPush();
+    
+    // 执行器控制接口
+    bool ExecuteMotorCommand(int motor_id, int speed);
+    bool ExecuteServoCommand(int servo_id, int angle);
+    std::string GetControlHistory(int limit = 10);
+    void ClearControlHistory();
+    
 protected:
     // 网页UI处理
     void InitHandlers();
@@ -57,13 +76,32 @@ protected:
 private:
     // 成员变量
     Web* web_server_;
+    HardwareManager* hardware_manager_;
     bool running_;
     bool listening_;
     SpeechRecognitionCallback speech_callback_;
     
+    // 传感器数据推送
+    SensorDataCallback sensor_data_callback_;
+    bool sensor_push_active_;
+    int sensor_push_interval_;
+    
+    // 控制历史记录
+    struct ControlHistoryEntry {
+        uint64_t timestamp;
+        std::string command_type;
+        int device_id;
+        int value;
+        bool success;
+    };
+    std::vector<ControlHistoryEntry> control_history_;
+    
     // 实用功能
     std::string ProcessAudioFile(const std::string& audio_data);
     std::string SynthesizeSpeech(const std::string& text);
+    
+    // 控制历史记录辅助方法
+    void RecordControlHistory(const std::string& command_type, int device_id, int value, bool success);
     
     // 禁止复制和赋值
     AI(const AI&) = delete;
