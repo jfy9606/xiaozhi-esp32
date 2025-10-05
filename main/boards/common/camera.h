@@ -17,6 +17,8 @@ public:
     
     // 状态检查
     virtual bool IsInitialized() const { return false; }
+    virtual bool Initialize() { return true; }
+    virtual void Deinitialize() {}
 
     // 扩展方法
     virtual const char* GetSensorName() { return "Unknown"; }

@@ -96,16 +96,81 @@ void InitializeTools() {
 }
 ```
 
-### 4. 摄像头翻转
+### 4. 摄像头拍照
 ```json
 {
   "jsonrpc": "2.0",
   "method": "tools/call",
   "params": {
-    "name": "self.camera.set_camera_flipped",
-    "arguments": {}
+    "name": "self.camera.take_photo",
+    "arguments": {
+      "width": 640,
+      "height": 480,
+      "quality": 80
+    }
   },
   "id": 4
+}
+```
+
+### 5. 摄像头开关控制
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "self.camera.switch",
+    "arguments": {
+      "enabled": true
+    }
+  },
+  "id": 5
+}
+```
+
+### 6. 摄像头闪光灯控制
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "self.camera.flash",
+    "arguments": {
+      "enabled": true,
+      "intensity": 75
+    }
+  },
+  "id": 6
+}
+```
+
+### 7. 摄像头参数配置
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "self.camera.set_config",
+    "arguments": {
+      "brightness": 1,
+      "contrast": 0,
+      "saturation": 1
+    }
+  },
+  "id": 7
+}
+```
+
+### 8. 摄像头状态查询
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "self.camera.get_status",
+    "arguments": {}
+  },
+  "id": 8
 }
 ```
 

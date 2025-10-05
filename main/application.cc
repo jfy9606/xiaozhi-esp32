@@ -9,7 +9,9 @@
 #include "multiplexer.h"
 
 #include "location/location.h"
+#ifdef CONFIG_ENABLE_VISION_CONTROLLER
 #include "vision/vision.h"
+#endif
 #include "vehicle/vehicle.h"
 #include "display.h"
 #include "system_info.h"

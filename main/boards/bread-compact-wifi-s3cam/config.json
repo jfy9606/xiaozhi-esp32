@@ -1,0 +1,42 @@
+{
+    "target": "esp32s3",
+    "builds": [
+        {
+            "name": "bread-compact-wifi-s3cam",
+            "sdkconfig_append": [
+                "CONFIG_ENABLE_CAMERA=y",
+                "CONFIG_CAMERA_MODEL_AUTO_DETECT=y",
+                "CONFIG_CAMERA_OV2640_SUPPORT=y",
+                "CONFIG_CAMERA_OV3660_SUPPORT=y",
+                "CONFIG_CAMERA_OV5640_SUPPORT=y"
+            ]
+        },
+        {
+            "name": "bread-compact-wifi-s3cam-ov2640",
+            "sdkconfig_append": [
+                "CONFIG_ENABLE_CAMERA=y",
+                "CONFIG_CAMERA_MODEL_AUTO_DETECT=n",
+                "CONFIG_CAMERA_MODEL_OV2640_DEFAULT=y",
+                "CONFIG_CAMERA_OV2640_SUPPORT=y"
+            ]
+        },
+        {
+            "name": "bread-compact-wifi-s3cam-ov3660",
+            "sdkconfig_append": [
+                "CONFIG_ENABLE_CAMERA=y",
+                "CONFIG_CAMERA_MODEL_AUTO_DETECT=n",
+                "CONFIG_CAMERA_MODEL_OV3660_DEFAULT=y",
+                "CONFIG_CAMERA_OV3660_SUPPORT=y"
+            ]
+        },
+        {
+            "name": "bread-compact-wifi-s3cam-ov5640",
+            "sdkconfig_append": [
+                "CONFIG_ENABLE_CAMERA=y",
+                "CONFIG_CAMERA_MODEL_AUTO_DETECT=n",
+                "CONFIG_CAMERA_MODEL_OV5640_DEFAULT=y",
+                "CONFIG_CAMERA_OV5640_SUPPORT=y"
+            ]
+        }
+    ]
+}

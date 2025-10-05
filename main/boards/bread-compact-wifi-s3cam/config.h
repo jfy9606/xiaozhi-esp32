@@ -34,7 +34,7 @@
 #define VOLUME_UP_BUTTON_GPIO   GPIO_NUM_NC
 #define VOLUME_DOWN_BUTTON_GPIO GPIO_NUM_NC
 
-//Camera Config
+//Enhanced Camera Config - Multi-model support
 #define CAMERA_PIN_D0 GPIO_NUM_11
 #define CAMERA_PIN_D1 GPIO_NUM_9
 #define CAMERA_PIN_D2 GPIO_NUM_8
@@ -53,6 +53,62 @@
 #define CAMERA_PIN_RESET GPIO_NUM_NC
 #define XCLK_FREQ_HZ 20000000
 
+// Enhanced camera resource management
+#define CAMERA_RESOURCE_LOCK_TIMEOUT_MS 5000
+#define CAMERA_SWITCH_DEBOUNCE_MS 100
+
+// Camera model configuration based on Kconfig
+#ifdef CONFIG_CAMERA_MODEL_AUTO_DETECT
+#define CAMERA_AUTO_DETECT_ENABLED 1
+#else
+#define CAMERA_AUTO_DETECT_ENABLED 0
+#endif
+
+#ifdef CONFIG_CAMERA_MODEL_OV2640_DEFAULT
+#define CAMERA_DEFAULT_MODEL CAMERA_MODEL_OV2640
+#elif defined(CONFIG_CAMERA_MODEL_OV3660_DEFAULT)
+#define CAMERA_DEFAULT_MODEL CAMERA_MODEL_OV3660
+#elif defined(CONFIG_CAMERA_MODEL_OV5640_DEFAULT)
+#define CAMERA_DEFAULT_MODEL CAMERA_MODEL_OV5640
+#else
+#define CAMERA_DEFAULT_MODEL CAMERA_MODEL_OV2640
+#endif
+
+// Camera model support flags
+#ifdef CONFIG_CAMERA_OV2640_SUPPORT
+#define CAMERA_OV2640_SUPPORT 1
+#else
+#define CAMERA_OV2640_SUPPORT 0
+#endif
+
+#ifdef CONFIG_CAMERA_OV3660_SUPPORT
+#define CAMERA_OV3660_SUPPORT 1
+#else
+#define CAMERA_OV3660_SUPPORT 0
+#endif
+
+#ifdef CONFIG_CAMERA_OV5640_SUPPORT
+#define CAMERA_OV5640_SUPPORT 1
+#else
+#define CAMERA_OV5640_SUPPORT 0
+#endif
+
+// Camera flash configuration
+#ifdef CONFIG_CAMERA_FLASH_PIN
+#if CONFIG_CAMERA_FLASH_PIN >= 0
+#define CAMERA_FLASH_PIN (gpio_num_t)CONFIG_CAMERA_FLASH_PIN
+#else
+#define CAMERA_FLASH_PIN GPIO_NUM_NC
+#endif
+#else
+#define CAMERA_FLASH_PIN GPIO_NUM_NC
+#endif
+
+#ifdef CONFIG_CAMERA_FLASH_DEFAULT_LEVEL
+#define CAMERA_FLASH_DEFAULT_LEVEL CONFIG_CAMERA_FLASH_DEFAULT_LEVEL
+#else
+#define CAMERA_FLASH_DEFAULT_LEVEL 50
+#endif
 
 #define DISPLAY_BACKLIGHT_PIN GPIO_NUM_38
 #define DISPLAY_MOSI_PIN      GPIO_NUM_20
@@ -301,6 +357,9 @@
 #define DISPLAY_SPI_MODE 0
 #endif
 
+
+// 引入通用板级配置头文件
+#include "../common/board.h"
 
 // A MCP Test: Control a lamp
 #define LAMP_GPIO GPIO_NUM_14

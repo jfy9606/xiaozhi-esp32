@@ -3,37 +3,18 @@
     "builds": [
         {
             "name": "bread-compact-wifi-lcd",
-            "sdkconfig_append": [
-                "CONFIG_CAMERA_MODEL_CUSTOM=y",
-                "CONFIG_OV2640_SUPPORT=y",
-                "CONFIG_OV3660_SUPPORT=y",
-                "CONFIG_OV5640_SUPPORT=y",
-                "CONFIG_CAMERA_CORE0=y",
-                "CONFIG_ESP_FACE_RECOGNITION_ENABLED=y"
-            ]
+            "sdkconfig_append": []
         },
         {
             "name": "bread-compact-wifi-lcd-st7789",
             "sdkconfig_append": [
-                "CONFIG_LCD_ST7789_240X320=y",
-                "CONFIG_CAMERA_MODEL_CUSTOM=y",
-                "CONFIG_OV2640_SUPPORT=y",
-                "CONFIG_OV3660_SUPPORT=y",
-                "CONFIG_OV5640_SUPPORT=y",
-                "CONFIG_CAMERA_CORE0=y",
-                "CONFIG_ESP_FACE_RECOGNITION_ENABLED=y"
+                "CONFIG_LCD_ST7789_240X320=y"
             ]
         },
         {
             "name": "bread-compact-wifi-lcd-ili9341",
             "sdkconfig_append": [
-                "CONFIG_LCD_ILI9341_240X320=y",
-                "CONFIG_CAMERA_MODEL_CUSTOM=y",
-                "CONFIG_OV2640_SUPPORT=y",
-                "CONFIG_OV3660_SUPPORT=y",
-                "CONFIG_OV5640_SUPPORT=y",
-                "CONFIG_CAMERA_CORE0=y",
-                "CONFIG_ESP_FACE_RECOGNITION_ENABLED=y"
+                "CONFIG_LCD_ILI9341_240X320=y"
             ]
         }
     ]

@@ -39,7 +39,7 @@ set(SOURCES "audio/audio_codec.cc"
             "components.cc"
             "vehicle/vehicle.cc"
             "ai/ai.cc"
-            "vision/vision.cc"
+
             "iot/thing.cc"
             "iot/thing_manager.cc"
             "iot/things/motor.cc"
@@ -57,7 +57,7 @@ set(SOURCES "audio/audio_codec.cc"
             "location/location.cc"
             )
 
-set(INCLUDE_DIRS "." "display" "audio" "protocols" "audio_processing" "location" "vehicle" "vision" "ai" "web")
+set(INCLUDE_DIRS "." "display" "audio" "protocols" "audio_processing" "location" "vehicle" "ai" "web")
 
 # HTML文件列表 - 只在启用web内容时使用
 set(EMBED_FILES "")
@@ -65,13 +65,17 @@ if(CONFIG_ENABLE_WEB_SERVER AND CONFIG_ENABLE_WEB_CONTENT)
     # 指定绝对路径，确保正确找到HTML文件
     set(HTML_FILES "${CMAKE_CURRENT_SOURCE_DIR}/assets/html/index.html"
                    "${CMAKE_CURRENT_SOURCE_DIR}/assets/html/vehicle.html"
-                   "${CMAKE_CURRENT_SOURCE_DIR}/assets/html/vision.html"
                    "${CMAKE_CURRENT_SOURCE_DIR}/assets/html/servo_control.html"
                    "${CMAKE_CURRENT_SOURCE_DIR}/assets/html/ai.html"
                    "${CMAKE_CURRENT_SOURCE_DIR}/assets/html/location.html"
                    "${CMAKE_CURRENT_SOURCE_DIR}/assets/html/device_config.html"
                    "${CMAKE_CURRENT_SOURCE_DIR}/assets/html/settings.html"
                    "${CMAKE_CURRENT_SOURCE_DIR}/assets/html/audio_control.html")
+    
+    # Add vision.html only for s3cam board
+    if(CONFIG_BOARD_TYPE_BREAD_COMPACT_WIFI_CAM)
+        list(APPEND HTML_FILES "${CMAKE_CURRENT_SOURCE_DIR}/assets/html/vision.html")
+    endif()
     
     # JavaScript文件列表
     file(GLOB JS_FILES "${CMAKE_CURRENT_SOURCE_DIR}/assets/html/js/*.js")
@@ -631,6 +635,24 @@ file(GLOB BOARD_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/boards/${BOARD_TYPE}/*.c
 )
 list(APPEND SOURCES ${BOARD_SOURCES})
+
+# Add camera and vision components only for s3cam board
+# This ensures camera functionality is restricted to bread-compact-wifi-s3cam board only
+if(CONFIG_BOARD_TYPE_BREAD_COMPACT_WIFI_CAM)
+    list(APPEND SOURCES "vision/vision.cc")
+    list(APPEND SOURCES "camera/camera_resource_manager.cc")
+    list(APPEND SOURCES "camera/enhanced_esp32_camera.cc")
+    list(APPEND SOURCES "camera/vision_integration.cc")
+    list(APPEND SOURCES "camera/mcp_camera_tools.cc")
+    list(APPEND SOURCES "camera/camera_components.cc")
+    list(APPEND INCLUDE_DIRS "vision" "camera")
+    
+    # Add camera-specific dependencies
+    if(NOT DEFINED COMPONENT_REQUIRES)
+        set(COMPONENT_REQUIRES "")
+    endif()
+    list(APPEND COMPONENT_REQUIRES "esp32-camera")
+endif()
 
 # Select audio processor according to Kconfig
 if(CONFIG_USE_AUDIO_PROCESSOR)
