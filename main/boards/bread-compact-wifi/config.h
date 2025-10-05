@@ -98,8 +98,65 @@
 
 
 
+// ========== 扩展器配置 ==========
+// 主I2C总线配置 (用于所有I2C扩展器)
+// 避开音频引脚(4-7,15-16)、显示引脚(41-42)、按键引脚(0,39-40,47-48)
+#define I2C_EXT_SDA_PIN           GPIO_NUM_8     // I2C数据线 (CAM_Y4 - 可复用)
+#define I2C_EXT_SCL_PIN           GPIO_NUM_9     // I2C时钟线 (CAM_Y3 - 可复用)
+#define I2C_EXT_FREQ_HZ           400000         // I2C频率 400KHz
+#define I2C_EXT_PORT              I2C_NUM_0      // I2C端口号
+#define I2C_EXT_TIMEOUT_MS        1000           // I2C超时时间
+
+// 1. PCA9548A I2C多路复用器配置
+#ifndef PCA9548A_I2C_ADDR
+#define PCA9548A_I2C_ADDR         0x70           // PCA9548A默认地址 (7位格式)
+#endif
+#ifndef PCA9548A_RESET_PIN
+#define PCA9548A_RESET_PIN        GPIO_NUM_NC    // 复位引脚 (不使用)
+#endif
+
+// 2. LU9685舵机扩展器配置 (通过PCA9548A通道1)
+#define LU9685_I2C_ADDR           0x40           // LU9685默认地址 (7位格式)
+#define LU9685_PWM_FREQ           50             // PWM频率 50Hz (舵机标准)
+#define LU9685_PCA9548A_CHANNEL   1              // 连接在PCA9548A的通道1
+
+// 3. PCF8575 I2C GPIO扩展器配置 (通过PCA9548A通道2)
+#define PCF8575_I2C_ADDR          0x20           // PCF8575默认地址 (7位格式)
+#define PCF8575_PCA9548A_CHANNEL  2              // 连接在PCA9548A的通道2
+
+// 4. HW-178模拟多路复用器配置
+// 使用可用的GPIO，避开已占用的引脚
+#ifndef HW178_S0_PIN
+#define HW178_S0_PIN              GPIO_NUM_10    // 选择引脚S0 (CAM_Y5 - 可复用)
+#endif
+#ifndef HW178_S1_PIN
+#define HW178_S1_PIN              GPIO_NUM_11    // 选择引脚S1 (CAM_Y2 - 可复用)
+#endif
+#ifndef HW178_S2_PIN
+#define HW178_S2_PIN              GPIO_NUM_12    // 选择引脚S2 (CAM_Y6 - 可复用)
+#endif
+#ifndef HW178_S3_PIN
+#define HW178_S3_PIN              GPIO_NUM_13    // 选择引脚S3 (CAM_PCLK - 可复用)
+#endif
+#ifndef HW178_SIG_PIN
+#define HW178_SIG_PIN             GPIO_NUM_14    // 信号输出引脚 (ADC2_CH3 - 连接到ADC)
+#endif
+#ifndef HW178_EN_PIN
+#define HW178_EN_PIN              GPIO_NUM_NC    // 使能引脚 (不使用)
+#endif
+#ifdef HW178_ADC_CHANNEL
+#undef HW178_ADC_CHANNEL
+#endif
+#define HW178_ADC_CHANNEL         ADC_CHANNEL_3  // ADC通道 (GPIO14对应ADC2_CH3)
+
+// 扩展器功能启用标志
+#define ENABLE_PCA9548A_MUX       1              // 启用PCA9548A I2C多路复用器
+#define ENABLE_LU9685_SERVO       1              // 启用LU9685舵机扩展器
+#define ENABLE_PCF8575_GPIO       1              // 启用PCF8575 GPIO扩展器
+#define ENABLE_HW178_ANALOG       1              // 启用HW-178模拟多路复用器
+
 // 引入通用板级配置头文件
-#include "../boards/common/board.h"
+#include "../common/board.h"
 
 // A MCP Test: Control a lamp
 #define LAMP_GPIO GPIO_NUM_18
