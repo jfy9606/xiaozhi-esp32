@@ -213,8 +213,10 @@ choice BOARD_TYPE
         depends on IDF_TARGET_ESP32S3
     config BOARD_TYPE_ESP32S3_Touch_AMOLED_2_06
         bool "Waveshare ESP32-S3-Touch-AMOLED-2.06"
+        depends on IDF_TARGET_ESP32S3
     config BOARD_TYPE_ESP32S3_Touch_AMOLED_1_75
         bool "Waveshare ESP32-S3-Touch-AMOLED-1.75"
+        depends on IDF_TARGET_ESP32S3
     config BOARD_TYPE_ESP32S3_Touch_LCD_4B
         bool "Waveshare ESP32-S3-Touch-LCD-4B"
         depends on IDF_TARGET_ESP32S3
@@ -365,6 +367,7 @@ choice BOARD_TYPE
         select LV_GIF_CACHE_DECODE_DATA
     config BOARD_TYPE_JIUCHUAN
         bool "九川智能"
+        depends on IDF_TARGET_ESP32S3
     config BOARD_TYPE_LABPLUS_MPYTHON_V3
         bool "labplus mpython_v3 board"
         depends on IDF_TARGET_ESP32S3
