@@ -442,11 +442,13 @@ public:
 #endif
     {
         
+        // 先初始化显示系统
         InitializeDisplayI2c();
         InitializeSsd1306Display();
         InitializeButtons();
         
-        // 初始化扩展器 (按依赖顺序)
+        // 显示系统稳定后再初始化扩展器
+        ESP_LOGI(TAG, "Starting expander initialization...");
         InitializeExpanderI2CBus();
         
 #if ENABLE_PCA9548A_MUX
@@ -465,6 +467,9 @@ public:
         InitializeHW178();
 #endif
         
+        ESP_LOGI(TAG, "Expander initialization completed, starting IoT components...");
+        
+        // 扩展器初始化完成后再初始化IoT组件
         InitializeIot();
 
         // 记录扩展器状态

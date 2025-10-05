@@ -663,19 +663,27 @@ menu "组件管理器"
 
         config PCA9548A_SDA_PIN
             int "PCA9548A SDA引脚"
+            default 14 if BOARD_TYPE_BREAD_COMPACT_WIFI_CAM
+            default 8 if BOARD_TYPE_BREAD_COMPACT_WIFI_LCD
+            default 8 if BOARD_TYPE_BREAD_COMPACT_WIFI
             default 41
             range 0 48
             depends on ENABLE_PCA9548A
             help
                 连接到PCA9548A的SDA引脚的GPIO编号。
+                bread-compact-wifi-s3cam板默认使用GPIO14。
 
         config PCA9548A_SCL_PIN
             int "PCA9548A SCL引脚"
+            default 46 if BOARD_TYPE_BREAD_COMPACT_WIFI_CAM
+            default 9 if BOARD_TYPE_BREAD_COMPACT_WIFI_LCD
+            default 9 if BOARD_TYPE_BREAD_COMPACT_WIFI
             default 42
             range 0 48
             depends on ENABLE_PCA9548A
             help
                 连接到PCA9548A的SCL引脚的GPIO编号。
+                bread-compact-wifi-s3cam板默认使用GPIO46。
 
         config PCA9548A_RESET_PIN
             int "PCA9548A复位引脚"
@@ -744,12 +752,33 @@ menu "组件管理器"
 
         config HW178_SIG_PIN
             int "HW-178 SIG输出引脚"
-            default 14
+            default 3
             range 0 48
             depends on ENABLE_HW178
             help
                 HW-178多路复用器的信号输出引脚(SIG)。此引脚连接到ESP32的ADC引脚，
                 用于接收从选定通道传来的模拟信号。
+                该引脚必须支持ADC功能。
+                所有bread-compact板子统一使用GPIO3 (ADC1_CH2)。
+
+        config HW178_EN_PIN
+            int "HW-178 使能引脚"
+            default -1
+            range -1 48
+            depends on ENABLE_HW178
+            help
+                HW-178多路复用器的使能引脚(EN)。
+                如果不使用使能引脚，设置为-1。
+
+        config HW178_ADC_CHANNEL
+            int "HW-178 ADC通道"
+            default 2
+            range 0 9
+            depends on ENABLE_HW178
+            help
+                HW-178信号输出引脚对应的ADC通道号。
+                请确保与HW178_SIG_PIN引脚对应的ADC通道一致。
+                所有bread-compact板子统一使用GPIO3对应的ADC1_CH2。
                 该引脚必须支持ADC功能。
 
         config ENABLE_PCF8575
@@ -821,26 +850,41 @@ menu "组件管理器"
                 
         config MOTOR_ENA_PIN
             int "电机A使能引脚"
+            default 17 if BOARD_TYPE_BREAD_COMPACT_WIFI
+            default 22 if BOARD_TYPE_BREAD_COMPACT_WIFI_LCD
+            default 22 if BOARD_TYPE_BREAD_COMPACT_WIFI_CAM
             default 47
             range 0 48
             depends on ENABLE_MOTOR_CONTROLLER
             help
                 连接到电机驱动的PWMA/ENA引脚的GPIO编号
+                注意：bread-compact-wifi-lcd和bread-compact-wifi-cam开发板由于LCD占用GPIO47，
+                已重新分配到GPIO22
                 
         config MOTOR_ENB_PIN
             int "电机B使能引脚"
+            default 19 if BOARD_TYPE_BREAD_COMPACT_WIFI
+            default 23 if BOARD_TYPE_BREAD_COMPACT_WIFI_LCD
+            default 23 if BOARD_TYPE_BREAD_COMPACT_WIFI_CAM
             default 21
             range 0 48
             depends on ENABLE_MOTOR_CONTROLLER
             help
                 连接到电机驱动的PWMB/ENB引脚的GPIO编号
+                注意：bread-compact-wifi-lcd和bread-compact-wifi-cam开发板由于LCD占用GPIO21，
+                已重新分配到GPIO23
                 
         choice MOTOR_CONNECTION_TYPE
             prompt "电机控制引脚连接方式"
+            default MOTOR_CONNECTION_DIRECT if BOARD_TYPE_BREAD_COMPACT_WIFI
+            default MOTOR_CONNECTION_PCF8575 if BOARD_TYPE_BREAD_COMPACT_WIFI_LCD
+            default MOTOR_CONNECTION_PCF8575 if BOARD_TYPE_BREAD_COMPACT_WIFI_CAM
             default MOTOR_CONNECTION_DIRECT
             depends on ENABLE_MOTOR_CONTROLLER
             help
                 选择电机控制引脚(IN1-IN4)的连接方式
+                推荐：bread-compact-wifi-lcd和bread-compact-wifi-cam使用PCF8575扩展器，
+                因为LCD占用了大量GPIO引脚
                 
             config MOTOR_CONNECTION_DIRECT
                 bool "直接连接GPIO引脚"
@@ -857,14 +901,22 @@ menu "组件管理器"
                 
         config MOTOR_IN1_PIN
             int "电机A输入1引脚"
+            default 18 if BOARD_TYPE_BREAD_COMPACT_WIFI
+            default 22 if BOARD_TYPE_BREAD_COMPACT_WIFI_LCD
+            default 22 if BOARD_TYPE_BREAD_COMPACT_WIFI_CAM
             default 47
             range 0 48
             depends on ENABLE_MOTOR_CONTROLLER && MOTOR_CONNECTION_DIRECT
             help
                 连接到电机驱动的IN1引脚的GPIO编号
+                注意：bread-compact-wifi-lcd和bread-compact-wifi-cam开发板由于LCD占用GPIO47，
+                建议使用PCF8575扩展器连接方式
                 
         config MOTOR_IN2_PIN
             int "电机A输入2引脚"
+            default 17 if BOARD_TYPE_BREAD_COMPACT_WIFI
+            default 23 if BOARD_TYPE_BREAD_COMPACT_WIFI_LCD
+            default 23 if BOARD_TYPE_BREAD_COMPACT_WIFI_CAM
             default 21
             range 0 48
             depends on ENABLE_MOTOR_CONTROLLER && MOTOR_CONNECTION_DIRECT
@@ -873,6 +925,9 @@ menu "组件管理器"
                 
         config MOTOR_IN3_PIN
             int "电机B输入1引脚"
+            default 19 if BOARD_TYPE_BREAD_COMPACT_WIFI
+            default 24 if BOARD_TYPE_BREAD_COMPACT_WIFI_LCD
+            default 24 if BOARD_TYPE_BREAD_COMPACT_WIFI_CAM
             default 20
             range 0 48
             depends on ENABLE_MOTOR_CONTROLLER && MOTOR_CONNECTION_DIRECT
@@ -881,6 +936,9 @@ menu "组件管理器"
                 
         config MOTOR_IN4_PIN
             int "电机B输入2引脚"
+            default 20 if BOARD_TYPE_BREAD_COMPACT_WIFI
+            default 25 if BOARD_TYPE_BREAD_COMPACT_WIFI_LCD
+            default 25 if BOARD_TYPE_BREAD_COMPACT_WIFI_CAM
             default 19
             range 0 48
             depends on ENABLE_MOTOR_CONTROLLER && MOTOR_CONNECTION_DIRECT

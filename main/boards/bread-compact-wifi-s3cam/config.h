@@ -110,6 +110,7 @@
 #define CAMERA_FLASH_DEFAULT_LEVEL 50
 #endif
 
+// SPI LCD显示屏配置
 #define DISPLAY_BACKLIGHT_PIN GPIO_NUM_38
 #define DISPLAY_MOSI_PIN      GPIO_NUM_20
 #define DISPLAY_CLK_PIN       GPIO_NUM_19
@@ -118,20 +119,6 @@
 #define DISPLAY_CS_PIN        GPIO_NUM_45
 
 
-#ifdef CONFIG_LCD_ST7789_240X320
-#define LCD_TYPE_ST7789_SERIAL
-#define DISPLAY_WIDTH   240
-#define DISPLAY_HEIGHT  320
-#define DISPLAY_MIRROR_X false
-#define DISPLAY_MIRROR_Y false
-#define DISPLAY_SWAP_XY false
-#define DISPLAY_INVERT_COLOR    true
-#define DISPLAY_RGB_ORDER  LCD_RGB_ELEMENT_ORDER_RGB
-#define DISPLAY_OFFSET_X  0
-#define DISPLAY_OFFSET_Y  0
-#define DISPLAY_BACKLIGHT_OUTPUT_INVERT false
-#define DISPLAY_SPI_MODE 0
-#endif
 
 #ifdef CONFIG_LCD_ST7789_240X320_NO_IPS
 #define LCD_TYPE_ST7789_SERIAL
@@ -366,59 +353,181 @@
 
 // ========== 扩展器配置 ==========
 // 主I2C总线配置 (用于所有I2C扩展器)
-// 使用GPIO43/44作为I2C，这些是通用GPIO，不与摄像头、音频、显示冲突
-#define I2C_EXT_SDA_PIN           GPIO_NUM_43    // I2C数据线 (U0TXD, LED_TX - 可复用)
-#define I2C_EXT_SCL_PIN           GPIO_NUM_44    // I2C时钟线 (U0RXD, LED_RX - 可复用)
-#define I2C_EXT_FREQ_HZ           400000         // I2C频率 400KHz
-#define I2C_EXT_PORT              I2C_NUM_0      // I2C端口号
-#define I2C_EXT_TIMEOUT_MS        1000           // I2C超时时间
+// 使用Kconfig配置的引脚，支持用户自定义
+#ifdef CONFIG_PCA9548A_SDA_PIN
+#define I2C_EXT_SDA_PIN           ((gpio_num_t)CONFIG_PCA9548A_SDA_PIN)
+#else
+#define I2C_EXT_SDA_PIN           GPIO_NUM_14    // 默认I2C数据线 (恢复原来的引脚)
+#endif
+
+#ifdef CONFIG_PCA9548A_SCL_PIN
+#define I2C_EXT_SCL_PIN           ((gpio_num_t)CONFIG_PCA9548A_SCL_PIN)
+#else
+#define I2C_EXT_SCL_PIN           GPIO_NUM_46    // 默认I2C时钟线
+#endif
+
+#ifdef CONFIG_PCA9548A_I2C_FREQ_HZ
+#define I2C_EXT_FREQ_HZ           CONFIG_PCA9548A_I2C_FREQ_HZ
+#else
+#define I2C_EXT_FREQ_HZ           400000         // 默认I2C频率 400KHz
+#endif
+
+#ifdef CONFIG_DISPLAY_I2C_PORT
+#define I2C_EXT_PORT              ((i2c_port_t)CONFIG_DISPLAY_I2C_PORT)
+#else
+#define I2C_EXT_PORT              I2C_NUM_0      // 默认I2C端口号
+#endif
+
+#ifdef CONFIG_PCA9548A_I2C_TIMEOUT_MS
+#define I2C_EXT_TIMEOUT_MS        CONFIG_PCA9548A_I2C_TIMEOUT_MS
+#else
+#define I2C_EXT_TIMEOUT_MS        1000           // 默认I2C超时时间
+#endif
 
 // 1. PCA9548A I2C多路复用器配置
-#ifndef PCA9548A_I2C_ADDR
+#ifdef CONFIG_PCA9548A_I2C_ADDR
+#define PCA9548A_I2C_ADDR         CONFIG_PCA9548A_I2C_ADDR
+#else
 #define PCA9548A_I2C_ADDR         0x70           // PCA9548A默认地址 (7位格式)
 #endif
-#ifndef PCA9548A_RESET_PIN
-#define PCA9548A_RESET_PIN        GPIO_NUM_NC    // 复位引脚 (不使用)
-#endif
+
+// PCA9548A_RESET_PIN 已在 common/board.h 中定义
 
 // 2. LU9685舵机扩展器配置 (通过PCA9548A通道1)
+#ifdef CONFIG_LU9685_I2C_ADDR
+#define LU9685_I2C_ADDR           CONFIG_LU9685_I2C_ADDR
+#else
 #define LU9685_I2C_ADDR           0x40           // LU9685默认地址 (7位格式)
+#endif
+
 #define LU9685_PWM_FREQ           50             // PWM频率 50Hz (舵机标准)
+
+#ifdef CONFIG_LU9685_PCA9548A_CHANNEL
+#define LU9685_PCA9548A_CHANNEL   CONFIG_LU9685_PCA9548A_CHANNEL
+#else
 #define LU9685_PCA9548A_CHANNEL   1              // 连接在PCA9548A的通道1
+#endif
 
 // 3. PCF8575 I2C GPIO扩展器配置 (通过PCA9548A通道2)
+#ifdef CONFIG_PCF8575_I2C_ADDR
+#define PCF8575_I2C_ADDR          CONFIG_PCF8575_I2C_ADDR
+#else
 #define PCF8575_I2C_ADDR          0x20           // PCF8575默认地址 (7位格式)
+#endif
+
+#ifdef CONFIG_PCF8575_PCA9548A_CHANNEL
+#define PCF8575_PCA9548A_CHANNEL  CONFIG_PCF8575_PCA9548A_CHANNEL
+#else
 #define PCF8575_PCA9548A_CHANNEL  2              // 连接在PCA9548A的通道2
+#endif
+
+#ifdef CONFIG_PCF8575_I2C_TIMEOUT_MS
+#define PCF8575_I2C_TIMEOUT_MS    CONFIG_PCF8575_I2C_TIMEOUT_MS
+#else
+#define PCF8575_I2C_TIMEOUT_MS    1000           // 默认PCF8575 I2C超时时间
+#endif
 
 // 4. HW-178模拟多路复用器配置
-// 使用PSRAM和其他可复用引脚，避开摄像头、音频、显示引脚
-#ifndef HW178_S0_PIN
-#define HW178_S0_PIN              GPIO_NUM_35    // 选择引脚S0 (PSRAM - 可复用)
+// 使用Kconfig配置的引脚，支持用户自定义
+// 重新定义HW178_S0_PIN，覆盖common/board.h中的默认值
+#ifdef CONFIG_HW178_S0_PIN
+#if CONFIG_HW178_S0_PIN >= 0
+#undef HW178_S0_PIN
+#define HW178_S0_PIN              ((gpio_num_t)CONFIG_HW178_S0_PIN)
+#else
+#undef HW178_S0_PIN
+#define HW178_S0_PIN              GPIO_NUM_NC
 #endif
-#ifndef HW178_S1_PIN
-#define HW178_S1_PIN              GPIO_NUM_36    // 选择引脚S1 (PSRAM - 可复用)
+#else
+#undef HW178_S0_PIN
+#define HW178_S0_PIN              GPIO_NUM_35    // 默认选择引脚S0 (PSRAM - 可复用)
 #endif
-#ifndef HW178_S2_PIN
-#define HW178_S2_PIN              GPIO_NUM_37    // 选择引脚S2 (PSRAM - 可复用)
-#endif
-#ifndef HW178_S3_PIN
-#define HW178_S3_PIN              GPIO_NUM_46    // 选择引脚S3 (LOG - 可复用)
-#endif
-#ifndef HW178_SIG_PIN
-#define HW178_SIG_PIN             GPIO_NUM_3     // 信号输出引脚 (JTAG_EN - 连接到ADC)
-#endif
-#ifndef HW178_EN_PIN
-#define HW178_EN_PIN              GPIO_NUM_NC    // 使能引脚 (不使用)
-#endif
-#ifdef HW178_ADC_CHANNEL
-#undef HW178_ADC_CHANNEL
-#endif
-#define HW178_ADC_CHANNEL         ADC_CHANNEL_2  // ADC通道 (GPIO3对应ADC1_CH2)
 
-// 扩展器功能启用标志
+// 重新定义HW178_S1_PIN，覆盖common/board.h中的默认值
+#ifdef CONFIG_HW178_S1_PIN
+#if CONFIG_HW178_S1_PIN >= 0
+#undef HW178_S1_PIN
+#define HW178_S1_PIN              ((gpio_num_t)CONFIG_HW178_S1_PIN)
+#else
+#undef HW178_S1_PIN
+#define HW178_S1_PIN              GPIO_NUM_NC
+#endif
+#else
+#undef HW178_S1_PIN
+#define HW178_S1_PIN              GPIO_NUM_36    // 默认选择引脚S1 (PSRAM - 可复用)
+#endif
+
+// 重新定义HW178_S2_PIN，覆盖common/board.h中的默认值
+#ifdef CONFIG_HW178_S2_PIN
+#if CONFIG_HW178_S2_PIN >= 0
+#undef HW178_S2_PIN
+#define HW178_S2_PIN              ((gpio_num_t)CONFIG_HW178_S2_PIN)
+#else
+#undef HW178_S2_PIN
+#define HW178_S2_PIN              GPIO_NUM_NC
+#endif
+#else
+#undef HW178_S2_PIN
+#define HW178_S2_PIN              GPIO_NUM_37    // 默认选择引脚S2 (PSRAM - 可复用)
+#endif
+
+// HW178_S3_PIN 已在 common/board.h 中定义
+
+// 重新定义HW178_SIG_PIN，覆盖common/board.h中的默认值
+#ifdef CONFIG_HW178_SIG_PIN
+#undef HW178_SIG_PIN
+#define HW178_SIG_PIN             ((gpio_num_t)CONFIG_HW178_SIG_PIN)
+#else
+#undef HW178_SIG_PIN
+#define HW178_SIG_PIN             GPIO_NUM_3     // 默认信号输出引脚 (ADC1_CH2)
+#endif
+
+// 重新定义HW178_EN_PIN，覆盖common/board.h中的默认值
+#ifdef CONFIG_HW178_EN_PIN
+#if CONFIG_HW178_EN_PIN >= 0
+#undef HW178_EN_PIN
+#define HW178_EN_PIN              ((gpio_num_t)CONFIG_HW178_EN_PIN)
+#else
+#undef HW178_EN_PIN
+#define HW178_EN_PIN              GPIO_NUM_NC
+#endif
+#else
+#undef HW178_EN_PIN
+#define HW178_EN_PIN              GPIO_NUM_NC    // 默认使能引脚 (不使用)
+#endif
+
+// 重新定义HW178_ADC_CHANNEL，覆盖common/board.h中的默认值
+#ifdef CONFIG_HW178_ADC_CHANNEL
+#undef HW178_ADC_CHANNEL
+#define HW178_ADC_CHANNEL         ((adc_channel_t)CONFIG_HW178_ADC_CHANNEL)
+#else
+#undef HW178_ADC_CHANNEL
+#define HW178_ADC_CHANNEL         ADC_CHANNEL_2  // 默认ADC通道 (GPIO3对应ADC1_CH2)
+#endif
+
+// 扩展器功能启用标志 - 使用Kconfig配置
+#ifdef CONFIG_ENABLE_PCA9548A
 #define ENABLE_PCA9548A_MUX       1              // 启用PCA9548A I2C多路复用器
+#else
+#define ENABLE_PCA9548A_MUX       0              // 禁用PCA9548A I2C多路复用器
+#endif
+
+#ifdef CONFIG_ENABLE_LU9685
 #define ENABLE_LU9685_SERVO       1              // 启用LU9685舵机扩展器
+#else
+#define ENABLE_LU9685_SERVO       0              // 禁用LU9685舵机扩展器
+#endif
+
+#ifdef CONFIG_ENABLE_PCF8575
 #define ENABLE_PCF8575_GPIO       1              // 启用PCF8575 GPIO扩展器
+#else
+#define ENABLE_PCF8575_GPIO       0              // 禁用PCF8575 GPIO扩展器
+#endif
+
+#ifdef CONFIG_ENABLE_HW178
 #define ENABLE_HW178_ANALOG       1              // 启用HW-178模拟多路复用器
+#else
+#define ENABLE_HW178_ANALOG       0              // 禁用HW-178模拟多路复用器
+#endif
 
 #endif // _BOARD_CONFIG_H_

@@ -19,13 +19,12 @@ bread-compact 系列开发板支持四种扩展器，通过统一的I2C总线和
 
 | 功能 | GPIO | ESP32-S3功能 | 说明 |
 |------|------|-------------|------|
-| I2C SDA | GPIO43 | U0TXD, LED_TX | 扩展器I2C数据线 (可复用UART0发送) |
-| I2C SCL | GPIO44 | U0RXD, LED_RX | 扩展器I2C时钟线 (可复用UART0接收) |
+| I2C SDA | GPIO14 | 通用GPIO | 扩展器I2C数据线 (与LAMP_GPIO共用) |
+| I2C SCL | GPIO3 | JTAG_EN | 模拟信号输出 (ADC1_CH2, JTAG使能引脚可复用) |
 | HW-178 S0 | GPIO35 | PSRAM | 模拟多路复用器选择位0 (PSRAM引脚可复用) |
 | HW-178 S1 | GPIO36 | PSRAM | 模拟多路复用器选择位1 (PSRAM引脚可复用) |
 | HW-178 S2 | GPIO37 | PSRAM | 模拟多路复用器选择位2 (PSRAM引脚可复用) |
-| HW-178 S3 | GPIO46 | LOG | 模拟多路复用器选择位3 (日志输出引脚可复用) |
-| HW-178 SIG | GPIO3 | JTAG_EN | 模拟信号输出 (ADC1_CH2, JTAG使能引脚可复用) |
+| HW-178 SIG | GPIO46 | LOG | 扩展器I2C时钟线 (与HW178_S3共用) |
 
 #### bread-compact-wifi 引脚分配
 
@@ -61,11 +60,13 @@ bread-compact 系列开发板支持四种扩展器，通过统一的I2C总线和
   - LCD (bread-compact-wifi-s3cam): GPIO19-21, GPIO38, GPIO45, GPIO47
 - **摄像头引脚** (bread-compact-wifi-s3cam): GPIO4-18 (完整摄像头接口)
 - **按键引脚**: GPIO0 (Boot), GPIO39-40, GPIO47-48 (各种按键)
+- **系统引脚**: GPIO43-44 (UART0 TX/RX, 系统日志输出)
 
 **可复用引脚 (用于扩展器):**
+- **通用GPIO**: GPIO33-34 (S3CAM开发板I2C专用)
 - **PSRAM引脚**: GPIO35-37 (通常不使用外部PSRAM时可复用)
 - **摄像头引脚**: GPIO8-14 (非摄像头板子可复用)
-- **UART/LOG引脚**: GPIO43-44, GPIO46 (可与串口/日志功能共用)
+- **LOG引脚**: GPIO46 (日志输出引脚可复用)
 - **JTAG引脚**: GPIO3 (调试时可能冲突，生产环境可复用)
 
 ### I2C设备地址分配
@@ -84,12 +85,14 @@ bread-compact 系列开发板支持四种扩展器，通过统一的I2C总线和
 
 **接线**:
 ```
-PCA9548A    ESP32-S3
+PCA9548A    ESP32-S3 (S3CAM)
 VCC    ->   3.3V
 GND    ->   GND
-SDA    ->   GPIO43
-SCL    ->   GPIO44
+SDA    ->   GPIO14
+SCL    ->   GPIO46
 A0-A2  ->   GND (地址设置为0x70)
+
+注意：其他bread-compact开发板使用GPIO8/GPIO9
 ```
 
 **通道分配**:
@@ -154,7 +157,7 @@ GND    ->   GND
 S0     ->   GPIO35
 S1     ->   GPIO36
 S2     ->   GPIO37
-S3     ->   GPIO46
+S3     ->   NULL
 SIG    ->   GPIO3 (ADC1_CH2)
 C0-C15 ->   连接各种模拟传感器
 ```
@@ -168,11 +171,80 @@ C0-C15 ->   连接各种模拟传感器
 // ... 更多通道
 ```
 
-## 软件使用
+## 软件配置
+
+### Kconfig配置
+
+使用ESP-IDF的配置菜单：
+```bash
+idf.py menuconfig
+```
+
+导航到：`Xiaozhi Assistant` → `组件管理器` → `Multiplexer & Expander`
+
+#### 可配置项目
+
+**PCA9548A I2C多路复用器**:
+- `CONFIG_PCA9548A_SDA_PIN` - SDA引脚 (默认: GPIO20 for S3CAM, GPIO8 for others)
+- `CONFIG_PCA9548A_SCL_PIN` - SCL引脚 (默认: GPIO21 for S3CAM, GPIO9 for others)  
+- `CONFIG_PCA9548A_I2C_ADDR` - I2C地址 (默认: 0x70)
+- `CONFIG_PCA9548A_RESET_PIN` - 复位引脚 (默认: -1, 不使用)
+- `CONFIG_PCA9548A_I2C_FREQ_HZ` - I2C频率 (默认: 400000Hz)
+- `CONFIG_PCA9548A_I2C_TIMEOUT_MS` - 超时时间 (默认: 1000ms)
+
+**LU9685舵机控制器**:
+- `CONFIG_LU9685_I2C_ADDR` - I2C地址 (默认: 0x40)
+- `CONFIG_LU9685_PCA9548A_CHANNEL` - PCA9548A通道 (默认: 1)
+
+**PCF8575 GPIO扩展器**:
+- `CONFIG_PCF8575_I2C_ADDR` - I2C地址 (默认: 0x20)
+- `CONFIG_PCF8575_PCA9548A_CHANNEL` - PCA9548A通道 (默认: 2)
+- `CONFIG_PCF8575_I2C_TIMEOUT_MS` - 超时时间 (默认: 1000ms)
+
+**HW-178模拟多路复用器**:
+- `CONFIG_HW178_S0_PIN` - S0控制引脚 (默认: GPIO35 for S3CAM, GPIO10 for others)
+- `CONFIG_HW178_S1_PIN` - S1控制引脚 (默认: GPIO36 for S3CAM, GPIO11 for others)
+- `CONFIG_HW178_S2_PIN` - S2控制引脚 (默认: GPIO37 for S3CAM, GPIO12 for others)
+- `CONFIG_HW178_S3_PIN` - S3控制引脚 (默认: -1, 不使用)
+- `CONFIG_HW178_SIG_PIN` - 信号输出引脚 (默认: GPIO46 for S3CAM, GPIO14 for others)
+- `CONFIG_HW178_EN_PIN` - 使能引脚 (默认: -1, 不使用)
+- `CONFIG_HW178_ADC_CHANNEL` - ADC通道 (默认: 5 for S3CAM, 3 for others)
+
+**功能启用开关**:
+- `CONFIG_ENABLE_MULTIPLEXER` - 启用扩展器系统
+- `CONFIG_ENABLE_PCA9548A` - 启用PCA9548A多路复用器
+- `CONFIG_ENABLE_LU9685` - 启用LU9685舵机控制器
+- `CONFIG_ENABLE_PCF8575` - 启用PCF8575 GPIO扩展器
+- `CONFIG_ENABLE_HW178` - 启用HW-178模拟多路复用器
+
+#### 配置示例
+
+**自定义引脚配置**:
+```
+# 使用不同的I2C引脚
+CONFIG_PCA9548A_SDA_PIN=33
+CONFIG_PCA9548A_SCL_PIN=34
+
+# 使用不同的HW-178控制引脚
+CONFIG_HW178_S0_PIN=1
+CONFIG_HW178_S1_PIN=2
+CONFIG_HW178_S2_PIN=3
+CONFIG_HW178_SIG_PIN=4
+```
+
+**禁用某些扩展器**:
+```
+# 只启用PCA9548A和LU9685，禁用其他扩展器
+CONFIG_ENABLE_MULTIPLEXER=y
+CONFIG_ENABLE_PCA9548A=y
+CONFIG_ENABLE_LU9685=y
+CONFIG_ENABLE_PCF8575=n
+CONFIG_ENABLE_HW178=n
+```
 
 ### 初始化
 
-扩展器在板子初始化时自动初始化，无需手动调用。
+扩展器在板子初始化时自动初始化，根据Kconfig配置使用相应的引脚和参数。无需手动调用初始化函数。
 
 ### API使用示例
 
@@ -279,6 +351,9 @@ printf("Expander Status: %s\n", status.c_str());
 6. **引脚复用**: 扩展器使用的GPIO可能与其他功能复用，使用时需注意冲突
 7. **ADC精度**: HW-178的ADC精度受ESP32-S3内置ADC限制，约12位精度
 8. **舵机电源**: LU9685控制的舵机通常需要5V电源，确保电源充足
+9. **GPIO冲突修复**: 已修复motor引脚与显示引脚的冲突问题，motor控制现在完全通过PCF8575扩展器实现
+10. **I2C引脚重分配**: S3CAM开板的I2C引引脚已从UART0引脚(GPIO43/44)重新分配到GPIO14/4634
+11. **MSPI稳定性**: 已优化PSRAM和Flash时序配置，确保系统启动稳定
 
 ## 故障排除
 
@@ -343,6 +418,11 @@ printf("Expander Status: %s\n", status.c_str());
 
 ---
 
-**版本**: v1.0.0  
-**更新日期**: 2024年  
+**版本**: v1.2.0  
+**更新日期**: 2025年10月  
 **支持状态**: 生产就绪 ✅
+
+### 版本历史
+- **v1.2.0** (2025-10): 添加Kconfig配置支持，所有引脚可通过menuconfig自定义
+- **v1.1.0** (2025-10): 修复GPIO冲突、I2C引脚冲突、MSPI时序问题
+- **v1.0.0** (2024): 初始版本，完整扩展器支持

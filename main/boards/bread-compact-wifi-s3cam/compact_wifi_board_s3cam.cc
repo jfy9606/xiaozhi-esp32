@@ -36,6 +36,9 @@
 #include <esp_adc/adc_oneshot.h>
 #endif
 
+// Multiplexer系统
+#include "ext/include/multiplexer.h"
+
 #if defined(LCD_TYPE_ILI9341_SERIAL)
 #include "esp_lcd_ili9341.h"
 #endif
@@ -172,8 +175,9 @@ private:
     void InitializeCameraSystem() {
         ESP_LOGI(TAG, "Initializing camera system with vision integration");
         
-        // Get web server from component manager
+        // Get web server from component manager (if enabled in Kconfig)
         Web* web_server = nullptr;
+#ifdef CONFIG_ENABLE_WEB_SERVER
         auto& manager = ComponentManager::GetInstance();
         Component* web_component = manager.GetComponent("Web");
         if (web_component) {
@@ -182,10 +186,23 @@ private:
         } else {
             ESP_LOGW(TAG, "Web server not found, camera system will work without web interface");
         }
+#else
+        ESP_LOGI(TAG, "Web server disabled in Kconfig, camera system will work without web interface");
+#endif
         
         // Get MCP server
         auto& mcp_server = McpServer::GetInstance();
         
+        // 暂时禁用摄像头初始化以避免崩溃
+        // 消除未使用变量警告
+        (void)web_server;
+        (void)mcp_server;
+        // TODO: 修复摄像头配置问题后重新启用
+        ESP_LOGW(TAG, "Camera initialization temporarily disabled due to configuration issues");
+        camera_system_initialized_ = false;
+        camera_enabled_ = false;
+        
+        /* 
         // Use the factory system to set up camera for s3cam board
         if (CameraSystemHelpers::SetupCameraForBoard("bread-compact-wifi-s3cam", web_server, &mcp_server)) {
             camera_system_initialized_ = true;
@@ -196,6 +213,7 @@ private:
             camera_enabled_ = false;
             ESP_LOGE(TAG, "Failed to initialize camera system");
         }
+        */
     }
 
     void DeinitializeCameraSystem() {
@@ -246,6 +264,12 @@ private:
             return;
         }
         
+        // 初始化multiplexer系统，设置全局I2C句柄
+        ret = multiplexer_init_with_bus(i2c_bus_handle_);
+        if (ret != ESP_OK) {
+            ESP_LOGW(TAG, "Failed to initialize multiplexer system: %s", esp_err_to_name(ret));
+        }
+        
         i2c_bus_initialized_ = true;
         ESP_LOGI(TAG, "I2C bus initialized successfully (SDA: GPIO%d, SCL: GPIO%d)", 
                  I2C_EXT_SDA_PIN, I2C_EXT_SCL_PIN);
@@ -270,7 +294,7 @@ private:
         
         pca9548a_handle_ = pca9548a_create(&pca9548a_config);
         if (pca9548a_handle_ == nullptr) {
-            ESP_LOGE(TAG, "Failed to create PCA9548A device");
+            ESP_LOGW(TAG, "PCA9548A device not found (hardware not connected), continuing without multiplexer");
             pca9548a_initialized_ = false;
             return;
         }
@@ -527,11 +551,13 @@ public:
 #endif
     {
         
+        // 先初始化显示系统
         InitializeSpi();
         InitializeLcdDisplay();
         InitializeButtons();
         
-        // 初始化扩展器 (按依赖顺序)
+        // 显示系统稳定后再初始化扩展器
+        ESP_LOGI(TAG, "Starting expander initialization...");
         InitializeI2CBus();
         
 #if ENABLE_PCA9548A_MUX
@@ -550,6 +576,9 @@ public:
         InitializeHW178();
 #endif
         
+        ESP_LOGI(TAG, "Expander initialization completed, starting camera system...");
+        
+        // 扩展器初始化完成后再初始化摄像头系统
         InitializeCameraSystem();
         
         if (DISPLAY_BACKLIGHT_PIN != GPIO_NUM_NC) {

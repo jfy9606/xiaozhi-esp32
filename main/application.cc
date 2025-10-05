@@ -1247,8 +1247,7 @@ void Application::StartComponents() {
                 static bool vision_start_in_progress = false;
                 if (vision_start_in_progress) {
                     ESP_LOGI(TAG, "Vision controller startup already in progress, skipping");
-                    return;
-                }
+                } else {
                 
                 ESP_LOGI(TAG, "Starting vision controller component (with integrated camera)");
                 vision_start_in_progress = true;
@@ -1285,6 +1284,7 @@ void Application::StartComponents() {
                         ESP_LOGE(TAG, "Exception starting vision sequence: %s", e.what());
                     }
                 });
+                } // end of else block for vision_start_in_progress check
             } else {
                 ESP_LOGW(TAG, "Vision controller already running");
             }
@@ -1373,12 +1373,16 @@ bool Application::InitComponents() {
     
     // 获取Web组件，只声明一次，用于所有需要Web的组件
     Web* web_server = nullptr;
+#ifdef CONFIG_ENABLE_WEB_SERVER
     if (manager.GetComponent("Web")) {
         web_server = (Web*)manager.GetComponent("Web");
         ESP_LOGI(TAG, "Found Web component");
     } else {
         ESP_LOGW(TAG, "Web component not found, Vision and Location components will not have web access");
     }
+#else
+    ESP_LOGI(TAG, "Web server disabled in Kconfig, Vision and Location components will not have web access");
+#endif
     
     // 注册Vision控制器组件
 #ifdef CONFIG_ENABLE_VISION_CONTROLLER
