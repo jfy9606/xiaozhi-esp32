@@ -1,18 +1,19 @@
 #include "include/pca9548a.h"
+#include "include/i2c_utils.h"
 #include <stdlib.h>
 #include <string.h>
 #include "esp_log.h"
 #include "driver/gpio.h"
+#include "driver/i2c_master.h"
 #include "freertos/FreeRTOS.h"
 
 static const char *TAG = "pca9548a";
 
-// 外部引用 I2C 设备句柄和总线句柄，这些在 multiplexer.c 中定义和初始化
+// 外部引用 I2C 设备句柄和总线句柄，这些在 multiplexer.cc 中定义和初始化
 extern i2c_master_dev_handle_t i2c_dev_handle;
 extern i2c_master_bus_handle_t i2c_bus_handle;
 
-// 全局变量
-static pca9548a_handle_t pca9548a_handle = NULL;
+// 全局变量 - 现在在 multiplexer.cc 中定义
 extern bool g_pca9548a_initialized;
 
 /**
@@ -159,9 +160,6 @@ esp_err_t pca9548a_select_channels(pca9548a_handle_t handle, uint8_t channels)
         return ESP_ERR_INVALID_ARG;
     }
     
-    // 使用传入的句柄
-    pca9548a_dev_t *dev = (pca9548a_dev_t *)handle;
-    
     // 直接使用 pca9548a_write_control 函数
     return pca9548a_write_control(handle, channels);
 }
@@ -213,30 +211,5 @@ esp_err_t pca9548a_reset(pca9548a_handle_t handle)
     return ESP_OK;
 }
 
-/**
- * @brief 选择PCA9548A通道 (兼容旧API)
- * 
- * @param channel_mask 要选择的通道掩码
- * @return esp_err_t 
- */
-esp_err_t pca9548a_select_channel(uint8_t channel_mask)
-{
-    if (!g_pca9548a_initialized || pca9548a_handle == NULL) {
-        ESP_LOGE(TAG, "PCA9548A not initialized, cannot select channel");
-        return ESP_ERR_INVALID_STATE;
-    }
-    
-    ESP_LOGI(TAG, "Selecting PCA9548A channel: 0x%02X", channel_mask);
-    
-    return pca9548a_select_channels(pca9548a_handle, channel_mask);
-}
-
-bool pca9548a_is_initialized(void)
-{
-    return g_pca9548a_initialized;
-}
-
-pca9548a_handle_t pca9548a_get_handle(void)
-{
-    return pca9548a_handle;
-} 
+// 注意：pca9548a_select_channel, pca9548a_is_initialized, pca9548a_get_handle 
+// 这些函数现在在 multiplexer.cc 中定义，以避免重复定义 

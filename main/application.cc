@@ -16,7 +16,6 @@
 #include "audio_codec.h"
 #include "mqtt_protocol.h"
 #include "websocket_protocol.h"
-#include "font_awesome_symbols.h"
 #include "iot/thing_manager.h"
 #include "iot/things/imu.h"
 #include "iot/things/us.h"
@@ -28,23 +27,24 @@
 #include "hardware/hardware_manager.h"
 #include "ai/ai.h"
 #include "iot/things/servo.h"
-#include "audio_debugger.h"
+#include "audio/processors/audio_debugger.h"
 
 #if CONFIG_USE_AUDIO_PROCESSOR
-#include "afe_audio_processor.h"
+#include "audio/processors/afe_audio_processor.h"
 #else
 #include "no_audio_processor.h"
 #endif
 
 #if CONFIG_USE_AFE_WAKE_WORD
-#include "afe_wake_word.h"
+#include "audio/wake_words/afe_wake_word.h"
 #elif CONFIG_USE_ESP_WAKE_WORD
-#include "esp_wake_word.h"
+#include "audio/wake_words/esp_wake_word.h"
 #else
 #include "no_wake_word.h"
 #endif
 #include "assets.h"
 #include "settings.h"
+#include <font_awesome.h>
 
 #include <cstring>
 #include <driver/gpio.h>
@@ -590,8 +590,8 @@ void Application::Start() {
             ESP_LOGW(TAG, "Unknown message type: %s", type->valuestring);
         }
     });
-    // 初始化协议但不保存未使用的返回值
-    protocol_->Start();
+    // 初始化协议并跟踪启动状态
+    protocol_started_ = protocol_->Start();
 
     // Wait for the new version check to finish
     xEventGroupWaitBits(event_group_, CHECK_NEW_VERSION_DONE_EVENT, pdTRUE, pdFALSE, portMAX_DELAY);
@@ -729,7 +729,7 @@ void Application::Start() {
     SetDeviceState(kDeviceStateIdle);
 
     has_server_time_ = ota.HasServerTime();
-    if (protocol_started) {
+    if (protocol_started_) {
         std::string message = std::string(Lang::Strings::VERSION) + ota.GetCurrentVersion();
         display->ShowNotification(message.c_str());
         display->SetChatMessage("system", "");
@@ -1207,8 +1207,8 @@ void Application::StartComponents() {
             continue;
         }
         
-        // Schedule component start in background task to avoid blocking
-        background_task_->Schedule([this, component]() {
+        // Schedule component start to avoid blocking
+        Schedule([this, component]() {
             if (!component || !component->GetName()) {
                 ESP_LOGW(TAG, "Component became invalid, skipping start");
                 return;
@@ -1251,7 +1251,7 @@ void Application::StartComponents() {
                 ESP_LOGI(TAG, "Starting vision controller component (with integrated camera)");
                 vision_start_in_progress = true;
                 
-                background_task_->Schedule([this, vision]() {
+                Schedule([this, vision]() {
                     try {
                         if (!vision->Start()) {
                             ESP_LOGE(TAG, "Failed to start VisionController from sequence");

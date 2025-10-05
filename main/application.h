@@ -10,17 +10,16 @@
 #include <mutex>
 #include <deque>
 #include <vector>
-#include <deque>
 #include <condition_variable>
 #include <memory>
+#include <list>
 
 #include "protocol.h"
 #include "ota.h"
-#include "background_task.h"
 #include "audio_processor.h"
 #include "components.h"
 #include "wake_word.h"
-#include "audio_debugger.h"
+#include "audio/processors/audio_debugger.h"
 
 // 只有在电机控制器启用时才包含相关头文件
 #if defined(CONFIG_ENABLE_MOTOR_CONTROLLER)
@@ -66,7 +65,6 @@ public:
     Application& operator=(const Application&) = delete;
 
     void Start();
-    void MainEventLoop();
     DeviceState GetDeviceState() const { return device_state_; }
     bool IsVoiceDetected() const { return audio_service_.IsVoiceDetected(); }
     void Schedule(std::function<void()> callback);
@@ -91,7 +89,7 @@ public:
     bool InitComponents();
     void SetAecMode(AecMode mode);
     AecMode GetAecMode() const { return aec_mode_; }
-    BackgroundTask* GetBackgroundTask() const { return background_task_; }
+
     void InitVehicleComponent(Web* web_server);
     void PlaySound(const std::string_view& sound);
     AudioService& GetAudioService() { return audio_service_; }
@@ -114,13 +112,13 @@ private:
 
     bool has_server_time_ = false;
     bool aborted_ = false;
+    bool protocol_started_ = false;
     int clock_ticks_ = 0;
     TaskHandle_t check_new_version_task_handle_ = nullptr;
     TaskHandle_t main_event_loop_task_handle_ = nullptr;
 
     // Audio encode / decode
     TaskHandle_t audio_loop_task_handle_ = nullptr;
-    BackgroundTask* background_task_ = nullptr;
     HardwareManager* hardware_manager_ = nullptr;
     std::chrono::steady_clock::time_point last_output_time_;
     std::list<AudioStreamPacket> audio_send_queue_;

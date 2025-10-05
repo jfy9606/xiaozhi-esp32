@@ -81,4 +81,21 @@
 
 /* I/O接口 */
 #define I2C_ADDR_FT5X06             0x38    // FT5X06 触摸控制器地址 (7位格式)
-#define I2C_ADDR_GT911              0x5D    // GT911/GT9271 触摸控制器默认地址 (7位格式) 
+#define I2C_ADDR_GT911              0x5D    // GT911/GT9271 触摸控制器默认地址 (7位格式)
+
+/* 全局I2C句柄声明 - 在multiplexer.cc中定义 */
+#ifdef CONFIG_ENABLE_PCA9548A
+#include "driver/i2c_master.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+extern i2c_master_bus_handle_t i2c_bus_handle;
+extern i2c_master_dev_handle_t i2c_dev_handle;
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* CONFIG_ENABLE_PCA9548A */ 

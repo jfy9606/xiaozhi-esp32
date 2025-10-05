@@ -123,7 +123,6 @@ esp_err_t multiplexer_init_with_bus(i2c_master_bus_handle_t external_bus_handle)
  */
 void multiplexer_deinit(void);
 
-#ifdef CONFIG_ENABLE_PCA9548A
 /**
  * @brief 级联复用器路径结构体
  * 
@@ -133,6 +132,8 @@ typedef struct {
     uint8_t level_count;              // 级联层数
     uint8_t channels[4];              // 最多支持4级级联，每级的通道号
 } pca9548a_cascade_path_t;
+
+#ifdef CONFIG_ENABLE_PCA9548A
 
 /**
  * @brief Select a specific channel on the PCA9548A multiplexer

@@ -659,3 +659,7 @@ std::string Board::GetSystemInfoJson() {
     json += R"(})";
     return json;
 }
+
+Assets* Board::GetAssets() {
+    return &Assets::GetInstance();
+}

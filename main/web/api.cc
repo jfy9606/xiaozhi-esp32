@@ -617,7 +617,7 @@ ApiResponse HandleSensorData(httpd_req_t* req) {
     
     try {
         // 获取所有传感器数据
-        std::vector<HardwareManager::SensorReading> readings = g_hardware_manager->ReadAllSensors();
+        std::vector<sensor_reading_t> readings = g_hardware_manager->ReadAllSensors();
         
         // 创建响应数据
         cJSON* data = cJSON_CreateObject();
@@ -677,7 +677,7 @@ ApiResponse HandleSensorDataById(httpd_req_t* req) {
     
     try {
         // 读取特定传感器数据
-        HardwareManager::SensorReading reading = g_hardware_manager->ReadSensor(sensor_id);
+        sensor_reading_t reading = g_hardware_manager->ReadSensor(sensor_id);
         
         if (!reading.valid) {
             return CreateApiErrorResponse(404, "Sensor not found or reading invalid: " + sensor_id);
@@ -901,11 +901,11 @@ ApiResponse HandleHardwareStatus(httpd_req_t* req) {
         cJSON_AddItemToObject(data, "expanders", expanders);
         
         // 获取执行器状态
-        std::vector<HardwareManager::ActuatorStatus> actuator_statuses = g_hardware_manager->GetActuatorStatus();
+        std::vector<actuator_status_t> actuator_statuses = g_hardware_manager->GetActuatorStatus();
         
         // 传感器状态摘要
         cJSON* sensors_summary = cJSON_CreateObject();
-        std::vector<HardwareManager::SensorReading> readings = g_hardware_manager->ReadAllSensors();
+        std::vector<sensor_reading_t> readings = g_hardware_manager->ReadAllSensors();
         
         int active_sensors = 0;
         int valid_readings = 0;
@@ -1075,15 +1075,14 @@ ApiResponse HandleHardwareConfig(httpd_req_t* req) {
  *   "code": 错误码 // 失败时的错误码
  * }
  */ 
-// 错
-误查询API
+// 错误查询API
 ApiResponse HandleErrorQuery(httpd_req_t* req) {
     ESP_LOGI(TAG, "Handling error query request");
     
     try {
         if (req->method == HTTP_GET) {
             // 获取查询参数
-            std::map<std::string, std::string> params = ParseQueryParams(req);
+            std::map<std::string, std::string> params = Web::ParseQueryParams(req);
             
             // 检查是否查询特定组件的错误
             std::string component = params.count("component") ? params["component"] : "";

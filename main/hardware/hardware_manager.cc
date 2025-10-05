@@ -4,6 +4,7 @@
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "multiplexer.h"
 #include <fstream>
 #include <sstream>
 #include <algorithm>
@@ -70,10 +71,12 @@ esp_err_t HardwareManager::InitializeExpanders() {
     }
     
     // HW178 initialization
+#ifdef CONFIG_ENABLE_HW178
     if (hw178_is_initialized()) {
         hw178_handle_ = hw178_get_handle();
         ESP_LOGI(TAG, "HW178 multiplexer available");
     }
+#endif
     
     return ESP_OK;
 }
@@ -443,11 +446,17 @@ sensor_reading_t HardwareManager::ReadHW178Sensor(const sensor_config_t& config)
     reading.timestamp = GetTimestamp();
     reading.valid = false;
     
+#ifdef CONFIG_ENABLE_HW178
     if (!hw178_is_initialized()) {
         ESP_LOGE(TAG, "HW178 not initialized");
         LogError("HW178", "Multiplexer not initialized for sensor " + config.id);
         return reading;
     }
+#else
+    ESP_LOGE(TAG, "HW178 support not enabled");
+    LogError("HW178", "HW178 support not enabled for sensor " + config.id);
+    return reading;
+#endif
     
     // Validate sensor type
     if (!IsSensorTypeSupported(config.type)) {
@@ -469,7 +478,11 @@ sensor_reading_t HardwareManager::ReadHW178Sensor(const sensor_config_t& config)
     const int max_retries = 3;
     
     do {
+#ifdef CONFIG_ENABLE_HW178
         ret = hw178_read_channel(static_cast<hw178_channel_t>(config.channel), &raw_value);
+#else
+        ret = ESP_ERR_NOT_SUPPORTED;
+#endif
         if (ret == ESP_OK) {
             break;
         }
@@ -831,6 +844,7 @@ bool HardwareManager::ValidateSensorReading(const sensor_reading_t& reading) {
 
 esp_err_t HardwareManager::SelectExpander(const std::string& expander_type, int channel) {
     if (expander_type == "hw178") {
+#ifdef CONFIG_ENABLE_HW178
         if (!hw178_is_initialized()) {
             ESP_LOGE(TAG, "HW178 not initialized");
             return ESP_ERR_INVALID_STATE;
@@ -846,6 +860,10 @@ esp_err_t HardwareManager::SelectExpander(const std::string& expander_type, int 
         // Small delay to allow channel switching to stabilize
         vTaskDelay(pdMS_TO_TICKS(2));
         return ESP_OK;
+#else
+        ESP_LOGE(TAG, "HW178 support not enabled");
+        return ESP_ERR_NOT_SUPPORTED;
+#endif
     } else if (expander_type == "pca9548a") {
         if (!pca9548a_is_initialized()) {
             ESP_LOGE(TAG, "PCA9548A not initialized");
@@ -889,10 +907,6 @@ bool HardwareManager::IsSensorTypeSupported(const std::string& sensor_type) {
     return std::find(supported_types.begin(), supported_types.end(), sensor_type) != supported_types.end();
 }
 
-void HardwareManager::LogError(const std::string& component, const std::string& message) {
-    SimpleErrorHandler::LogError(SimpleErrorHandler::ErrorLevel::ERROR, component, message);
-}
-
 esp_err_t HardwareManager::StopMotor(int motor_id) {
     return SetMotorSpeed(motor_id, 0);
 }
@@ -930,7 +944,7 @@ motor_config_t HardwareManager::GetMotorConfig(int motor_id) {
     }
     
     // Return empty config if not found
-    motor_config_t empty_config;
+    motor_config_t empty_config = {};
     empty_config.id = -1;
     return empty_config;
 }
@@ -942,7 +956,7 @@ servo_config_t HardwareManager::GetServoConfig(int servo_id) {
     }
     
     // Return empty config if not found
-    servo_config_t empty_config;
+    servo_config_t empty_config = {};
     empty_config.id = -1;
     return empty_config;
 }

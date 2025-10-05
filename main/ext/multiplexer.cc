@@ -18,14 +18,9 @@
 // Include board-specific configurations
 #include "../boards/common/board.h"
 
-// Include multiplexer drivers
-#ifdef CONFIG_ENABLE_PCA9548A
+// Include multiplexer drivers - 总是包含头文件
 #include "include/pca9548a.h"
-#endif
-
-#ifdef CONFIG_ENABLE_HW178
 #include "include/hw178.h"
-#endif
 
 // 引入PCF8575头文件
 #include "include/pcf8575.h"
@@ -35,29 +30,24 @@
 
 static const char *TAG = "multiplexer";
 
-// 前向声明
-#ifdef CONFIG_ENABLE_PCA9548A
+// 前向声明 - 总是声明
 esp_err_t pca9548a_init(i2c_master_bus_handle_t external_bus_handle);
 i2c_master_bus_handle_t lvgl_port_get_i2c_bus_handle(void);
-#endif
 
-// Multiplexer handles
-#ifdef CONFIG_ENABLE_PCA9548A
+// Multiplexer handles - 移除条件编译，确保变量总是被定义
 pca9548a_handle_t pca9548a_handle = NULL;
-// 修改为全局变量，移除 static 关键字，使之对其他文件可见
+// 全局变量，供其他文件使用
 i2c_master_bus_handle_t i2c_bus_handle = NULL;
 i2c_master_dev_handle_t i2c_dev_handle = NULL;
 // 默认I2C端口，可通过函数参数修改
 static int default_i2c_port = DEFAULT_MULTIPLEXER_I2C_PORT;
-#endif
 
-#ifdef CONFIG_ENABLE_HW178
+// HW178 相关变量 - 总是定义
 static hw178_handle_t hw178_handle = NULL;
 static adc_oneshot_unit_handle_t adc_handle = NULL;
 
 // 添加gpio_to_adc_channel函数的前向声明
 static int gpio_to_adc_channel(gpio_num_t gpio_num);
-#endif
 
 // 全局状态标志
 bool g_pca9548a_initialized = false;
@@ -66,7 +56,6 @@ static bool g_multiplexer_initialized = false;
 
 // 删除i2c_master_init函数，不再自行初始化I2C总线
 
-#ifdef CONFIG_ENABLE_PCA9548A
 // 通过已存在的总线句柄配置设备
 static esp_err_t pca9548a_config_device_with_handles(i2c_master_bus_handle_t bus_handle)
 {
@@ -103,6 +92,11 @@ static esp_err_t pca9548a_config_device_with_handles(i2c_master_bus_handle_t bus
 // 修改PCA9548A初始化函数，不再创建I2C总线
 esp_err_t pca9548a_init(i2c_master_bus_handle_t external_bus_handle)
 {
+#ifndef CONFIG_ENABLE_PCA9548A
+    ESP_LOGI(TAG, "PCA9548A功能已禁用，跳过初始化");
+    return ESP_ERR_NOT_SUPPORTED;
+#endif
+
     ESP_LOGI(TAG, "Initializing PCA9548A multiplexer with external bus handle");
 
     if (external_bus_handle == NULL) {
@@ -173,12 +167,15 @@ esp_err_t pca9548a_init(i2c_master_bus_handle_t external_bus_handle)
     ESP_LOGI(TAG, "PCA9548A initialized successfully");
     return ESP_OK;
 }
-#endif
 
-#ifdef CONFIG_ENABLE_HW178
 // Initialize ADC
 static adc_oneshot_unit_handle_t adc_init(void)
 {
+#ifndef CONFIG_ENABLE_HW178
+    ESP_LOGI(TAG, "HW-178功能已禁用，ADC初始化跳过");
+    return NULL;
+#endif
+
     adc_oneshot_unit_handle_t adc_handle = NULL;
     
     // 尝试从配置文件获取优先ADC单元
@@ -280,6 +277,11 @@ static adc_oneshot_unit_handle_t adc_init(void)
 // 获取GPIO对应的ADC通道号
 static int gpio_to_adc_channel(gpio_num_t gpio_num)
 {
+#ifndef CONFIG_ENABLE_HW178
+    ESP_LOGD(TAG, "HW-178功能已禁用，GPIO到ADC通道映射不可用");
+    return -1;
+#endif
+
     // GPIO到ADC通道的映射关系，根据ESP32的硬件规格
     // 这里需要根据具体的ESP32型号来定义正确的映射关系
 #if CONFIG_IDF_TARGET_ESP32
@@ -315,14 +317,18 @@ static int gpio_to_adc_channel(gpio_num_t gpio_num)
 #else
     // 对于其他ESP32系列，返回默认通道
     return -1;  // 我们不再使用CONFIG_HW178_ADC_CHANNEL，直接返回-1表示无效
+    return -1;  // 我们不再使用CONFIG_HW178_ADC_CHANNEL，直接返回-1表示无效
 #endif
 }
-#endif
 
-#ifdef CONFIG_ENABLE_HW178
 // Initialize HW178
 esp_err_t hw178_init(void)
 {
+#ifndef CONFIG_ENABLE_HW178
+    ESP_LOGI(TAG, "HW-178功能已禁用，跳过初始化");
+    return ESP_ERR_NOT_SUPPORTED;
+#endif
+
     ESP_LOGI(TAG, "正在初始化HW-178多路复用器");
 
     // 验证SIG引脚是否为有效的ADC引脚
@@ -373,6 +379,12 @@ esp_err_t hw178_init(void)
 // Function to read analog value from a specific channel
 esp_err_t hw178_read_channel(hw178_channel_t channel, int *value)
 {
+#ifndef CONFIG_ENABLE_HW178
+    ESP_LOGW(TAG, "HW-178功能已禁用");
+    if (value) *value = -1;
+    return ESP_ERR_NOT_SUPPORTED;
+#endif
+
     if (!g_hw178_initialized || hw178_handle == NULL) {
         ESP_LOGW(TAG, "HW-178未初始化");
         return ESP_ERR_INVALID_STATE;
@@ -424,12 +436,19 @@ esp_err_t hw178_read_channel(hw178_channel_t channel, int *value)
 // Function to check if HW-178 is initialized
 bool hw178_is_initialized(void)
 {
+#ifndef CONFIG_ENABLE_HW178
+    return false;
+#endif
     return g_hw178_initialized;
 }
 
 // Function to get HW-178 handle for direct access
 hw178_handle_t hw178_get_handle(void)
 {
+#ifndef CONFIG_ENABLE_HW178
+    ESP_LOGW(TAG, "HW-178功能已禁用");
+    return NULL;
+#endif
     if (!g_hw178_initialized) {
         ESP_LOGW(TAG, "HW-178 handle requested but not initialized");
     }
@@ -439,6 +458,11 @@ hw178_handle_t hw178_get_handle(void)
 // 直接操作HW-178选择通道，无需读取ADC
 esp_err_t hw178_set_channel(hw178_channel_t channel)
 {
+#ifndef CONFIG_ENABLE_HW178
+    ESP_LOGW(TAG, "HW-178功能已禁用");
+    return ESP_ERR_NOT_SUPPORTED;
+#endif
+
     if (!g_hw178_initialized || hw178_handle == NULL) {
         ESP_LOGE(TAG, "HW-178 not initialized");
         return ESP_ERR_INVALID_STATE;
@@ -460,12 +484,15 @@ esp_err_t hw178_set_channel(hw178_channel_t channel)
 // 获取HW-178 ADC单元句柄
 adc_oneshot_unit_handle_t hw178_get_adc_handle(void)
 {
+#ifndef CONFIG_ENABLE_HW178
+    ESP_LOGW(TAG, "HW-178功能已禁用");
+    return NULL;
+#endif
     if (!g_hw178_initialized) {
         ESP_LOGW(TAG, "HW-178 ADC handle requested but HW-178 not initialized");
     }
     return adc_handle;
 }
-#endif
 
 // Initialize multiplexer components with provided bus
 esp_err_t multiplexer_init_with_bus(i2c_master_bus_handle_t external_bus_handle)
@@ -494,6 +521,8 @@ esp_err_t multiplexer_init_with_bus(i2c_master_bus_handle_t external_bus_handle)
         any_device_initialized = true;
         ESP_LOGI(TAG, "PCA9548A使用共享I2C总线初始化成功");
     }
+#else
+    ESP_LOGI(TAG, "PCA9548A功能已禁用（CONFIG_ENABLE_PCA9548A=n）");
 #endif
 
 #ifdef CONFIG_ENABLE_HW178
@@ -513,6 +542,8 @@ esp_err_t multiplexer_init_with_bus(i2c_master_bus_handle_t external_bus_handle)
         any_device_initialized = true;
         ESP_LOGI(TAG, "HW-178初始化成功");
     }
+#else
+    ESP_LOGI(TAG, "HW-178功能已禁用（CONFIG_ENABLE_HW178=n）");
 #endif
 
     g_multiplexer_initialized = any_device_initialized;
@@ -652,16 +683,22 @@ void multiplexer_deinit(void)
     ESP_LOGI(TAG, "Multiplexer components deinitialized");
 }
 
-#ifdef CONFIG_ENABLE_PCA9548A
 // Function to check if PCA9548A is initialized
 bool pca9548a_is_initialized(void)
 {
+#ifndef CONFIG_ENABLE_PCA9548A
+    return false;
+#endif
     return g_pca9548a_initialized;
 }
 
 // Function to get PCA9548A handle for direct access
 pca9548a_handle_t pca9548a_get_handle(void)
 {
+#ifndef CONFIG_ENABLE_PCA9548A
+    ESP_LOGW(TAG, "PCA9548A功能已禁用");
+    return NULL;
+#endif
     if (!g_pca9548a_initialized) {
         ESP_LOGW(TAG, "PCA9548A handle requested but not initialized");
     }
@@ -671,6 +708,10 @@ pca9548a_handle_t pca9548a_get_handle(void)
 // Function to select a specific I2C channel
 esp_err_t pca9548a_select_channel(uint8_t channel)
 {
+#ifndef CONFIG_ENABLE_PCA9548A
+    ESP_LOGW(TAG, "PCA9548A功能已禁用");
+    return ESP_ERR_NOT_SUPPORTED;
+#endif
     if (!g_pca9548a_initialized || pca9548a_handle == NULL) {
         ESP_LOGE(TAG, "PCA9548A not initialized, cannot select channel");
         return ESP_ERR_INVALID_STATE; // 修改为返回错误代码而非ESP_OK
@@ -720,6 +761,10 @@ esp_err_t pca9548a_select_channel(uint8_t channel)
 // 选择级联复用器路径
 esp_err_t pca9548a_select_cascade_path(const pca9548a_cascade_path_t *path)
 {
+#ifndef CONFIG_ENABLE_PCA9548A
+    ESP_LOGW(TAG, "PCA9548A功能已禁用");
+    return ESP_ERR_NOT_SUPPORTED;
+#endif
     if (!g_pca9548a_initialized || pca9548a_handle == NULL) {
         ESP_LOGE(TAG, "PCA9548A not initialized");
         return ESP_ERR_INVALID_STATE;
@@ -755,6 +800,11 @@ esp_err_t pca9548a_select_cascade_path(const pca9548a_cascade_path_t *path)
 // 获取当前选中的复用器通道
 esp_err_t pca9548a_get_current_channel(uint8_t *channel)
 {
+#ifndef CONFIG_ENABLE_PCA9548A
+    ESP_LOGW(TAG, "PCA9548A功能已禁用");
+    if (channel) *channel = 0;
+    return ESP_ERR_NOT_SUPPORTED;
+#endif
     if (!g_pca9548a_initialized || pca9548a_handle == NULL) {
         ESP_LOGE(TAG, "PCA9548A not initialized");
         return ESP_ERR_INVALID_STATE;
@@ -777,6 +827,10 @@ esp_err_t pca9548a_get_current_channel(uint8_t *channel)
 // 禁用所有通道
 esp_err_t pca9548a_disable_all_channels(void)
 {
+#ifndef CONFIG_ENABLE_PCA9548A
+    ESP_LOGW(TAG, "PCA9548A功能已禁用");
+    return ESP_ERR_NOT_SUPPORTED;
+#endif
     if (!g_pca9548a_initialized || pca9548a_handle == NULL) {
         ESP_LOGE(TAG, "PCA9548A not initialized");
         return ESP_ERR_INVALID_STATE;
@@ -792,7 +846,6 @@ esp_err_t pca9548a_disable_all_channels(void)
     
     return ESP_OK;
 }
-#endif
 
 // 用于获取LVGL显示屏使用的I2C总线句柄
 // 这是一个简单的实现，基于特定项目的LVGL设置
@@ -835,6 +888,10 @@ i2c_master_bus_handle_t lvgl_port_get_i2c_bus_handle(void)
  */
 esp_err_t select_pca9548a_channel(pcf8575_dev_t *dev)
 {
+#ifndef CONFIG_ENABLE_PCA9548A
+    ESP_LOGW(TAG, "PCA9548A功能已禁用");
+    return ESP_ERR_NOT_SUPPORTED;
+#endif
     extern bool g_pca9548a_initialized;
     extern esp_err_t pca9548a_select_channel(uint8_t channel_mask);
     
