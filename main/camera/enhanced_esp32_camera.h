@@ -14,12 +14,8 @@
  * - Enhanced configuration options
  */
 
-typedef enum {
-    CAMERA_MODEL_UNKNOWN = 0,
-    CAMERA_MODEL_OV2640,
-    CAMERA_MODEL_OV3660,
-    CAMERA_MODEL_OV5640
-} camera_model_t;
+// Use the camera_model_t enum from esp_camera.h
+// Available models: CAMERA_OV2640, CAMERA_OV3660, CAMERA_OV5640, CAMERA_NONE
 
 typedef struct {
     camera_model_t model;
@@ -68,6 +64,7 @@ public:
     static bool IsModelSupported(camera_model_t model);
     static int GetSupportedModelsCount();
     static void GetSupportedModels(camera_model_t* models, int max_count);
+    static const char* GetModelNameStatic(camera_model_t model);
 
 private:
     enhanced_camera_config_t enhanced_config_;

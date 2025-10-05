@@ -140,14 +140,12 @@ bool McpCameraTools::RegisterPhotoTool() {
         return false;
     }
     
+    std::vector<Property> photo_properties = {
+        Property("question", kPropertyTypeString)
+    };
     mcp_server_->AddTool("self.camera.take_photo",
-        "Take a photo and explain it. Use this tool after the user asks you to see something.",
-        "Args:\n"
-        "- question (string): Optional question about what to look for in the photo\n"
-        "Returns: Description of what was captured in the photo",
-        PropertyList({
-            Property("question", kPropertyTypeString)
-        }),
+        "Take a photo and explain it. Use this tool after the user asks you to see something. Args: question (string): Optional question about what to look for in the photo. Returns: Description of what was captured in the photo",
+        PropertyList(photo_properties),
         TakePhotoTool);
     
     ESP_LOGI(TAG, "Photo tool registered");
@@ -159,14 +157,12 @@ bool McpCameraTools::RegisterFlashTool() {
         return false;
     }
     
+    std::vector<Property> flash_properties = {
+        Property("level", kPropertyTypeInteger, 0, 100)
+    };
     mcp_server_->AddTool("self.camera.flash",
-        "Control the camera flash LED.",
-        "Args:\n"
-        "- level (number): Flash intensity level (0-100)\n"
-        "Returns: Success status and current flash level",
-        PropertyList({
-            Property("level", kPropertyTypeNumber)
-        }),
+        "Control the camera flash LED. Args: level (integer): Flash intensity level (0-100). Returns: Success status and current flash level",
+        PropertyList(flash_properties),
         FlashControlTool);
     
     ESP_LOGI(TAG, "Flash tool registered");
@@ -178,16 +174,13 @@ bool McpCameraTools::RegisterConfigTool() {
         return false;
     }
     
+    std::vector<Property> config_properties = {
+        Property("parameter", kPropertyTypeString),
+        Property("value", kPropertyTypeString)
+    };
     mcp_server_->AddTool("self.camera.set_config",
-        "Configure camera parameters like brightness, contrast, saturation.",
-        "Args:\n"
-        "- parameter (string): Parameter name (brightness, contrast, saturation, hmirror, vflip)\n"
-        "- value (number/boolean): Parameter value\n"
-        "Returns: Success status and current parameter value",
-        PropertyList({
-            Property("parameter", kPropertyTypeString),
-            Property("value", kPropertyTypeAny)
-        }),
+        "Configure camera parameters like brightness, contrast, saturation. Args: parameter (string): Parameter name (brightness, contrast, saturation, hmirror, vflip), value (string): Parameter value. Returns: Success status and current parameter value",
+        PropertyList(config_properties),
         ConfigControlTool);
     
     ESP_LOGI(TAG, "Config tool registered");
@@ -199,14 +192,12 @@ bool McpCameraTools::RegisterSwitchTool() {
         return false;
     }
     
+    std::vector<Property> switch_properties = {
+        Property("enabled", kPropertyTypeBoolean)
+    };
     mcp_server_->AddTool("self.camera.switch",
-        "Enable or disable the camera system.",
-        "Args:\n"
-        "- enabled (boolean): True to enable camera, false to disable\n"
-        "Returns: Success status and current camera state",
-        PropertyList({
-            Property("enabled", kPropertyTypeBoolean)
-        }),
+        "Enable or disable the camera system. Args: enabled (boolean): True to enable camera, false to disable. Returns: Success status and current camera state",
+        PropertyList(switch_properties),
         SwitchControlTool);
     
     ESP_LOGI(TAG, "Switch tool registered");
@@ -219,8 +210,7 @@ bool McpCameraTools::RegisterStatusTool() {
     }
     
     mcp_server_->AddTool("self.camera.get_status",
-        "Get current camera status and configuration.",
-        "Returns: JSON object with camera status, configuration, and capabilities",
+        "Get current camera status and configuration. Returns: JSON object with camera status, configuration, and capabilities",
         PropertyList(),
         StatusTool);
     
@@ -243,8 +233,10 @@ ReturnValue McpCameraTools::TakePhotoTool(const PropertyList& properties) {
     
     // Get question parameter
     std::string question = "";
-    if (properties.find("question") != properties.end()) {
-        question = properties.at("question").value<std::string>();
+    try {
+        question = properties["question"].value<std::string>();
+    } catch (const std::runtime_error&) {
+        // Question parameter is optional
     }
     
     // Take photo
@@ -271,8 +263,10 @@ ReturnValue McpCameraTools::FlashControlTool(const PropertyList& properties) {
     
     // Get level parameter
     int level = 0;
-    if (properties.find("level") != properties.end()) {
-        level = static_cast<int>(properties.at("level").value<double>());
+    try {
+        level = properties["level"].value<int>();
+    } catch (const std::runtime_error&) {
+        throw std::runtime_error("Missing required parameter: level");
     }
     
     // Set flash level
@@ -303,33 +297,38 @@ ReturnValue McpCameraTools::ConfigControlTool(const PropertyList& properties) {
     }
     
     // Get parameters
-    if (properties.find("parameter") == properties.end()) {
+    std::string parameter;
+    try {
+        parameter = properties["parameter"].value<std::string>();
+    } catch (const std::runtime_error&) {
         throw std::runtime_error("Parameter name is required");
-    }
-    
-    std::string parameter = properties.at("parameter").value<std::string>();
-    
-    if (properties.find("value") == properties.end()) {
-        throw std::runtime_error("Parameter value is required");
     }
     
     bool success = false;
     
+    // Get value parameter
+    std::string value_str;
+    try {
+        value_str = properties["value"].value<std::string>();
+    } catch (const std::runtime_error&) {
+        throw std::runtime_error("Parameter value is required");
+    }
+    
     // Set parameter based on type
     if (parameter == "brightness") {
-        int value = static_cast<int>(properties.at("value").value<double>());
+        int value = std::stoi(value_str);
         success = instance->camera_->SetBrightness(value);
     } else if (parameter == "contrast") {
-        int value = static_cast<int>(properties.at("value").value<double>());
+        int value = std::stoi(value_str);
         success = instance->camera_->SetContrast(value);
     } else if (parameter == "saturation") {
-        int value = static_cast<int>(properties.at("value").value<double>());
+        int value = std::stoi(value_str);
         success = instance->camera_->SetSaturation(value);
     } else if (parameter == "hmirror") {
-        bool value = properties.at("value").value<bool>();
+        bool value = (value_str == "true" || value_str == "1");
         success = instance->camera_->SetHMirror(value);
     } else if (parameter == "vflip") {
-        bool value = properties.at("value").value<bool>();
+        bool value = (value_str == "true" || value_str == "1");
         success = instance->camera_->SetVFlip(value);
     } else {
         throw std::runtime_error("Unknown parameter: " + parameter);
@@ -365,11 +364,12 @@ ReturnValue McpCameraTools::SwitchControlTool(const PropertyList& properties) {
     }
     
     // Get enabled parameter
-    if (properties.find("enabled") == properties.end()) {
+    bool enabled;
+    try {
+        enabled = properties["enabled"].value<bool>();
+    } catch (const std::runtime_error&) {
         throw std::runtime_error("Enabled parameter is required");
     }
-    
-    bool enabled = properties.at("enabled").value<bool>();
     
     // Set camera enabled state
     bool success = instance->resource_manager_->SetCameraEnabled(enabled);

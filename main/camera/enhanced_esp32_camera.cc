@@ -1,13 +1,13 @@
 #include "enhanced_esp32_camera.h"
-#include "config.h"
 #include <esp_log.h>
 #include <driver/gpio.h>
 #include <driver/ledc.h>
+#include <sensor.h>
 
 #define TAG "EnhancedEsp32Camera"
 
 EnhancedEsp32Camera::EnhancedEsp32Camera(const camera_config_t& config, const enhanced_camera_config_t& enhanced_config)
-    : Esp32Camera(config), enhanced_config_(enhanced_config), detected_model_(CAMERA_MODEL_UNKNOWN), 
+    : Esp32Camera(config), enhanced_config_(enhanced_config), detected_model_(CAMERA_NONE), 
       initialized_(false), resource_manager_(nullptr) {
     
     if (enhanced_config_.resource_managed) {
@@ -111,7 +111,7 @@ bool EnhancedEsp32Camera::AutoDetectSensor() {
     
 #ifdef CONFIG_CAMERA_OV5640_SUPPORT
     if (DetectOV5640()) {
-        detected_model_ = CAMERA_MODEL_OV5640;
+        detected_model_ = CAMERA_OV5640;
         ESP_LOGI(TAG, "Detected OV5640 camera sensor");
         return true;
     }
@@ -119,7 +119,7 @@ bool EnhancedEsp32Camera::AutoDetectSensor() {
     
 #ifdef CONFIG_CAMERA_OV3660_SUPPORT
     if (DetectOV3660()) {
-        detected_model_ = CAMERA_MODEL_OV3660;
+        detected_model_ = CAMERA_OV3660;
         ESP_LOGI(TAG, "Detected OV3660 camera sensor");
         return true;
     }
@@ -127,7 +127,7 @@ bool EnhancedEsp32Camera::AutoDetectSensor() {
     
 #ifdef CONFIG_CAMERA_OV2640_SUPPORT
     if (DetectOV2640()) {
-        detected_model_ = CAMERA_MODEL_OV2640;
+        detected_model_ = CAMERA_OV2640;
         ESP_LOGI(TAG, "Detected OV2640 camera sensor");
         return true;
     }
@@ -156,9 +156,9 @@ camera_model_t EnhancedEsp32Camera::GetDetectedModel() const {
 
 const char* EnhancedEsp32Camera::GetModelName(camera_model_t model) const {
     switch (model) {
-        case CAMERA_MODEL_OV2640: return "OV2640";
-        case CAMERA_MODEL_OV3660: return "OV3660";
-        case CAMERA_MODEL_OV5640: return "OV5640";
+        case CAMERA_OV2640: return "OV2640";
+        case CAMERA_OV3660: return "OV3660";
+        case CAMERA_OV5640: return "OV5640";
         default: return "Unknown";
     }
 }
@@ -213,21 +213,21 @@ int EnhancedEsp32Camera::GetFlashLevel() const {
 
 bool EnhancedEsp32Camera::ApplyModelOptimizations() {
     switch (detected_model_) {
-        case CAMERA_MODEL_OV2640:
+        case CAMERA_OV2640:
             // OV2640 optimizations
             SetBrightness(0);
             SetContrast(0);
             SetSaturation(0);
             break;
             
-        case CAMERA_MODEL_OV3660:
+        case CAMERA_OV3660:
             // OV3660 optimizations
             SetBrightness(1);
             SetContrast(1);
             SetSaturation(0);
             break;
             
-        case CAMERA_MODEL_OV5640:
+        case CAMERA_OV5640:
             // OV5640 optimizations
             SetBrightness(0);
             SetContrast(2);
@@ -247,21 +247,21 @@ bool EnhancedEsp32Camera::SetModelSpecificSettings(camera_model_t model) {
     ESP_LOGI(TAG, "Configuring settings for %s", GetModelName(model));
     
     switch (model) {
-        case CAMERA_MODEL_OV2640:
+        case CAMERA_OV2640:
 #ifdef CONFIG_CAMERA_OV2640_SUPPORT
             return InitializeOV2640();
 #else
             ESP_LOGW(TAG, "OV2640 support not enabled in configuration");
             return false;
 #endif
-        case CAMERA_MODEL_OV3660:
+        case CAMERA_OV3660:
 #ifdef CONFIG_CAMERA_OV3660_SUPPORT
             return InitializeOV3660();
 #else
             ESP_LOGW(TAG, "OV3660 support not enabled in configuration");
             return false;
 #endif
-        case CAMERA_MODEL_OV5640:
+        case CAMERA_OV5640:
 #ifdef CONFIG_CAMERA_OV5640_SUPPORT
             return InitializeOV5640();
 #else
@@ -292,19 +292,19 @@ bool EnhancedEsp32Camera::UpdateEnhancedConfig(const enhanced_camera_config_t& c
 // Static methods for model support queries
 bool EnhancedEsp32Camera::IsModelSupported(camera_model_t model) {
     switch (model) {
-        case CAMERA_MODEL_OV2640:
+        case CAMERA_OV2640:
 #ifdef CONFIG_CAMERA_OV2640_SUPPORT
             return true;
 #else
             return false;
 #endif
-        case CAMERA_MODEL_OV3660:
+        case CAMERA_OV3660:
 #ifdef CONFIG_CAMERA_OV3660_SUPPORT
             return true;
 #else
             return false;
 #endif
-        case CAMERA_MODEL_OV5640:
+        case CAMERA_OV5640:
 #ifdef CONFIG_CAMERA_OV5640_SUPPORT
             return true;
 #else
@@ -334,19 +334,28 @@ void EnhancedEsp32Camera::GetSupportedModels(camera_model_t* models, int max_cou
     
 #ifdef CONFIG_CAMERA_OV2640_SUPPORT
     if (index < max_count) {
-        models[index++] = CAMERA_MODEL_OV2640;
+        models[index++] = CAMERA_OV2640;
     }
 #endif
 #ifdef CONFIG_CAMERA_OV3660_SUPPORT
     if (index < max_count) {
-        models[index++] = CAMERA_MODEL_OV3660;
+        models[index++] = CAMERA_OV3660;
     }
 #endif
 #ifdef CONFIG_CAMERA_OV5640_SUPPORT
     if (index < max_count) {
-        models[index++] = CAMERA_MODEL_OV5640;
+        models[index++] = CAMERA_OV5640;
     }
 #endif
+}
+
+const char* EnhancedEsp32Camera::GetModelNameStatic(camera_model_t model) {
+    switch (model) {
+        case CAMERA_OV2640: return "OV2640";
+        case CAMERA_OV3660: return "OV3660";
+        case CAMERA_OV5640: return "OV5640";
+        default: return "Unknown";
+    }
 }
 
 // Private methods
@@ -357,20 +366,20 @@ bool EnhancedEsp32Camera::DetectOV2640() {
     
     // OV2640 has manufacturer ID 0x7FA2 at registers 0x1C and 0x1D
     // Product ID 0x2642 at registers 0x0A and 0x0B
-    sensor_id_t* sensor = esp_camera_sensor_get();
+    sensor_t* sensor = esp_camera_sensor_get();
     if (sensor == nullptr) {
         ESP_LOGW(TAG, "Cannot get camera sensor for OV2640 detection");
         return false;
     }
     
     // Read manufacturer ID
-    uint8_t mid_h = sensor->get_reg(sensor, 0x1C);
-    uint8_t mid_l = sensor->get_reg(sensor, 0x1D);
+    uint8_t mid_h = sensor->get_reg(sensor, 0x1C, 0xFF);
+    uint8_t mid_l = sensor->get_reg(sensor, 0x1D, 0xFF);
     uint16_t manufacturer_id = (mid_h << 8) | mid_l;
     
     // Read product ID
-    uint8_t pid_h = sensor->get_reg(sensor, 0x0A);
-    uint8_t pid_l = sensor->get_reg(sensor, 0x0B);
+    uint8_t pid_h = sensor->get_reg(sensor, 0x0A, 0xFF);
+    uint8_t pid_l = sensor->get_reg(sensor, 0x0B, 0xFF);
     uint16_t product_id = (pid_h << 8) | pid_l;
     
     ESP_LOGD(TAG, "OV2640 detection - MID: 0x%04X, PID: 0x%04X", manufacturer_id, product_id);
@@ -388,15 +397,15 @@ bool EnhancedEsp32Camera::DetectOV3660() {
     // OV3660 detection logic - check sensor ID registers
     ESP_LOGD(TAG, "Attempting to detect OV3660");
     
-    sensor_id_t* sensor = esp_camera_sensor_get();
+    sensor_t* sensor = esp_camera_sensor_get();
     if (sensor == nullptr) {
         ESP_LOGW(TAG, "Cannot get camera sensor for OV3660 detection");
         return false;
     }
     
     // OV3660 has chip ID 0x3660 at registers 0x300A and 0x300B
-    uint8_t chip_id_h = sensor->get_reg(sensor, 0x300A);
-    uint8_t chip_id_l = sensor->get_reg(sensor, 0x300B);
+    uint8_t chip_id_h = sensor->get_reg(sensor, 0x300A, 0xFF);
+    uint8_t chip_id_l = sensor->get_reg(sensor, 0x300B, 0xFF);
     uint16_t chip_id = (chip_id_h << 8) | chip_id_l;
     
     ESP_LOGD(TAG, "OV3660 detection - Chip ID: 0x%04X", chip_id);
@@ -414,15 +423,15 @@ bool EnhancedEsp32Camera::DetectOV5640() {
     // OV5640 detection logic - check sensor ID registers
     ESP_LOGD(TAG, "Attempting to detect OV5640");
     
-    sensor_id_t* sensor = esp_camera_sensor_get();
+    sensor_t* sensor = esp_camera_sensor_get();
     if (sensor == nullptr) {
         ESP_LOGW(TAG, "Cannot get camera sensor for OV5640 detection");
         return false;
     }
     
     // OV5640 has chip ID 0x5640 at registers 0x300A and 0x300B
-    uint8_t chip_id_h = sensor->get_reg(sensor, 0x300A);
-    uint8_t chip_id_l = sensor->get_reg(sensor, 0x300B);
+    uint8_t chip_id_h = sensor->get_reg(sensor, 0x300A, 0xFF);
+    uint8_t chip_id_l = sensor->get_reg(sensor, 0x300B, 0xFF);
     uint16_t chip_id = (chip_id_h << 8) | chip_id_l;
     
     ESP_LOGD(TAG, "OV5640 detection - Chip ID: 0x%04X", chip_id);
@@ -439,7 +448,7 @@ bool EnhancedEsp32Camera::DetectOV5640() {
 bool EnhancedEsp32Camera::InitializeOV2640() {
     ESP_LOGD(TAG, "Initializing OV2640 specific settings");
     
-    sensor_id_t* sensor = esp_camera_sensor_get();
+    sensor_t* sensor = esp_camera_sensor_get();
     if (sensor == nullptr) {
         ESP_LOGE(TAG, "Cannot get camera sensor for OV2640 initialization");
         return false;
@@ -476,7 +485,7 @@ bool EnhancedEsp32Camera::InitializeOV2640() {
 bool EnhancedEsp32Camera::InitializeOV3660() {
     ESP_LOGD(TAG, "Initializing OV3660 specific settings");
     
-    sensor_id_t* sensor = esp_camera_sensor_get();
+    sensor_t* sensor = esp_camera_sensor_get();
     if (sensor == nullptr) {
         ESP_LOGE(TAG, "Cannot get camera sensor for OV3660 initialization");
         return false;
@@ -511,7 +520,7 @@ bool EnhancedEsp32Camera::InitializeOV3660() {
 bool EnhancedEsp32Camera::InitializeOV5640() {
     ESP_LOGD(TAG, "Initializing OV5640 specific settings");
     
-    sensor_id_t* sensor = esp_camera_sensor_get();
+    sensor_t* sensor = esp_camera_sensor_get();
     if (sensor == nullptr) {
         ESP_LOGE(TAG, "Cannot get camera sensor for OV5640 initialization");
         return false;
@@ -539,9 +548,9 @@ bool EnhancedEsp32Camera::InitializeOV5640() {
     sensor->set_aec_value(sensor, 400);
     sensor->set_aec2(sensor, 0);
     
-    // OV5640 supports auto-focus
-    if (sensor->set_lens_correction) {
-        sensor->set_lens_correction(sensor, 1);
+    // OV5640 supports lens correction (if available)
+    if (sensor->set_lenc) {
+        sensor->set_lenc(sensor, 1);
     }
     
     ESP_LOGI(TAG, "OV5640 initialized with premium settings");

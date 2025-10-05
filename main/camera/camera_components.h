@@ -65,6 +65,7 @@ public:
     static CameraResourceManager* GetResourceManager();
     static VisionIntegration* GetVisionIntegration();
     static McpCameraTools* GetMcpTools();
+    static EnhancedEsp32Camera* GetEnhancedCamera();
     
     // System status
     static bool IsCameraSystemInitialized();

@@ -1,5 +1,4 @@
 #include "camera_components.h"
-#include "config.h"
 #include <esp_log.h>
 #include <cJSON.h>
 
@@ -176,6 +175,10 @@ McpCameraTools* CameraComponentFactory::GetMcpTools() {
     return &McpCameraTools::GetInstance();
 }
 
+EnhancedEsp32Camera* CameraComponentFactory::GetEnhancedCamera() {
+    return enhanced_camera_;
+}
+
 // System status
 
 bool CameraComponentFactory::IsCameraSystemInitialized() {
@@ -247,7 +250,7 @@ namespace CameraSystemHelpers {
 
 enhanced_camera_config_t CreateDefaultEnhancedConfig() {
     enhanced_camera_config_t config = {};
-    config.model = CAMERA_MODEL_OV2640;
+    config.model = CAMERA_OV2640;
     config.auto_detect = true;
     config.resource_managed = true;
     config.vision_enabled = true;
@@ -305,7 +308,7 @@ enhanced_camera_config_t CreateS3CamEnhancedConfig() {
     enhanced_camera_config_t config = CreateDefaultEnhancedConfig();
     
     // S3Cam specific configuration
-    config.model = CAMERA_MODEL_OV2640;
+    config.model = CAMERA_OV2640;
     config.auto_detect = true;
     config.resource_managed = true;
     config.vision_enabled = true;
@@ -373,7 +376,7 @@ bool IsCameraAvailable() {
         return vision_integration->IsCameraAvailable();
     }
     
-    return CameraComponentFactory::enhanced_camera_ != nullptr;
+    return CameraComponentFactory::GetEnhancedCamera() != nullptr;
 }
 
 bool IsVisionActive() {

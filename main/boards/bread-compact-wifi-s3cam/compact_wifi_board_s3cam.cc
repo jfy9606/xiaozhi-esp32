@@ -180,13 +180,14 @@ private:
     }
 
     void ToggleCameraState() {
-        if (!resource_manager_) {
+        auto* resource_manager = CameraComponentFactory::GetResourceManager();
+        if (!resource_manager) {
             ESP_LOGW(TAG, "Resource manager not available");
             GetDisplay()->ShowNotification("Resource Manager Error");
             return;
         }
         
-        bool current_state = resource_manager_->IsCameraEnabled();
+        bool current_state = resource_manager->IsCameraEnabled();
         bool new_state = !current_state;
         
         ESP_LOGI(TAG, "Toggling camera state from %s to %s", 
@@ -194,7 +195,7 @@ private:
                  new_state ? "enabled" : "disabled");
         
         // Log current resource state before transition
-        resource_state_t current_resource_state = resource_manager_->GetResourceState();
+        resource_state_t current_resource_state = resource_manager->GetResourceState();
         ESP_LOGI(TAG, "Current resource state: %d", current_resource_state);
         
         if (new_state) {
@@ -218,7 +219,7 @@ private:
         }
         
         // Log final resource state after transition
-        resource_state_t final_resource_state = resource_manager_->GetResourceState();
+        resource_state_t final_resource_state = resource_manager->GetResourceState();
         ESP_LOGI(TAG, "Final resource state: %d", final_resource_state);
     }
 
@@ -288,7 +289,7 @@ public:
         // Log camera configuration
         ESP_LOGI(TAG, "Camera Configuration:");
         ESP_LOGI(TAG, "  Auto-detect: %s", CAMERA_AUTO_DETECT_ENABLED ? "Enabled" : "Disabled");
-        ESP_LOGI(TAG, "  Default Model: %s", EnhancedEsp32Camera::GetModelName(CAMERA_DEFAULT_MODEL));
+        ESP_LOGI(TAG, "  Default Model: %s", EnhancedEsp32Camera::GetModelNameStatic(CAMERA_DEFAULT_MODEL));
         ESP_LOGI(TAG, "  Flash Pin: %s", CAMERA_FLASH_PIN != GPIO_NUM_NC ? "Configured" : "Disabled");
         
         // Log supported camera models
@@ -297,7 +298,7 @@ public:
         camera_model_t supported_models[3];
         EnhancedEsp32Camera::GetSupportedModels(supported_models, 3);
         for (int i = 0; i < supported_count; i++) {
-            ESP_LOGI(TAG, "    - %s", EnhancedEsp32Camera::GetModelName(supported_models[i]));
+            ESP_LOGI(TAG, "    - %s", EnhancedEsp32Camera::GetModelNameStatic(supported_models[i]));
         }
         
         ESP_LOGI(TAG, "Audio Mode: %s", 
@@ -373,7 +374,7 @@ public:
         if (camera_system_initialized_ && CameraSystemHelpers::IsCameraAvailable()) {
             auto* resource_manager = CameraComponentFactory::GetResourceManager();
             if (resource_manager && resource_manager->GetResourceState() == RESOURCE_CAMERA_ACTIVE) {
-                return CameraComponentFactory::enhanced_camera_;
+                return CameraComponentFactory::GetEnhancedCamera();
             }
         }
         return nullptr;
@@ -414,7 +415,7 @@ public:
             return false;
         }
         
-        auto* enhanced_camera = CameraComponentFactory::enhanced_camera_;
+        auto* enhanced_camera = CameraComponentFactory::GetEnhancedCamera();
         if (!enhanced_camera || !EnhancedEsp32Camera::IsModelSupported(model)) {
             ESP_LOGW(TAG, "Cannot set camera model - camera not available or model not supported");
             return false;
@@ -467,12 +468,12 @@ public:
 
     camera_model_t GetCurrentCameraModel() const {
         if (camera_system_initialized_) {
-            auto* enhanced_camera = CameraComponentFactory::enhanced_camera_;
+            auto* enhanced_camera = CameraComponentFactory::GetEnhancedCamera();
             if (enhanced_camera) {
                 return enhanced_camera->GetDetectedModel();
             }
         }
-        return CAMERA_MODEL_UNKNOWN;
+        return CAMERA_NONE;
     }
 
     // System status for debugging and verification
@@ -489,7 +490,7 @@ public:
     }
 
     // Resource state monitoring
-    void OnWheelRun(int interval_ms) override {
+    void OnWheelRun(int interval_ms) {
         static uint32_t last_log_time = 0;
         uint32_t current_time = esp_log_timestamp();
         
