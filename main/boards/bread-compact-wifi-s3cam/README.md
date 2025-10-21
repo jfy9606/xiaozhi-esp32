@@ -11,6 +11,47 @@ bread-compact 系列开发板支持四种扩展器，通过统一的I2C总线和
 3. **PCF8575 GPIO扩展器** - 16个额外GPIO引脚
 4. **HW-178 模拟多路复用器** - 16通道模拟信号采集
 
+**摄像头支持：** bread-compact-wifi-s3cam 使用 ESP-IDF 官方摄像头支持，通过 menuconfig 配置传感器型号，支持 OV2640 等主流传感器的自动检测。
+
+## 摄像头系统架构
+
+### 设计理念
+
+bread-compact-wifi-s3cam 采用 ESP-IDF 官方摄像头驱动，具有以下优势：
+
+- **官方支持**: 使用 Espressif 官方维护的摄像头驱动，稳定可靠
+- **自动检测**: 支持多种传感器型号的自动检测和配置
+- **标准API**: 遵循ESP-IDF标准，便于开发者理解和使用
+- **简化维护**: 无需维护自定义摄像头兼容性代码
+
+### 支持的传感器
+
+通过 ESP-IDF 的 `esp_cam_sensor` 组件支持：
+- **OV2640**: 2MP CMOS图像传感器（推荐）
+- **OV3660**: 3MP CMOS图像传感器
+- **OV5640**: 5MP CMOS图像传感器
+- **其他**: 根据ESP-IDF版本支持更多型号
+
+### 系统集成
+
+```
+应用层
+├── board.GetCameraFrameBuffer()     // 获取图像帧
+├── board.ReturnCameraFrameBuffer()  // 释放帧缓冲区
+└── board.IsCameraEnabled()          // 检查摄像头状态
+
+ESP-IDF摄像头驱动层
+├── esp_camera_init()                // 摄像头初始化
+├── esp_camera_fb_get()              // 获取帧缓冲区
+├── esp_camera_fb_return()           // 释放帧缓冲区
+└── esp_camera_deinit()              // 摄像头反初始化
+
+硬件抽象层
+├── 传感器自动检测
+├── 引脚配置管理
+└── 时钟和电源管理
+```
+
 ## 硬件连接
 
 ### 主控板引脚分配
@@ -185,8 +226,8 @@ idf.py menuconfig
 #### 可配置项目
 
 **PCA9548A I2C多路复用器**:
-- `CONFIG_PCA9548A_SDA_PIN` - SDA引脚 (默认: GPIO20 for S3CAM, GPIO8 for others)
-- `CONFIG_PCA9548A_SCL_PIN` - SCL引脚 (默认: GPIO21 for S3CAM, GPIO9 for others)  
+- `CONFIG_PCA9548A_SDA_PIN` - SDA引脚 (默认: GPIO14 for S3CAM, GPIO8 for others)
+- `CONFIG_PCA9548A_SCL_PIN` - SCL引脚 (默认: GPIO46 for S3CAM, GPIO9 for others)  
 - `CONFIG_PCA9548A_I2C_ADDR` - I2C地址 (默认: 0x70)
 - `CONFIG_PCA9548A_RESET_PIN` - 复位引脚 (默认: -1, 不使用)
 - `CONFIG_PCA9548A_I2C_FREQ_HZ` - I2C频率 (默认: 400000Hz)
@@ -206,9 +247,9 @@ idf.py menuconfig
 - `CONFIG_HW178_S1_PIN` - S1控制引脚 (默认: GPIO36 for S3CAM, GPIO11 for others)
 - `CONFIG_HW178_S2_PIN` - S2控制引脚 (默认: GPIO37 for S3CAM, GPIO12 for others)
 - `CONFIG_HW178_S3_PIN` - S3控制引脚 (默认: -1, 不使用)
-- `CONFIG_HW178_SIG_PIN` - 信号输出引脚 (默认: GPIO46 for S3CAM, GPIO14 for others)
+- `CONFIG_HW178_SIG_PIN` - 信号输出引脚 (默认: GPIO3 for S3CAM, GPIO14 for others)
 - `CONFIG_HW178_EN_PIN` - 使能引脚 (默认: -1, 不使用)
-- `CONFIG_HW178_ADC_CHANNEL` - ADC通道 (默认: 5 for S3CAM, 3 for others)
+- `CONFIG_HW178_ADC_CHANNEL` - ADC通道 (默认: ADC1_CH2 for S3CAM, ADC2_CH3 for others)
 
 **功能启用开关**:
 - `CONFIG_ENABLE_MULTIPLEXER` - 启用扩展器系统
@@ -242,11 +283,87 @@ CONFIG_ENABLE_PCF8575=n
 CONFIG_ENABLE_HW178=n
 ```
 
+### 摄像头配置 (ESP-IDF官方支持)
+
+> **重要更新：** bread-compact-wifi-s3cam 现已使用 ESP-IDF 官方摄像头支持，无需自定义摄像头实现。
+
+**配置摄像头传感器：**
+
+> **注意：** 确认摄像头传感器型号，确定型号在 esp_cam_sensor 支持的范围内。当前板子用的是 OV2640，是符合支持范围。
+
+在 menuconfig 中按以下步骤启用对应型号的支持：
+
+1. **导航到传感器配置：**
+   ```
+   (Top) → Component config → Espressif Camera Sensors Configurations → Camera Sensor Configuration → Select and Set Camera Sensor
+   ```
+
+2. **选择传感器型号：**
+   - 选中所需的传感器型号（OV2640）
+
+3. **配置传感器参数：**
+   - 按 → 进入传感器详细设置
+   - 启用 **Auto detect**
+   - 推荐将 **default output format** 调整为 **YUV422** 及合适的分辨率大小
+   - （目前支持 YUV422、RGB565，YUV422 更节省内存空间）
+
+**摄像头API使用：**
+
+```cpp
+// 获取摄像头帧缓冲区
+camera_fb_t* fb = board.GetCameraFrameBuffer();
+if (fb) {
+    // 处理图像数据
+    printf("Image: %dx%d, format: %d, size: %d bytes\n", 
+           fb->width, fb->height, fb->format, fb->len);
+    
+    // 使用图像数据 fb->buf
+    // ...
+    
+    // 释放帧缓冲区
+    board.ReturnCameraFrameBuffer(fb);
+}
+
+// 检查摄像头状态
+if (board.IsCameraEnabled()) {
+    printf("Camera is ready\n");
+}
+```
+
+**编译烧入：**
+
 ### 初始化
 
 扩展器在板子初始化时自动初始化，根据Kconfig配置使用相应的引脚和参数。无需手动调用初始化函数。
 
 ### API使用示例
+
+#### 摄像头使用 (ESP-IDF官方API)
+```cpp
+// 获取摄像头帧缓冲区
+camera_fb_t* fb = board.GetCameraFrameBuffer();
+if (fb) {
+    // 处理图像数据
+    printf("Image: %dx%d, format: %d, size: %d bytes\n", 
+           fb->width, fb->height, fb->format, fb->len);
+    
+    // 使用图像数据进行处理
+    // uint8_t* image_data = fb->buf;
+    // size_t image_size = fb->len;
+    
+    // 释放帧缓冲区
+    board.ReturnCameraFrameBuffer(fb);
+} else {
+    printf("Failed to capture image\n");
+}
+
+// 检查摄像头状态
+if (board.IsCameraEnabled()) {
+    printf("Camera is initialized and ready\n");
+}
+
+// 长按Boot按键可以切换摄像头开关状态
+```
 
 #### 舵机控制
 ```cpp
@@ -317,16 +434,19 @@ printf("Expander Status: %s\n", status.c_str());
 ## 应用场景
 
 ### 智能机器人
+- **摄像头**: 视觉识别、图像处理、远程监控
 - **舵机控制**: 机械臂、云台、轮子控制
 - **GPIO扩展**: LED指示灯、传感器电源控制
 - **模拟采集**: 距离传感器、电压监测
 
 ### 物联网监测
+- **摄像头**: 安防监控、图像采集、AI视觉分析
 - **GPIO扩展**: 继电器控制、状态指示
 - **模拟采集**: 温湿度、光照、土壤湿度传感器
 - **I2C扩展**: 多个传感器模块
 
 ### 工业控制
+- **摄像头**: 质量检测、产品识别、过程监控
 - **舵机控制**: 阀门、执行器控制
 - **GPIO扩展**: 电机驱动、报警输出
 - **模拟采集**: 压力、流量、温度监测
@@ -343,7 +463,7 @@ printf("Expander Status: %s\n", status.c_str());
 
 ## 注意事项
 
-1. **电源供应**: 确保3.3V电源能够提供足够电流给所有扩展器
+1. **电源供应**: 确保3.3V电源能够提供足够电流给所有扩展器和摄像头
 2. **I2C上拉**: I2C总线需要上拉电阻，通常4.7kΩ到10kΩ
 3. **地线连接**: 所有设备必须共地
 4. **信号完整性**: I2C总线长度不宜过长，建议小于1米
@@ -351,11 +471,30 @@ printf("Expander Status: %s\n", status.c_str());
 6. **引脚复用**: 扩展器使用的GPIO可能与其他功能复用，使用时需注意冲突
 7. **ADC精度**: HW-178的ADC精度受ESP32-S3内置ADC限制，约12位精度
 8. **舵机电源**: LU9685控制的舵机通常需要5V电源，确保电源充足
-9. **GPIO冲突修复**: 已修复motor引脚与显示引脚的冲突问题，motor控制现在完全通过PCF8575扩展器实现
-10. **I2C引脚重分配**: S3CAM开板的I2C引引脚已从UART0引脚(GPIO43/44)重新分配到GPIO14/4634
-11. **MSPI稳定性**: 已优化PSRAM和Flash时序配置，确保系统启动稳定
+9. **摄像头配置**: 使用ESP-IDF官方摄像头支持，通过menuconfig配置传感器型号
+10. **音频冲突**: 摄像头启用时，duplex音频模式可能存在引脚冲突，建议使用simplex模式
+11. **GPIO冲突修复**: 已修复motor引脚与显示引脚的冲突问题，motor控制现在完全通过PCF8575扩展器实现
+12. **I2C引脚重分配**: S3CAM开发板的I2C引脚已重新分配到GPIO14/GPIO46，避免与UART0冲突
+13. **MSPI稳定性**: 已优化PSRAM和Flash时序配置，确保系统启动稳定
 
 ## 故障排除
+
+### 摄像头问题
+1. **摄像头初始化失败**
+   - 检查摄像头模块连接是否正确
+   - 确认在menuconfig中选择了正确的传感器型号
+   - 检查摄像头电源供应（通常需要3.3V）
+   - 验证摄像头引脚配置是否正确
+
+2. **无法获取图像**
+   - 检查摄像头是否正确初始化（`board.IsCameraEnabled()`）
+   - 确认帧缓冲区配置正确
+   - 检查PSRAM是否可用（摄像头需要PSRAM存储图像）
+
+3. **图像质量问题**
+   - 调整JPEG质量设置
+   - 检查摄像头焦距和光照条件
+   - 尝试不同的图像格式（YUV422, RGB565）
 
 ### 扩展器初始化失败
 1. 检查I2C接线是否正确
@@ -379,6 +518,11 @@ printf("Expander Status: %s\n", status.c_str());
 3. 检查通道选择是否正确
 4. 添加适当的滤波电路
 
+### 音频与摄像头冲突
+1. 如果同时使用摄像头和音频，建议使用simplex音频模式
+2. 检查引脚冲突：GPIO5, GPIO6, GPIO7可能存在冲突
+3. 考虑在应用中动态切换摄像头和音频功能
+
 ## 实现状态
 
 ✅ **完全支持的开发板**:
@@ -401,28 +545,81 @@ printf("Expander Status: %s\n", status.c_str());
 ## 快速开始
 
 1. **选择开发板**: 根据需求选择合适的bread-compact板子
-2. **连接硬件**: 按照引脚分配表连接扩展器模块
-3. **编译固件**: 使用ESP-IDF编译对应板子的固件
-4. **查看日志**: 启动后检查扩展器初始化状态
-5. **调用API**: 使用板子提供的扩展器API控制硬件
+2. **配置摄像头**: 在menuconfig中配置摄像头传感器型号（S3CAM板子）
+3. **连接硬件**: 按照引脚分配表连接扩展器模块
+4. **编译固件**: 使用ESP-IDF编译对应板子的固件
+5. **查看日志**: 启动后检查扩展器和摄像头初始化状态
+6. **调用API**: 使用板子提供的扩展器和摄像头API控制硬件
+
+### S3CAM板子特殊步骤
+
+**摄像头配置：**
+```bash
+idf.py menuconfig
+# 导航到: Component config → Espressif Camera Sensors Configurations
+# 选择并配置 OV2640 传感器
+```
+
+**测试摄像头：**
+```cpp
+// 在应用代码中测试摄像头
+if (board.IsCameraEnabled()) {
+    camera_fb_t* fb = board.GetCameraFrameBuffer();
+    if (fb) {
+        ESP_LOGI("TEST", "Captured image: %dx%d, %d bytes", 
+                 fb->width, fb->height, fb->len);
+        board.ReturnCameraFrameBuffer(fb);
+    }
+}
+```
 
 ## 扩展开发
 
+### 扩展器开发
 可以基于现有框架添加更多扩展器支持：
 - 更多I2C传感器模块
 - SPI接口扩展器
 - CAN总线扩展
 - 无线通信模块
 
+### 摄像头应用开发
+基于ESP-IDF官方摄像头API开发应用：
+- 图像处理和计算机视觉
+- 视频流传输和录制
+- AI视觉识别和分析
+- 远程监控和安防系统
+
+### 开发示例
+
+**摄像头图像处理：**
+```cpp
+void ProcessCameraImage() {
+    camera_fb_t* fb = board.GetCameraFrameBuffer();
+    if (fb) {
+        // 图像处理逻辑
+        if (fb->format == PIXFORMAT_JPEG) {
+            // 处理JPEG格式图像
+            ProcessJPEGImage(fb->buf, fb->len);
+        } else if (fb->format == PIXFORMAT_RGB565) {
+            // 处理RGB565格式图像
+            ProcessRGBImage(fb->buf, fb->width, fb->height);
+        }
+        
+        board.ReturnCameraFrameBuffer(fb);
+    }
+}
+```
+
 详细的开发指南请参考源代码中的实现。
 
 ---
 
-**版本**: v1.2.0  
+**版本**: v1.3.0  
 **更新日期**: 2025年10月  
 **支持状态**: 生产就绪 ✅
 
 ### 版本历史
+- **v1.3.0** (2025-10): 摄像头系统重构，改用ESP-IDF官方摄像头支持，简化代码架构
 - **v1.2.0** (2025-10): 添加Kconfig配置支持，所有引脚可通过menuconfig自定义
 - **v1.1.0** (2025-10): 修复GPIO冲突、I2C引脚冲突、MSPI时序问题
 - **v1.0.0** (2024): 初始版本，完整扩展器支持

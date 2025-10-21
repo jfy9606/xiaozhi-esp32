@@ -8,7 +8,8 @@
 #include "mcp_server.h"
 #include "lamp_controller.h"
 #include "led/single_led.h"
-#include "camera/camera_components.h"
+// 使用ESP-IDF官方摄像头支持
+#include <esp_camera.h>
 
 #include <wifi_station.h>
 #include <esp_log.h>
@@ -87,8 +88,7 @@ private:
  
     Button boot_button_;
     LcdDisplay* display_;
-    bool camera_system_initialized_;
-    bool camera_enabled_;
+    bool camera_initialized_;
     
     // 扩展器相关
     i2c_master_bus_handle_t i2c_bus_handle_;
@@ -172,56 +172,53 @@ private:
                                     DISPLAY_WIDTH, DISPLAY_HEIGHT, DISPLAY_OFFSET_X, DISPLAY_OFFSET_Y, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y, DISPLAY_SWAP_XY);
     }
 
-    void InitializeCameraSystem() {
-        ESP_LOGI(TAG, "Initializing camera system with vision integration");
+    void InitializeCamera() {
+        ESP_LOGI(TAG, "Initializing ESP-IDF camera system");
         
-        // Get web server from component manager (if enabled in Kconfig)
-        Web* web_server = nullptr;
-#ifdef CONFIG_ENABLE_WEB_SERVER
-        auto& manager = ComponentManager::GetInstance();
-        Component* web_component = manager.GetComponent("Web");
-        if (web_component) {
-            web_server = static_cast<Web*>(web_component);
-            ESP_LOGI(TAG, "Found web server for camera system");
-        } else {
-            ESP_LOGW(TAG, "Web server not found, camera system will work without web interface");
+        camera_config_t config;
+        config.ledc_channel = LEDC_CHANNEL_0;
+        config.ledc_timer = LEDC_TIMER_0;
+        config.pin_d0 = CAMERA_PIN_D0;
+        config.pin_d1 = CAMERA_PIN_D1;
+        config.pin_d2 = CAMERA_PIN_D2;
+        config.pin_d3 = CAMERA_PIN_D3;
+        config.pin_d4 = CAMERA_PIN_D4;
+        config.pin_d5 = CAMERA_PIN_D5;
+        config.pin_d6 = CAMERA_PIN_D6;
+        config.pin_d7 = CAMERA_PIN_D7;
+        config.pin_xclk = CAMERA_PIN_XCLK;
+        config.pin_pclk = CAMERA_PIN_PCLK;
+        config.pin_vsync = CAMERA_PIN_VSYNC;
+        config.pin_href = CAMERA_PIN_HREF;
+        config.pin_sccb_sda = CAMERA_PIN_SIOD;
+        config.pin_sccb_scl = CAMERA_PIN_SIOC;
+        config.pin_pwdn = CAMERA_PIN_PWDN;
+        config.pin_reset = CAMERA_PIN_RESET;
+        config.xclk_freq_hz = XCLK_FREQ_HZ;
+        config.pixel_format = PIXFORMAT_JPEG;
+        config.frame_size = FRAMESIZE_SVGA;
+        config.jpeg_quality = 12;
+        config.fb_count = 1;
+        config.fb_location = CAMERA_FB_IN_PSRAM;
+        config.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
+        
+        // 初始化摄像头
+        esp_err_t err = esp_camera_init(&config);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "Camera init failed with error 0x%x", err);
+            camera_initialized_ = false;
+            return;
         }
-#else
-        ESP_LOGI(TAG, "Web server disabled in Kconfig, camera system will work without web interface");
-#endif
         
-        // Get MCP server
-        auto& mcp_server = McpServer::GetInstance();
-        
-        // 暂时禁用摄像头初始化以避免崩溃
-        // 消除未使用变量警告
-        (void)web_server;
-        (void)mcp_server;
-        // TODO: 修复摄像头配置问题后重新启用
-        ESP_LOGW(TAG, "Camera initialization temporarily disabled due to configuration issues");
-        camera_system_initialized_ = false;
-        camera_enabled_ = false;
-        
-        /* 
-        // Use the factory system to set up camera for s3cam board
-        if (CameraSystemHelpers::SetupCameraForBoard("bread-compact-wifi-s3cam", web_server, &mcp_server)) {
-            camera_system_initialized_ = true;
-            camera_enabled_ = true;
-            ESP_LOGI(TAG, "Camera system with vision integration initialized successfully");
-        } else {
-            camera_system_initialized_ = false;
-            camera_enabled_ = false;
-            ESP_LOGE(TAG, "Failed to initialize camera system");
-        }
-        */
+        camera_initialized_ = true;
+        ESP_LOGI(TAG, "ESP-IDF camera system initialized successfully");
     }
 
-    void DeinitializeCameraSystem() {
-        if (camera_system_initialized_) {
-            CameraComponentFactory::DeinitializeCameraSystem();
-            camera_system_initialized_ = false;
-            camera_enabled_ = false;
-            ESP_LOGI(TAG, "Camera system with vision integration deinitialized");
+    void DeinitializeCamera() {
+        if (camera_initialized_) {
+            esp_camera_deinit();
+            camera_initialized_ = false;
+            ESP_LOGI(TAG, "ESP-IDF camera system deinitialized");
         }
     }
 
@@ -236,7 +233,18 @@ private:
         
         // Add long press for camera toggle functionality
         boot_button_.OnLongPress([this]() {
-            ToggleCameraState();
+            // Simple camera toggle - reinitialize camera
+            if (camera_initialized_) {
+                DeinitializeCamera();
+                GetDisplay()->ShowNotification("Camera Disabled");
+            } else {
+                InitializeCamera();
+                if (camera_initialized_) {
+                    GetDisplay()->ShowNotification("Camera Enabled");
+                } else {
+                    GetDisplay()->ShowNotification("Camera Init Failed");
+                }
+            }
         });
     }
 
@@ -441,95 +449,12 @@ private:
     }
 #endif
 
-    void ToggleCameraState() {
-        auto* resource_manager = CameraComponentFactory::GetResourceManager();
-        if (!resource_manager) {
-            ESP_LOGW(TAG, "Resource manager not available");
-            GetDisplay()->ShowNotification("Resource Manager Error");
-            return;
-        }
-        
-        bool current_state = resource_manager->IsCameraEnabled();
-        bool new_state = !current_state;
-        
-        ESP_LOGI(TAG, "Toggling camera state from %s to %s", 
-                 current_state ? "enabled" : "disabled",
-                 new_state ? "enabled" : "disabled");
-        
-        // Log current resource state before transition
-        resource_state_t current_resource_state = resource_manager->GetResourceState();
-        ESP_LOGI(TAG, "Current resource state: %d", current_resource_state);
-        
-        if (new_state) {
-            // Enable camera with graceful resource transition
-            if (PerformGracefulCameraEnable()) {
-                GetDisplay()->ShowNotification("Camera Enabled");
-                ESP_LOGI(TAG, "Camera enabled successfully");
-            } else {
-                GetDisplay()->ShowNotification("Camera Enable Failed");
-                ESP_LOGE(TAG, "Failed to enable camera");
-            }
-        } else {
-            // Disable camera with graceful resource transition
-            if (PerformGracefulCameraDisable()) {
-                GetDisplay()->ShowNotification("Camera Disabled");
-                ESP_LOGI(TAG, "Camera disabled successfully");
-            } else {
-                GetDisplay()->ShowNotification("Camera Disable Failed");
-                ESP_LOGE(TAG, "Failed to disable camera");
-            }
-        }
-        
-        // Log final resource state after transition
-        resource_state_t final_resource_state = resource_manager->GetResourceState();
-        ESP_LOGI(TAG, "Final resource state: %d", final_resource_state);
-    }
 
-    bool PerformGracefulCameraEnable() {
-        ESP_LOGI(TAG, "Starting graceful camera enable");
-        
-        if (!camera_system_initialized_) {
-            ESP_LOGE(TAG, "Camera system not initialized");
-            return false;
-        }
-        
-        // Use the factory system to enable camera with vision
-        bool result = CameraSystemHelpers::EnableCameraWithVision(true);
-        if (result) {
-            camera_enabled_ = true;
-            ESP_LOGI(TAG, "Graceful camera enable completed");
-        } else {
-            ESP_LOGE(TAG, "Failed to enable camera with vision");
-        }
-        
-        return result;
-    }
-
-    bool PerformGracefulCameraDisable() {
-        ESP_LOGI(TAG, "Starting graceful camera disable");
-        
-        if (!camera_system_initialized_) {
-            ESP_LOGW(TAG, "Camera system not initialized");
-            return true;
-        }
-        
-        // Use the factory system to disable camera with vision
-        bool result = CameraSystemHelpers::EnableCameraWithVision(false);
-        if (result) {
-            camera_enabled_ = false;
-            ESP_LOGI(TAG, "Graceful camera disable completed");
-        } else {
-            ESP_LOGW(TAG, "Failed to disable camera with vision");
-        }
-        
-        return result;
-    }
 
 public:
     CompactWifiBoardS3Cam() :
         boot_button_(BOOT_BUTTON_GPIO),
-        camera_system_initialized_(false),
-        camera_enabled_(false),
+        camera_initialized_(false),
         i2c_bus_handle_(nullptr),
         i2c_bus_initialized_(false)
 #if ENABLE_PCA9548A_MUX
@@ -579,7 +504,7 @@ public:
         ESP_LOGI(TAG, "Expander initialization completed, starting camera system...");
         
         // 扩展器初始化完成后再初始化摄像头系统
-        InitializeCameraSystem();
+        InitializeCamera();
         
         if (DISPLAY_BACKLIGHT_PIN != GPIO_NUM_NC) {
             GetBacklight()->RestoreBrightness();
@@ -587,26 +512,7 @@ public:
         
         // Log initialization status
         ESP_LOGI(TAG, "=== Compact WiFi S3Cam Board Initialization Complete ===");
-        ESP_LOGI(TAG, "Camera System: %s", camera_system_initialized_ ? "Initialized" : "Failed");
-        ESP_LOGI(TAG, "Camera Available: %s", CameraSystemHelpers::IsCameraAvailable() ? "true" : "false");
-        ESP_LOGI(TAG, "Vision Active: %s", CameraSystemHelpers::IsVisionActive() ? "true" : "false");
-        ESP_LOGI(TAG, "Camera Enabled: %s", camera_enabled_ ? "true" : "false");
-        ESP_LOGI(TAG, "Resource State: %d", CameraSystemHelpers::GetResourceState());
-        
-        // Log camera configuration
-        ESP_LOGI(TAG, "Camera Configuration:");
-        ESP_LOGI(TAG, "  Auto-detect: %s", CAMERA_AUTO_DETECT_ENABLED ? "Enabled" : "Disabled");
-        ESP_LOGI(TAG, "  Default Model: %s", EnhancedEsp32Camera::GetModelNameStatic(CAMERA_DEFAULT_MODEL));
-        ESP_LOGI(TAG, "  Flash Pin: %s", CAMERA_FLASH_PIN != GPIO_NUM_NC ? "Configured" : "Disabled");
-        
-        // Log supported camera models
-        int supported_count = EnhancedEsp32Camera::GetSupportedModelsCount();
-        ESP_LOGI(TAG, "  Supported Models (%d):", supported_count);
-        camera_model_t supported_models[3];
-        EnhancedEsp32Camera::GetSupportedModels(supported_models, 3);
-        for (int i = 0; i < supported_count; i++) {
-            ESP_LOGI(TAG, "    - %s", EnhancedEsp32Camera::GetModelNameStatic(supported_models[i]));
-        }
+        ESP_LOGI(TAG, "Camera System: %s", camera_initialized_ ? "Initialized" : "Failed");
         
         ESP_LOGI(TAG, "Audio Mode: %s", 
 #ifdef AUDIO_I2S_METHOD_SIMPLEX
@@ -639,7 +545,7 @@ public:
     }
 
     virtual ~CompactWifiBoardS3Cam() {
-        DeinitializeCameraSystem();
+        DeinitializeCamera();
         
         // 清理扩展器资源
 #if ENABLE_HW178_ANALOG
@@ -680,30 +586,14 @@ public:
     }
 
     virtual AudioCodec* GetAudioCodec() override {
-        // Check for resource conflicts before returning audio codec
-        if (camera_system_initialized_) {
-            resource_state_t state = CameraSystemHelpers::GetResourceState();
-            
-            // If camera is active and we're using duplex mode, there are pin conflicts:
-            // CAMERA_PIN_VSYNC (GPIO_6) conflicts with AUDIO_I2S_GPIO_DIN (GPIO_6)
-            // CAMERA_PIN_HREF (GPIO_7) conflicts with AUDIO_I2S_GPIO_DOUT (GPIO_7)  
-            // CAMERA_PIN_SIOC (GPIO_5) conflicts with AUDIO_I2S_GPIO_BCLK (GPIO_5)
+        // 检查摄像头和音频引脚冲突
+        if (camera_initialized_) {
 #ifndef AUDIO_I2S_METHOD_SIMPLEX
-            if (state == RESOURCE_CAMERA_ACTIVE) {
-                ESP_LOGW(TAG, "Camera active - audio duplex mode has pin conflicts (GPIO 5,6,7)");
-                ESP_LOGW(TAG, "Consider disabling camera or using simplex audio mode");
-                // Return null to prevent audio initialization with conflicts
-                return nullptr;
-            }
+            ESP_LOGW(TAG, "Camera active - audio duplex mode has pin conflicts");
+            ESP_LOGW(TAG, "Consider disabling camera or using simplex audio mode");
+            // 返回null以防止引脚冲突
+            return nullptr;
 #endif
-            
-            // Try to lock resources for audio if idle
-            if (state == RESOURCE_IDLE) {
-                auto* resource_manager = CameraComponentFactory::GetResourceManager();
-                if (resource_manager && !resource_manager->LockResourceForAudio()) {
-                    ESP_LOGW(TAG, "Failed to lock resources for audio");
-                }
-            }
         }
 
 #ifdef AUDIO_I2S_METHOD_SIMPLEX
@@ -729,123 +619,32 @@ public:
     }
 
     virtual Camera* GetCamera() override {
-        // Only return camera if system is initialized and camera is available
-        if (camera_system_initialized_ && CameraSystemHelpers::IsCameraAvailable()) {
-            auto* resource_manager = CameraComponentFactory::GetResourceManager();
-            if (resource_manager && resource_manager->GetResourceState() == RESOURCE_CAMERA_ACTIVE) {
-                return CameraComponentFactory::GetEnhancedCamera();
-            }
+        // 使用ESP-IDF官方摄像头API
+        if (camera_initialized_) {
+            // 返回一个简单的摄像头包装器，或者直接返回nullptr让上层使用esp_camera API
+            // 这里暂时返回nullptr，让应用层直接使用esp_camera_fb_get()等API
         }
         return nullptr;
     }
 
-    // Additional methods for resource management
+    // 简化的摄像头状态查询
     bool IsCameraEnabled() const {
-        return camera_enabled_ && CameraSystemHelpers::IsCameraAvailable();
+        return camera_initialized_;
     }
 
-    resource_state_t GetResourceState() const {
-        return CameraSystemHelpers::GetResourceState();
+    // 获取摄像头帧缓冲区（使用ESP-IDF官方API）
+    camera_fb_t* GetCameraFrameBuffer() {
+        if (!camera_initialized_) {
+            return nullptr;
+        }
+        return esp_camera_fb_get();
     }
 
-    bool SetCameraEnabled(bool enabled) {
-        if (!camera_system_initialized_) {
-            return false;
+    // 释放摄像头帧缓冲区
+    void ReturnCameraFrameBuffer(camera_fb_t* fb) {
+        if (fb) {
+            esp_camera_fb_return(fb);
         }
-        
-        bool result = CameraSystemHelpers::SwitchCameraState(enabled);
-        if (result) {
-            camera_enabled_ = enabled;
-            
-            // Handle vision integration state change
-            auto* vision_integration = CameraComponentFactory::GetVisionIntegration();
-            if (vision_integration) {
-                vision_integration->HandleCameraStateChange(enabled);
-            }
-        }
-        
-        return result;
-    }
-
-    // Camera model management
-    bool SetCameraModel(camera_model_t model) {
-        if (!camera_system_initialized_) {
-            ESP_LOGW(TAG, "Camera system not initialized");
-            return false;
-        }
-        
-        auto* enhanced_camera = CameraComponentFactory::GetEnhancedCamera();
-        if (!enhanced_camera || !EnhancedEsp32Camera::IsModelSupported(model)) {
-            ESP_LOGW(TAG, "Cannot set camera model - camera not available or model not supported");
-            return false;
-        }
-        
-        if (camera_enabled_) {
-            ESP_LOGI(TAG, "Reinitializing camera with new model: %s", enhanced_camera->GetModelName(model));
-            
-            // Temporarily disable camera
-            bool was_enabled = camera_enabled_;
-            if (!PerformGracefulCameraDisable()) {
-                ESP_LOGE(TAG, "Failed to disable camera for model change");
-                return false;
-            }
-            
-            // Update camera model
-            enhanced_camera_config_t config = enhanced_camera->GetEnhancedConfig();
-            config.model = model;
-            config.auto_detect = false; // Disable auto-detect when manually setting model
-            
-            if (!enhanced_camera->UpdateEnhancedConfig(config)) {
-                ESP_LOGE(TAG, "Failed to update camera config");
-                return false;
-            }
-            
-            // Re-enable camera if it was enabled
-            if (was_enabled) {
-                if (!PerformGracefulCameraEnable()) {
-                    ESP_LOGE(TAG, "Failed to re-enable camera with new model");
-                    return false;
-                }
-            }
-            
-            ESP_LOGI(TAG, "Camera model changed successfully to: %s", enhanced_camera->GetModelName(model));
-            return true;
-        } else {
-            // Camera is disabled, just update the config
-            enhanced_camera_config_t config = enhanced_camera->GetEnhancedConfig();
-            config.model = model;
-            config.auto_detect = false;
-            
-            if (enhanced_camera->UpdateEnhancedConfig(config)) {
-                ESP_LOGI(TAG, "Camera model set to: %s (camera disabled)", enhanced_camera->GetModelName(model));
-                return true;
-            }
-        }
-        
-        return false;
-    }
-
-    camera_model_t GetCurrentCameraModel() const {
-        if (camera_system_initialized_) {
-            auto* enhanced_camera = CameraComponentFactory::GetEnhancedCamera();
-            if (enhanced_camera) {
-                return enhanced_camera->GetDetectedModel();
-            }
-        }
-        return CAMERA_NONE;
-    }
-
-    // System status for debugging and verification
-    std::string GetCameraSystemStatus() const {
-        if (!camera_system_initialized_) {
-            return "{\"status\":\"not_initialized\"}";
-        }
-        
-        return CameraComponentFactory::GetSystemStatusJson();
-    }
-
-    bool IsVisionIntegrationActive() const {
-        return CameraSystemHelpers::IsVisionActive();
     }
 
     // 扩展器访问方法
@@ -1066,89 +865,7 @@ public:
         return status;
     }
 
-    // Resource state monitoring
-    void OnWheelRun(int interval_ms) {
-        static uint32_t last_log_time = 0;
-        uint32_t current_time = esp_log_timestamp();
-        
-        // Log resource state every 30 seconds
-        if (current_time - last_log_time > 30000) {
-            LogResourceState();
-            last_log_time = current_time;
-        }
-        
-        // Check for resource conflicts
-        CheckResourceConflicts();
-    }
 
-private:
-    void LogResourceState() {
-        if (!camera_system_initialized_) {
-            return;
-        }
-        
-        auto* resource_manager = CameraComponentFactory::GetResourceManager();
-        if (!resource_manager) {
-            return;
-        }
-        
-        camera_switch_state_t state = resource_manager->GetSwitchState();
-        bool vision_active = CameraSystemHelpers::IsVisionActive();
-        ESP_LOGI(TAG, "Resource State - Enabled: %s, Initialized: %s, State: %d, Model: %s, Vision: %s",
-                 state.enabled ? "true" : "false",
-                 state.initialized ? "true" : "false",
-                 state.resource_state,
-                 state.detected_model,
-                 vision_active ? "Active" : "Inactive");
-    }
-
-    void CheckResourceConflicts() {
-        if (!camera_system_initialized_) {
-            return;
-        }
-        
-        auto* resource_manager = CameraComponentFactory::GetResourceManager();
-        if (!resource_manager) {
-            return;
-        }
-        
-        resource_state_t state = resource_manager->GetResourceState();
-        
-        // Check if camera is supposed to be active but resources are not locked
-        if (camera_enabled_ && state != RESOURCE_CAMERA_ACTIVE) {
-            ESP_LOGW(TAG, "Camera enabled but resources not active (state: %d)", state);
-            
-            // Try to recover by re-locking resources
-            if (resource_manager->LockResourceForCamera()) {
-                ESP_LOGI(TAG, "Successfully recovered camera resources");
-                // Update vision state after resource recovery
-                auto* vision_integration = CameraComponentFactory::GetVisionIntegration();
-                if (vision_integration) {
-                    vision_integration->UpdateVisionState();
-                }
-            } else {
-                ESP_LOGE(TAG, "Failed to recover camera resources");
-            }
-        }
-        
-        // Check if camera is disabled but resources are still locked
-        if (!camera_enabled_ && state == RESOURCE_CAMERA_ACTIVE) {
-            ESP_LOGW(TAG, "Camera disabled but resources still locked");
-            resource_manager->ReleaseResource();
-            ESP_LOGI(TAG, "Released camera resources");
-            // Update vision state after resource release
-            auto* vision_integration = CameraComponentFactory::GetVisionIntegration();
-            if (vision_integration) {
-                vision_integration->UpdateVisionState();
-            }
-        }
-        
-        // Update vision state periodically
-        auto* vision_integration = CameraComponentFactory::GetVisionIntegration();
-        if (vision_integration) {
-            vision_integration->UpdateVisionState();
-        }
-    }
 };
 
 DECLARE_BOARD(CompactWifiBoardS3Cam);
