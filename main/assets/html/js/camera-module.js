@@ -162,11 +162,11 @@ class CameraSystem {
         // Get URL based on stream type
         switch (this.streamType) {
             case 'mjpeg':
-                this.streamUrl = `/api/camera/stream?width=${this.resolution.width}&height=${this.resolution.height}`;
+                this.streamUrl = `/stream?width=${this.resolution.width}&height=${this.resolution.height}`;
                 break;
                 
             case 'jpeg':
-                this.streamUrl = `/api/camera/capture?width=${this.resolution.width}&height=${this.resolution.height}`;
+                this.streamUrl = `/capture?width=${this.resolution.width}&height=${this.resolution.height}`;
                 break;
                 
             case 'webrtc':
@@ -769,4 +769,4 @@ class CameraSystem {
  */
 function initCamera(viewerId, controlsId) {
     return new CameraSystem(viewerId, controlsId);
-} 
+}

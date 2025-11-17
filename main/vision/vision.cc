@@ -2,6 +2,7 @@
 #include "../boards/common/esp32_camera.h"
 #include "board.h"
 #include "esp_log.h"
+#include "settings.h"
 #include <esp_timer.h>
 #include <cJSON.h>
 #include <memory>
@@ -131,6 +132,24 @@ bool Vision::Start() {
         ESP_LOGI(TAG, "Vision handlers registered with webserver");
     } else {
         ESP_LOGW(TAG, "No webserver provided, HTTP/WebSocket handlers not registered");
+    }
+
+    if (camera_) {
+        Settings settings("camera", false);
+        int b = settings.GetInt("brightness", camera_->GetBrightness());
+        int c = settings.GetInt("contrast", camera_->GetContrast());
+        int s = settings.GetInt("saturation", camera_->GetSaturation());
+        bool hm = settings.GetBool("hmirror", camera_->GetHMirror());
+        bool vf = settings.GetBool("vflip", camera_->GetVFlip());
+        int fl = settings.GetInt("flash_level", flash_intensity_);
+        camera_->SetBrightness(b);
+        camera_->SetContrast(c);
+        camera_->SetSaturation(s);
+        camera_->SetHMirror(hm);
+        camera_->SetVFlip(vf);
+        if (camera_->HasFlash()) {
+            SetLedIntensity(fl);
+        }
     }
     
     running_ = true;
@@ -388,14 +407,56 @@ void Vision::HandleWebSocketMessage(int client_index, const std::string& message
             cJSON* intensity = cJSON_GetObjectItem(root, "intensity");
             if (cJSON_IsNumber(intensity)) {
                 SetLedIntensity(intensity->valueint);
-                // Send success response
-                char response[64];
-                snprintf(response, sizeof(response), 
-                        "{\"status\":\"ok\",\"cmd\":\"led\",\"intensity\":%d}", 
-                        GetLedIntensity());
-                if (webserver_) {
-                    webserver_->SendWebSocketMessage(client_index, response);
-                }
+                Settings settings("camera", true);
+                settings.SetInt("flash_level", GetLedIntensity());
+                SendStatusUpdate(client_index);
+            }
+        }
+        else if (cmd_str == "set_brightness") {
+            cJSON* val = cJSON_GetObjectItem(root, "value");
+            if (cJSON_IsNumber(val) && camera_) {
+                camera_->SetBrightness(val->valueint);
+                Settings settings("camera", true);
+                settings.SetInt("brightness", val->valueint);
+                SendStatusUpdate(client_index);
+            }
+        }
+        else if (cmd_str == "set_contrast") {
+            cJSON* val = cJSON_GetObjectItem(root, "value");
+            if (cJSON_IsNumber(val) && camera_) {
+                camera_->SetContrast(val->valueint);
+                Settings settings("camera", true);
+                settings.SetInt("contrast", val->valueint);
+                SendStatusUpdate(client_index);
+            }
+        }
+        else if (cmd_str == "set_saturation") {
+            cJSON* val = cJSON_GetObjectItem(root, "value");
+            if (cJSON_IsNumber(val) && camera_) {
+                camera_->SetSaturation(val->valueint);
+                Settings settings("camera", true);
+                settings.SetInt("saturation", val->valueint);
+                SendStatusUpdate(client_index);
+            }
+        }
+        else if (cmd_str == "set_hmirror") {
+            cJSON* val = cJSON_GetObjectItem(root, "value");
+            if ((cJSON_IsBool(val) || cJSON_IsNumber(val)) && camera_) {
+                bool v = cJSON_IsBool(val) ? cJSON_IsTrue(val) : (val->valueint != 0);
+                camera_->SetHMirror(v);
+                Settings settings("camera", true);
+                settings.SetBool("hmirror", v);
+                SendStatusUpdate(client_index);
+            }
+        }
+        else if (cmd_str == "set_vflip") {
+            cJSON* val = cJSON_GetObjectItem(root, "value");
+            if ((cJSON_IsBool(val) || cJSON_IsNumber(val)) && camera_) {
+                bool v = cJSON_IsBool(val) ? cJSON_IsTrue(val) : (val->valueint != 0);
+                camera_->SetVFlip(v);
+                Settings settings("camera", true);
+                settings.SetBool("vflip", v);
+                SendStatusUpdate(client_index);
             }
         }
         else if (cmd_str == "get_status") {
@@ -591,26 +652,38 @@ esp_err_t Vision::HandleVision(httpd_req_t *req) {
 }
 
 esp_err_t Vision::StreamHandler(httpd_req_t *req) {
-    ESP_LOGD(TAG, "Stream handler called");
     Vision* vision = static_cast<Vision*>(req->user_ctx);
-    
     if (!vision || !vision->camera_ || !vision->IsRunning()) {
         httpd_resp_set_status(req, "404 Not Found");
         httpd_resp_send(req, "Camera not available", -1);
         return ESP_FAIL;
     }
-    
     httpd_resp_set_type(req, STREAM_CONTENT_TYPE);
     httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
-    
-    // Start streaming if not already started
-    if (!vision->IsStreaming()) {
-        vision->StartStreaming();
+    char part_buf[64];
+    while (true) {
+        camera_fb_t* fb = vision->GetFrame();
+        if (!fb) {
+            vTaskDelay(pdMS_TO_TICKS(30));
+            continue;
+        }
+        int hlen = snprintf(part_buf, sizeof(part_buf), STREAM_PART, (unsigned)fb->len);
+        if (httpd_resp_sendstr_chunk(req, STREAM_BOUNDARY) != ESP_OK) {
+            vision->ReturnFrame(fb);
+            break;
+        }
+        if (httpd_resp_send_chunk(req, part_buf, hlen) != ESP_OK) {
+            vision->ReturnFrame(fb);
+            break;
+        }
+        if (httpd_resp_send_chunk(req, (const char*)fb->buf, fb->len) != ESP_OK) {
+            vision->ReturnFrame(fb);
+            break;
+        }
+        vision->ReturnFrame(fb);
+        vTaskDelay(pdMS_TO_TICKS(10));
     }
-    
-    // In a real implementation, set up streaming to client, but for now just return OK
-    httpd_resp_sendstr(req, "Stream started");
-    
+    httpd_resp_send_chunk(req, NULL, 0);
     return ESP_OK;
 }
 
@@ -827,4 +900,4 @@ void InitVisionComponent(Web* web_server) {
     } else {
         ESP_LOGE(TAG, "Failed to start Vision component");
     }
-} 
+}

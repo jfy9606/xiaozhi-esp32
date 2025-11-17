@@ -6,8 +6,8 @@ class XiaozhiAPI {
      */
     constructor(baseUrl) {
         this.baseUrl = baseUrl || window.location.origin;
-        this.httpBaseUrl = `${this.baseUrl}/api/v1/http`;
-        this.wsBaseUrl = `${this.baseUrl.replace(/^http/, 'ws')}/api/v1/ws`;
+        this.httpBaseUrl = `${this.baseUrl}/api`;
+        this.wsBaseUrl = `${this.baseUrl.replace(/^http/, 'ws')}`;
         this.wsConnections = {};
         this.wsCallbacks = {};
         
@@ -454,7 +454,7 @@ class XiaozhiAPI {
      * @param {Object} callbacks - 回调函数对象
      */
     connectServoControl(callbacks = {}) {
-        return this.connectWebSocket('/servo', {
+        return this.connectWebSocket('/ws/servo', {
             ...callbacks,
             autoReconnect: true
         });
@@ -467,9 +467,9 @@ class XiaozhiAPI {
      * @param {boolean} batch - 是否启用批处理
      */
     setServoAngleWs(channel, angle, batch = false) {
-        this.sendWebSocketMessage('/servo', {
-            cmd: 'set_angle',
-            channel: channel,
+        this.sendWebSocketMessage('/ws/servo', {
+            cmd: 'set',
+            id: channel,
             angle: angle,
             timestamp: new Date().getTime()
         }, batch);
@@ -480,7 +480,7 @@ class XiaozhiAPI {
      * @param {number} frequency - 频率 (50-300Hz)
      */
     setServoFrequencyWs(frequency) {
-        this.sendWebSocketMessage('/servo', {
+        this.sendWebSocketMessage('/ws/servo', {
             cmd: 'set_frequency',
             frequency: frequency,
             timestamp: new Date().getTime()
@@ -640,4 +640,4 @@ class XiaozhiAPI {
 
 // 创建全局API实例
 window.xiaozhi = window.xiaozhi || {};
-window.xiaozhi.api = new XiaozhiAPI(); 
+window.xiaozhi.api = new XiaozhiAPI();

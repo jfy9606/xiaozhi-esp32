@@ -28,7 +28,7 @@ $(document).ready(function() {
             $(this).html('<i class="bi bi-play-circle"></i> Resume');
             streaming = false;
         } else {
-            $('#camera-feed').attr('src', '/api/camera/stream');
+            $('#camera-feed').attr('src', '/stream');
             $(this).html('<i class="bi bi-pause-circle"></i> Pause');
             streaming = true;
         }
@@ -373,4 +373,4 @@ $(document).ready(function() {
     $(document).ready(function() {
         setTimeout(initHardwareManagerIntegration, 1000);
     });
-}); 
+});

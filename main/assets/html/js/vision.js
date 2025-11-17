@@ -32,7 +32,7 @@ function initWebSocket() {
     visionConfig.ws.close();
   }
   
-  const wsUrl = `ws://${window.location.host}/ws/camera`;
+  const wsUrl = `ws://${window.location.host}/ws/vision`;
   visionConfig.ws = new WebSocket(wsUrl);
   
   visionConfig.ws.onopen = function() {
@@ -170,7 +170,7 @@ function initCameraControls() {
 function startStreaming() {
   const cameraView = document.getElementById('camera-feed');
   if (cameraView) {
-    cameraView.src = `/api/camera/stream?t=${new Date().getTime()}`;
+    cameraView.src = `/stream?t=${new Date().getTime()}`;
   }
   
   sendWebSocketMessage({ cmd: 'start_stream' });
@@ -224,4 +224,4 @@ function showDetectionResults(data) {
   html += '</ul>';
   
   resultsContainer.innerHTML = html;
-} 
+}

@@ -31,7 +31,7 @@ $(document).ready(function () {
             $(this).html('<i class="bi bi-play-circle"></i>');
             streaming = false;
         } else {
-            $('#camera-feed').attr('src', '/api/camera/stream');
+            $('#camera-feed').attr('src', '/stream');
             $(this).html('<i class="bi bi-pause-circle"></i>');
             streaming = true;
         }
@@ -235,27 +235,36 @@ $(document).ready(function () {
 
     // Send control command to vehicle
     function sendControlCommand(direction, force) {
-        const command = {
-            type: 'control',
-            direction: direction,
-            force: force
-        };
-
+        const dir = String(direction || '').toLowerCase();
+        const f = Math.max(0, Math.min(1, force || 0));
+        let left = 0, right = 0, base = Math.round(255 * f);
+        if (dir.includes('forward') && dir.includes('left')) { left = base * 0.6; right = base; }
+        else if (dir.includes('forward') && dir.includes('right')) { left = base; right = base * 0.6; }
+        else if (dir.includes('backward') && dir.includes('left')) { left = -base * 0.6; right = -base; }
+        else if (dir.includes('backward') && dir.includes('right')) { left = -base; right = -base * 0.6; }
+        else if (dir === 'forward') { left = base; right = base; }
+        else if (dir === 'backward') { left = -base; right = -base; }
+        else if (dir === 'left') { left = -base; right = base; }
+        else if (dir === 'right') { left = base; right = -base; }
+        else { left = 0; right = 0; }
+        if (window.HardwareManager) {
+            window.HardwareManager.controlMotor(0, Math.round(left)).catch(()=>{});
+            window.HardwareManager.controlMotor(1, Math.round(right)).catch(()=>{});
+        }
         if (socket && socket.readyState === WebSocket.OPEN) {
-            socket.send(JSON.stringify(command));
+            socket.send(JSON.stringify({ type: 'control', direction: direction, force: force }));
         }
     }
 
     // Send servo command
     function sendServoCommand(servo, angle) {
-        const command = {
-            type: 'servo',
-            servo: servo,
-            angle: angle
-        };
-
+        const id = servo === 'tilt' ? 1 : 0;
+        const a = Math.max(0, Math.min(180, parseInt(angle, 10) + 90));
+        if (window.HardwareManager) {
+            window.HardwareManager.controlServo(id, a).catch(()=>{});
+        }
         if (socket && socket.readyState === WebSocket.OPEN) {
-            socket.send(JSON.stringify(command));
+            socket.send(JSON.stringify({ type: 'servo', servo: servo, angle: angle }));
         }
     }
 
@@ -515,4 +524,4 @@ $(document).ready(function () {
             statusTextElement.text(statusText);
         }
     }
-}); 
+});
