@@ -15,10 +15,10 @@ const visionConfig = {
 };
 
 // Initialize when document is ready
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', function () {
   initWebSocket();
   initCameraControls();
-  
+
   // Button handlers
   document.getElementById('start-stream')?.addEventListener('click', startStreaming);
   document.getElementById('stop-stream')?.addEventListener('click', stopStreaming);
@@ -31,17 +31,18 @@ function initWebSocket() {
   if (visionConfig.ws) {
     visionConfig.ws.close();
   }
-  
-  const wsUrl = `ws://${window.location.host}/ws/vision`;
+
+  // Use the main WebSocket endpoint
+  const wsUrl = `ws://${window.location.host}/ws`;
   visionConfig.ws = new WebSocket(wsUrl);
-  
-  visionConfig.ws.onopen = function() {
+
+  visionConfig.ws.onopen = function () {
     console.log("WebSocket connection established");
     // Request initial camera status
     sendWebSocketMessage({ cmd: 'get_status' });
   };
-  
-  visionConfig.ws.onmessage = function(event) {
+
+  visionConfig.ws.onmessage = function (event) {
     try {
       const message = JSON.parse(event.data);
       handleWebSocketMessage(message);
@@ -49,14 +50,14 @@ function initWebSocket() {
       console.error("Error parsing WebSocket message:", e);
     }
   };
-  
-  visionConfig.ws.onclose = function() {
+
+  visionConfig.ws.onclose = function () {
     console.log("WebSocket connection closed");
     // Try to reconnect after a delay
     setTimeout(initWebSocket, 5000);
   };
-  
-  visionConfig.ws.onerror = function(error) {
+
+  visionConfig.ws.onerror = function (error) {
     console.error("WebSocket error:", error);
   };
 }
@@ -73,7 +74,7 @@ function sendWebSocketMessage(message) {
 // Handle incoming WebSocket messages
 function handleWebSocketMessage(message) {
   console.log("Received message:", message);
-  
+
   if (message.type === 'status') {
     updateCameraStatus(message.data);
   } else if (message.type === 'detection') {
@@ -86,7 +87,7 @@ function updateCameraStatus(status) {
   // Update UI elements with camera status
   const cameraPlaceholder = document.getElementById('camera-placeholder');
   const cameraControls = document.getElementById('camera-controls');
-  
+
   if (status.is_streaming) {
     if (cameraPlaceholder) cameraPlaceholder.style.display = 'none';
     if (cameraControls) cameraControls.style.display = 'flex';
@@ -94,14 +95,14 @@ function updateCameraStatus(status) {
     if (cameraPlaceholder) cameraPlaceholder.style.display = 'flex';
     if (cameraControls) cameraControls.style.display = 'none';
   }
-  
+
   // Update control values
   document.getElementById('brightness-slider')?.value = status.brightness;
   document.getElementById('contrast-slider')?.value = status.contrast;
   document.getElementById('saturation-slider')?.value = status.saturation;
   document.getElementById('hmirror-checkbox')?.checked = status.hmirror;
   document.getElementById('vflip-checkbox')?.checked = status.vflip;
-  
+
   // Update internal state
   visionConfig.camera = {
     brightness: status.brightness,
@@ -111,55 +112,55 @@ function updateCameraStatus(status) {
     vflip: status.vflip,
     ledIntensity: status.flash_level || 0
   };
-  
+
   visionConfig.streaming = status.is_streaming;
 }
 
 // Initialize camera control UI elements
 function initCameraControls() {
   // Brightness control
-  document.getElementById('brightness-slider')?.addEventListener('input', function() {
-    sendWebSocketMessage({ 
+  document.getElementById('brightness-slider')?.addEventListener('input', function () {
+    sendWebSocketMessage({
       cmd: 'set_brightness',
       value: parseInt(this.value)
     });
   });
-  
+
   // Contrast control
-  document.getElementById('contrast-slider')?.addEventListener('input', function() {
-    sendWebSocketMessage({ 
+  document.getElementById('contrast-slider')?.addEventListener('input', function () {
+    sendWebSocketMessage({
       cmd: 'set_contrast',
       value: parseInt(this.value)
     });
   });
-  
+
   // Saturation control
-  document.getElementById('saturation-slider')?.addEventListener('input', function() {
-    sendWebSocketMessage({ 
+  document.getElementById('saturation-slider')?.addEventListener('input', function () {
+    sendWebSocketMessage({
       cmd: 'set_saturation',
       value: parseInt(this.value)
     });
   });
-  
+
   // H-Mirror control
-  document.getElementById('hmirror-checkbox')?.addEventListener('change', function() {
-    sendWebSocketMessage({ 
+  document.getElementById('hmirror-checkbox')?.addEventListener('change', function () {
+    sendWebSocketMessage({
       cmd: 'set_hmirror',
       value: this.checked
     });
   });
-  
+
   // V-Flip control
-  document.getElementById('vflip-checkbox')?.addEventListener('change', function() {
-    sendWebSocketMessage({ 
+  document.getElementById('vflip-checkbox')?.addEventListener('change', function () {
+    sendWebSocketMessage({
       cmd: 'set_vflip',
       value: this.checked
     });
   });
-  
+
   // LED Intensity control
-  document.getElementById('led-slider')?.addEventListener('input', function() {
-    sendWebSocketMessage({ 
+  document.getElementById('led-slider')?.addEventListener('input', function () {
+    sendWebSocketMessage({
       cmd: 'set_flash',
       value: parseInt(this.value)
     });
@@ -170,9 +171,19 @@ function initCameraControls() {
 function startStreaming() {
   const cameraView = document.getElementById('camera-feed');
   if (cameraView) {
-    cameraView.src = `/stream?t=${new Date().getTime()}`;
+    // First get the stream URL from the API
+    fetch('/api/camera/stream')
+      .then(response => response.json())
+      .then(data => {
+        if (data.success && data.data && data.data.url) {
+          cameraView.src = data.data.url + `?t=${new Date().getTime()}`;
+        } else {
+          console.error('Failed to get stream URL:', data);
+        }
+      })
+      .catch(error => console.error('Failed to get stream URL:', error));
   }
-  
+
   sendWebSocketMessage({ cmd: 'start_stream' });
 }
 
@@ -182,23 +193,31 @@ function stopStreaming() {
   if (cameraView) {
     cameraView.src = '';
   }
-  
+
   sendWebSocketMessage({ cmd: 'stop_stream' });
 }
 
 // Capture a still image
 function captureImage() {
-  const imageUrl = `/api/camera/capture?t=${new Date().getTime()}`;
-  
-  // Show captured image in a modal or new window
-  window.open(imageUrl, '_blank');
-  
+  // Call the API to capture an image
+  fetch('/api/camera/capture')
+    .then(response => response.json())
+    .then(data => {
+      if (data.success && data.data && data.data.capture_url) {
+        // Show captured image in a modal or new window
+        window.open(data.data.capture_url, '_blank');
+      } else {
+        console.error('Failed to capture image:', data);
+      }
+    })
+    .catch(error => console.error('Failed to capture image:', error));
+
   sendWebSocketMessage({ cmd: 'capture' });
 }
 
 // Run object detection
 function detectObjects() {
-  sendWebSocketMessage({ 
+  sendWebSocketMessage({
     cmd: 'run_detection',
     model: 'object_detection'
   });
@@ -208,12 +227,12 @@ function detectObjects() {
 function showDetectionResults(data) {
   const resultsContainer = document.getElementById('detection-results');
   if (!resultsContainer) return;
-  
+
   if (!data.results || data.results.length === 0) {
     resultsContainer.innerHTML = '<p>No objects detected</p>';
     return;
   }
-  
+
   let html = '<h3>Detection Results:</h3><ul>';
   data.results.forEach(result => {
     html += `<li class="result-item">
@@ -222,6 +241,6 @@ function showDetectionResults(data) {
     </li>`;
   });
   html += '</ul>';
-  
+
   resultsContainer.innerHTML = html;
 }

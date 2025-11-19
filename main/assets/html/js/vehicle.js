@@ -6,7 +6,13 @@
 $(document).ready(function () {
     // Check camera status
     $.get('/api/camera/status', function (data) {
-        if (!data.has_camera) {
+        // Handle the API response correctly
+        if (data && data.success && data.data) {
+            if (!data.data.has_camera) {
+                $('#camera-feed').addClass('d-none');
+                $('#camera-offline').removeClass('d-none');
+            }
+        } else {
             $('#camera-feed').addClass('d-none');
             $('#camera-offline').removeClass('d-none');
         }
@@ -20,7 +26,18 @@ $(document).ready(function () {
 
     // Capture button
     $('#btn-capture').click(function () {
-        window.open('/api/camera/capture', '_blank');
+        // Call API to capture image and get the image URL
+        $.get('/api/camera/capture')
+            .done(function (data) {
+                if (data && data.success && data.data && data.data.capture_url) {
+                    window.open(data.data.capture_url, '_blank');
+                } else {
+                    console.error('Failed to capture image:', data);
+                }
+            })
+            .fail(function (error) {
+                console.error('Failed to capture image:', error);
+            });
     });
 
     // Toggle stream button
@@ -31,7 +48,18 @@ $(document).ready(function () {
             $(this).html('<i class="bi bi-play-circle"></i>');
             streaming = false;
         } else {
-            $('#camera-feed').attr('src', '/stream');
+            // Get stream URL from API first
+            $.get('/api/camera/stream')
+                .done(function (data) {
+                    if (data && data.success && data.data && data.data.url) {
+                        $('#camera-feed').attr('src', data.data.url);
+                    } else {
+                        console.error('Failed to get stream URL:', data);
+                    }
+                })
+                .fail(function (error) {
+                    console.error('Failed to get stream URL:', error);
+                });
             $(this).html('<i class="bi bi-pause-circle"></i>');
             streaming = true;
         }
@@ -248,8 +276,8 @@ $(document).ready(function () {
         else if (dir === 'right') { left = base; right = -base; }
         else { left = 0; right = 0; }
         if (window.HardwareManager) {
-            window.HardwareManager.controlMotor(0, Math.round(left)).catch(()=>{});
-            window.HardwareManager.controlMotor(1, Math.round(right)).catch(()=>{});
+            window.HardwareManager.controlMotor(0, Math.round(left)).catch(() => { });
+            window.HardwareManager.controlMotor(1, Math.round(right)).catch(() => { });
         }
         if (socket && socket.readyState === WebSocket.OPEN) {
             socket.send(JSON.stringify({ type: 'control', direction: direction, force: force }));
@@ -261,7 +289,7 @@ $(document).ready(function () {
         const id = servo === 'tilt' ? 1 : 0;
         const a = Math.max(0, Math.min(180, parseInt(angle, 10) + 90));
         if (window.HardwareManager) {
-            window.HardwareManager.controlServo(id, a).catch(()=>{});
+            window.HardwareManager.controlServo(id, a).catch(() => { });
         }
         if (socket && socket.readyState === WebSocket.OPEN) {
             socket.send(JSON.stringify({ type: 'servo', servo: servo, angle: angle }));
