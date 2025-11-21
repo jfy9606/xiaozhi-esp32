@@ -1092,7 +1092,7 @@ void Application::InitializeComponents() {
         iot::RegisterThing("US", nullptr);
 #endif
 
-#ifdef CONFIG_ENABLE_CAM
+#ifdef CONFIG_ENABLE_CAMERA
         // Initialize camera sensor
         ESP_LOGI(TAG, "Initializing camera");
         // 使用通用的RegisterThing

@@ -656,7 +656,7 @@ config USE_SERVER_AEC
     help
         To work perperly, server-side AEC requires server support
         
-menu "组件管理器"
+menu "Component Manager"
     # I2C总线配置
     menu "I2C Bus Configuration"
         config CAMERA_I2C_PORT
@@ -1403,15 +1403,7 @@ menu "组件管理器"
                 例如，3代表P03，11代表P13
     endmenu
 
-    # 摄像头配置
-    menu "Camera"
-        config ENABLE_CAM
-            bool "启用摄像头"
-            default n
-            depends on BOARD_TYPE_BREAD_COMPACT_WIFI_CAM
-            help
-                启用摄像头功能，用于视觉识别和图像捕获。仅在bread-compact-wifi-s3cam板上可用。
-    endmenu
+
 
     # IMU传感器配置
     menu "IMU Sensor"
@@ -1431,7 +1423,7 @@ menu "组件管理器"
                 启用光线传感器和控制器，用于环境光照检测和灯光控制
     endmenu
 
-endmenu
+
 
 config USE_AUDIO_DEBUGGER
     bool "Enable Audio Debugger"
@@ -1458,8 +1450,105 @@ config RECEIVE_CUSTOM_MESSAGE
     help
         Enable custom message reception, allow the device to receive custom messages from the server (preferably through the MQTT protocol)
 
+
+
+menu "TAIJIPAI_S3_CONFIG"
+    depends on BOARD_TYPE_TAIJI_PI_S3
+    choice I2S_TYPE_TAIJIPI_S3
+        prompt "taiji-pi-S3 I2S Type"
+        default TAIJIPAI_I2S_TYPE_STD
+        help
+            I2S 类型选择
+        config TAIJIPAI_I2S_TYPE_STD
+            bool "I2S Type STD"
+        config TAIJIPAI_I2S_TYPE_PDM
+            bool "I2S Type PDM"
+    endchoice
+
+    config I2S_USE_2SLOT
+    bool "Enable I2S 2 Slot"
+    default y
+    help
+        启动双声道
+endmenu
+
+
+
+endmenu
+
 menu "Camera Configuration"
     depends on !IDF_TARGET_ESP32
+
+    config ENABLE_CAMERA
+        bool "Enable Camera"
+        default y
+        depends on BOARD_TYPE_BREAD_COMPACT_WIFI_CAM
+        help
+            Enable camera functionality. Only available on bread-compact-wifi-s3cam board.
+            
+    if ENABLE_CAMERA
+        config CAMERA_MODEL_AUTO_DETECT
+            bool "Enable Camera Model Auto Detect"
+            default y
+            help
+                Enable camera model auto detection. System will automatically identify the connected camera model and apply corresponding configuration.
+                
+        choice CAMERA_MODEL_DEFAULT
+            prompt "Default Camera Model"
+            default CAMERA_MODEL_OV2640_DEFAULT
+            depends on !CAMERA_MODEL_AUTO_DETECT
+            help
+                Select default camera model. If auto detect is disabled, system will use this model for initialization.
+                
+            config CAMERA_MODEL_OV2640_DEFAULT
+                bool "OV2640"
+                help
+                    OV2640 2MP camera sensor, supports JPEG output
+                    
+            config CAMERA_MODEL_OV3660_DEFAULT
+                bool "OV3660"
+                help
+                    OV3660 3MP camera sensor, supports higher resolution
+                    
+            config CAMERA_MODEL_OV5640_DEFAULT
+                bool "OV5640"
+                help
+                    OV5640 5MP camera sensor, supports auto focus and highest resolution
+        endchoice
+        
+        config CAMERA_OV2640_SUPPORT
+            bool "Enable OV2640 Support"
+            default y
+            help
+                Enable OV2640 camera sensor support. OV2640 is the most common ESP32 camera module.
+                
+        config CAMERA_OV3660_SUPPORT
+            bool "Enable OV3660 Support"
+            default y
+            help
+                Enable OV3660 camera sensor support. OV3660 provides higher resolution and better image quality.
+                
+        config CAMERA_OV5640_SUPPORT
+            bool "Enable OV5640 Support"
+            default y
+            help
+                Enable OV5640 camera sensor support. OV5640 provides highest resolution and auto focus function.
+                
+        config CAMERA_FLASH_PIN
+            int "Camera Flash Pin"
+            default -1
+            range -1 48
+            help
+                GPIO pin connected to camera flash LED. Set to -1 to disable flash.
+                
+        config CAMERA_FLASH_DEFAULT_LEVEL
+            int "Default Flash Level (%)"
+            default 50
+            range 0 100
+            depends on CAMERA_FLASH_PIN != -1
+            help
+                Default brightness percentage of camera flash, range 0-100.
+    endif
 
     comment "Warning: Please read the help text before modifying these settings."
     
@@ -1534,103 +1623,6 @@ menu "Camera Configuration"
             comment "For 180° rotation, use HFlip + VFlip instead of this option"
         endchoice
     endif
-endmenu
-
-menu "TAIJIPAI_S3_CONFIG"
-    depends on BOARD_TYPE_TAIJI_PI_S3
-    choice I2S_TYPE_TAIJIPI_S3
-        prompt "taiji-pi-S3 I2S Type"
-        default TAIJIPAI_I2S_TYPE_STD
-        help
-            I2S 类型选择
-        config TAIJIPAI_I2S_TYPE_STD
-            bool "I2S Type STD"
-        config TAIJIPAI_I2S_TYPE_PDM
-            bool "I2S Type PDM"
-    endchoice
-
-    config I2S_USE_2SLOT
-    bool "Enable I2S 2 Slot"
-    default y
-    help
-        启动双声道
-endmenu
-
-# 摄像头配置
-menu "Camera Configuration"
-    depends on BOARD_TYPE_BREAD_COMPACT_WIFI_CAM
-    config ENABLE_CAMERA
-        bool "启用摄像头功能"
-        default y
-        help
-            启用摄像头功能。仅在bread-compact-wifi-s3cam板上可用。
-            
-    config CAMERA_MODEL_AUTO_DETECT
-        bool "启用摄像头型号自动检测"
-        default y
-        depends on ENABLE_CAMERA
-        help
-            启用摄像头型号自动检测功能。系统将自动识别连接的摄像头型号并应用相应的配置。
-            
-    choice CAMERA_MODEL_DEFAULT
-        prompt "默认摄像头型号"
-        default CAMERA_MODEL_OV2640_DEFAULT
-        depends on ENABLE_CAMERA && !CAMERA_MODEL_AUTO_DETECT
-        help
-            选择默认的摄像头型号。如果禁用自动检测，系统将使用此型号进行初始化。
-            
-        config CAMERA_MODEL_OV2640_DEFAULT
-            bool "OV2640"
-            help
-                OV2640 2MP摄像头传感器，支持JPEG输出
-                
-        config CAMERA_MODEL_OV3660_DEFAULT
-            bool "OV3660"
-            help
-                OV3660 3MP摄像头传感器，支持更高分辨率
-                
-        config CAMERA_MODEL_OV5640_DEFAULT
-            bool "OV5640"
-            help
-                OV5640 5MP摄像头传感器，支持自动对焦和最高分辨率
-    endchoice
-    
-    config CAMERA_OV2640_SUPPORT
-        bool "启用OV2640支持"
-        default y
-        depends on ENABLE_CAMERA
-        help
-            启用OV2640摄像头传感器支持。OV2640是最常见的ESP32摄像头模块。
-            
-    config CAMERA_OV3660_SUPPORT
-        bool "启用OV3660支持"
-        default y
-        depends on ENABLE_CAMERA
-        help
-            启用OV3660摄像头传感器支持。OV3660提供更高的分辨率和更好的图像质量。
-            
-    config CAMERA_OV5640_SUPPORT
-        bool "启用OV5640支持"
-        default y
-        depends on ENABLE_CAMERA
-        help
-            启用OV5640摄像头传感器支持。OV5640提供最高分辨率和自动对焦功能。
-            
-    config CAMERA_FLASH_PIN
-        int "摄像头闪光灯引脚"
-        default -1
-        range -1 48
-        depends on ENABLE_CAMERA
-        help
-            连接到摄像头闪光灯LED的GPIO引脚。设置为-1表示不使用闪光灯。
-            
-    config CAMERA_FLASH_DEFAULT_LEVEL
-        int "默认闪光灯亮度 (%)"
-        default 50
-        range 0 100
-        depends on ENABLE_CAMERA && CAMERA_FLASH_PIN != -1
-        help
-            摄像头闪光灯的默认亮度百分比，范围0-100。
 endmenu
 
 endmenu
