@@ -1478,14 +1478,6 @@ menu "TAIJIPAI_S3_CONFIG"
         help
             启动双声道
 endmenu
-
-config OTTO_ROBOT_USE_CAMERA
-    bool "Enable Otto Robot Camera"
-    default n
-    depends on BOARD_TYPE_OTTO_ROBOT
-    help
-        Enable Otto Robot Camera
-
 menu "Camera Configuration"
     depends on !IDF_TARGET_ESP32
 

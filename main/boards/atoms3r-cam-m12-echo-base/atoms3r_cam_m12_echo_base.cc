@@ -8,8 +8,7 @@
 
 #include <esp_log.h>
 #include <driver/i2c_master.h>
-#include <wifi_station.h>
-#include "common/esp32_camera.h"
+#include "esp32_camera.h"
 
 #define TAG "AtomS3R CAM/M12 + EchoBase"
 
