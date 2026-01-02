@@ -288,7 +288,7 @@ camera_config_t CreateS3CamConfig() {
     config.pin_href = CAMERA_PIN_HREF;
     config.pin_sccb_sda = CAMERA_PIN_SIOD;
     config.pin_sccb_scl = CAMERA_PIN_SIOC;
-    config.sccb_i2c_port = 0;
+    config.sccb_i2c_port = 1;
     config.pin_pwdn = CAMERA_PIN_PWDN;
     config.pin_reset = CAMERA_PIN_RESET;
     config.xclk_freq_hz = XCLK_FREQ_HZ;

@@ -87,7 +87,6 @@ bool ComponentManager::RegisterComponent(Component* component) {
     if (!IsComponentTypeEnabled(type)) {
         ESP_LOGI(TAG, "Component type %d not enabled in config, skipping registration for %s", 
                  type, component->GetName() ? component->GetName() : "unnamed");
-        delete component; // 释放内存，防止泄漏
         return false;
     }
     
@@ -99,7 +98,6 @@ bool ComponentManager::RegisterComponent(Component* component) {
     
     if (it != components_.end()) {
         ESP_LOGW(TAG, "Component %s already registered", component->GetName());
-        delete component; // 释放内存，防止泄漏
         return false;
     }
     

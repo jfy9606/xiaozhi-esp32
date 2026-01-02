@@ -598,6 +598,13 @@ void Vehicle::ServoDataTask(void* pvParameters) {
 
 // 全局初始化函数
 void InitVehicleComponent(Web* server) {
+    // 检查是否已经初始化
+    auto& manager = ComponentManager::GetInstance();
+    if (manager.GetComponent("Vehicle") != nullptr) {
+        ESP_LOGI(TAG, "Vehicle component already initialized");
+        return;
+    }
+
     // 检查板级配置
     board_config_t* board_config = Board::GetBoardConfig();
     if (!board_config) {

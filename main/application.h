@@ -139,7 +139,6 @@ public:
     void SetAecMode(AecMode mode);
     AecMode GetAecMode() const { return aec_mode_; }
 
-    void InitVehicleComponent(Web* web_server);
     void PlaySound(const std::string_view& sound);
     AudioService& GetAudioService() { return audio_service_; }
     HardwareManager* GetHardwareManager() { return hardware_manager_; }

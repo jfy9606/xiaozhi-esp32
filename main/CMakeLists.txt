@@ -73,7 +73,7 @@ if(CONFIG_ENABLE_WEB_SERVER AND CONFIG_ENABLE_WEB_CONTENT)
                    "${CMAKE_CURRENT_SOURCE_DIR}/assets/html/audio_control.html")
     
     # Add vision.html only for s3cam board
-    if(CONFIG_BOARD_TYPE_BREAD_COMPACT_WIFI_CAM)
+    if(CONFIG_BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM)
         list(APPEND HTML_FILES "${CMAKE_CURRENT_SOURCE_DIR}/assets/html/vision.html")
     endif()
     
@@ -657,7 +657,7 @@ elseif(CONFIG_BOARD_TYPE_ELECTRON_BOT)
     set(BOARD_TYPE "electron-bot")
     set(BUILTIN_TEXT_FONT font_puhui_20_4)
     set(BUILTIN_ICON_FONT font_awesome_20_4)
-elseif(CONFIG_BOARD_TYPE_BREAD_COMPACT_WIFI_CAM)
+elseif(CONFIG_BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM)
     set(BOARD_TYPE "bread-compact-wifi-s3cam")
     set(BUILTIN_TEXT_FONT font_puhui_basic_16_4)
     set(BUILTIN_ICON_FONT font_awesome_16_4)
@@ -711,7 +711,7 @@ list(APPEND SOURCES ${BOARD_SOURCES})
 
 # Add camera and vision components only for s3cam board
 # This ensures camera functionality is restricted to bread-compact-wifi-s3cam board only
-if(CONFIG_BOARD_TYPE_BREAD_COMPACT_WIFI_CAM)
+if(CONFIG_BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM)
     list(APPEND SOURCES "vision/vision.cc")
     list(APPEND SOURCES "camera/camera_resource_manager.cc")
     list(APPEND SOURCES "camera/enhanced_esp32_camera.cc")

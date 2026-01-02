@@ -184,7 +184,7 @@ std::vector<std::string> SimpleErrorHandler::GetRecoverySuggestions(const std::s
         suggestions.push_back("Check power supply to HW178 module");
         suggestions.push_back("Try reinitializing the multiplexer system");
     } else if (component == "PCF8575") {
-        suggestions.push_back("Check I2C connections to PCF8575 GPIO expander");
+        suggestions.push_back("Check I2C connections to PCF8575 GPIO multiplexer");
         suggestions.push_back("Verify PCA9548A channel selection");
         suggestions.push_back("Check power supply to PCF8575 module");
         suggestions.push_back("Verify GPIO pin configuration");
@@ -201,7 +201,7 @@ std::vector<std::string> SimpleErrorHandler::GetRecoverySuggestions(const std::s
     } else if (component == "Sensor") {
         suggestions.push_back("Check sensor connections");
         suggestions.push_back("Verify sensor configuration");
-        suggestions.push_back("Check expander channel selection");
+        suggestions.push_back("Check multiplexer channel selection");
         suggestions.push_back("Verify sensor power supply");
     } else if (component == "Motor") {
         suggestions.push_back("Check motor connections");

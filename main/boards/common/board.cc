@@ -117,13 +117,13 @@ void Board::InitBoardConfig() {
         ESP_LOGI(TAG, "Motor IN4 pin using default from board.h: %d", MOTOR_IN4_PIN);
         #endif
     #elif defined(CONFIG_MOTOR_CONNECTION_PCF8575)
-        // PCF8575连接方式：电机控制引脚通过PCF8575扩展器连接
-        // 这种情况下，实际引脚编号由PCF8575控制器确定，我们在这里使用-1表示通过扩展器控制
+        // PCF8575连接方式：电机控制引脚通过PCF8575多路复用器连接
+        // 这种情况下，实际引脚编号由PCF8575控制器确定，我们在这里使用-1表示通过多路复用器控制
         board_config_.in1_pin = -1;
         board_config_.in2_pin = -1;
         board_config_.in3_pin = -1;
         board_config_.in4_pin = -1;
-        ESP_LOGI(TAG, "Motor control pins using PCF8575 expander");
+        ESP_LOGI(TAG, "Motor control pins using PCF8575 multiplexer");
         #ifdef CONFIG_MOTOR_PCF8575_IN1_PIN
         ESP_LOGI(TAG, "PCF8575 Motor IN1 pin: %d", CONFIG_MOTOR_PCF8575_IN1_PIN);
         #endif
@@ -333,107 +333,153 @@ void Board::InitBoardConfig() {
 #endif
     
     // 摄像头引脚配置
-    #if defined(CAM_PWDN_PIN)
-    board_config_.pwdn_pin = CAM_PWDN_PIN;
+    #if defined(CAMERA_PIN_PWDN)
+    board_config_.pwdn_pin = CAMERA_PIN_PWDN;
     #else
     board_config_.pwdn_pin = -1;
     #endif
     
-    #if defined(CAM_RESET_PIN)
-    board_config_.reset_pin = CAM_RESET_PIN;
+    #if defined(CAMERA_PIN_RESET)
+    board_config_.reset_pin = CAMERA_PIN_RESET;
     #else
     board_config_.reset_pin = -1;
     #endif
     
-    #if defined(CAM_XCLK_PIN)
-    board_config_.xclk_pin = CAM_XCLK_PIN;
+    #if defined(CAMERA_PIN_XCLK)
+    board_config_.xclk_pin = CAMERA_PIN_XCLK;
     #else
     board_config_.xclk_pin = -1;
     #endif
     
-    #if defined(CAM_SIOD_PIN)
-    board_config_.siod_pin = CAM_SIOD_PIN;
+    #if defined(CAMERA_PIN_SIOD)
+    board_config_.siod_pin = CAMERA_PIN_SIOD;
     #else
     board_config_.siod_pin = -1;
     #endif
     
-    #if defined(CAM_SIOC_PIN)
-    board_config_.sioc_pin = CAM_SIOC_PIN;
+    #if defined(CAMERA_PIN_SIOC)
+    board_config_.sioc_pin = CAMERA_PIN_SIOC;
     #else
     board_config_.sioc_pin = -1;
     #endif
     
-    #if defined(CAM_Y2_PIN)
-    board_config_.y2_pin = CAM_Y2_PIN;
+    #if defined(CAMERA_PIN_D2)
+    board_config_.y2_pin = CAMERA_PIN_D2;
     #else
     board_config_.y2_pin = -1;
     #endif
     
-    #if defined(CAM_Y3_PIN)
-    board_config_.y3_pin = CAM_Y3_PIN;
+    #if defined(CAMERA_PIN_D3)
+    board_config_.y3_pin = CAMERA_PIN_D3;
     #else
     board_config_.y3_pin = -1;
     #endif
     
-    #if defined(CAM_Y4_PIN)
-    board_config_.y4_pin = CAM_Y4_PIN;
+    #if defined(CAMERA_PIN_D4)
+    board_config_.y4_pin = CAMERA_PIN_D4;
     #else
     board_config_.y4_pin = -1;
     #endif
     
-    #if defined(CAM_Y5_PIN)
-    board_config_.y5_pin = CAM_Y5_PIN;
+    #if defined(CAMERA_PIN_D5)
+    board_config_.y5_pin = CAMERA_PIN_D5;
     #else
     board_config_.y5_pin = -1;
     #endif
     
-    #if defined(CAM_Y6_PIN)
-    board_config_.y6_pin = CAM_Y6_PIN;
+    #if defined(CAMERA_PIN_D6)
+    board_config_.y6_pin = CAMERA_PIN_D6;
     #else
     board_config_.y6_pin = -1;
     #endif
     
-    #if defined(CAM_Y7_PIN)
-    board_config_.y7_pin = CAM_Y7_PIN;
+    #if defined(CAMERA_PIN_D7)
+    board_config_.y7_pin = CAMERA_PIN_D7;
     #else
     board_config_.y7_pin = -1;
     #endif
     
-    #if defined(CAM_Y8_PIN)
-    board_config_.y8_pin = CAM_Y8_PIN;
+    #if defined(CAMERA_PIN_D0)
+    board_config_.y8_pin = CAMERA_PIN_D0;
     #else
     board_config_.y8_pin = -1;
     #endif
     
-    #if defined(CAM_Y9_PIN)
-    board_config_.y9_pin = CAM_Y9_PIN;
+    #if defined(CAMERA_PIN_D1)
+    board_config_.y9_pin = CAMERA_PIN_D1;
     #else
     board_config_.y9_pin = -1;
     #endif
     
-    #if defined(CAM_VSYNC_PIN)
-    board_config_.vsync_pin = CAM_VSYNC_PIN;
+    #if defined(CAMERA_PIN_VSYNC)
+    board_config_.vsync_pin = CAMERA_PIN_VSYNC;
     #else
     board_config_.vsync_pin = -1;
     #endif
     
-    #if defined(CAM_HREF_PIN)
-    board_config_.href_pin = CAM_HREF_PIN;
+    #if defined(CAMERA_PIN_HREF)
+    board_config_.href_pin = CAMERA_PIN_HREF;
     #else
     board_config_.href_pin = -1;
     #endif
     
-    #if defined(CAM_PCLK_PIN)
-    board_config_.pclk_pin = CAM_PCLK_PIN;
+    #if defined(CAMERA_PIN_PCLK)
+    board_config_.pclk_pin = CAMERA_PIN_PCLK;
     #else
     board_config_.pclk_pin = -1;
     #endif
     
-    #if defined(CAM_LED_PIN)
-    board_config_.cam_led_pin = CAM_LED_PIN;
+    #if defined(CAMERA_FLASH_PIN)
+    board_config_.cam_led_pin = (int)CAMERA_FLASH_PIN;
     #else
     board_config_.cam_led_pin = -1;
     #endif
+
+    // 音频引脚配置
+    board_config_.audio_i2s_mic_ws = AUDIO_I2S_MIC_GPIO_WS;
+    board_config_.audio_i2s_mic_sck = AUDIO_I2S_MIC_GPIO_SCK;
+    board_config_.audio_i2s_mic_din = AUDIO_I2S_MIC_GPIO_DIN;
+    board_config_.audio_i2s_spk_dout = AUDIO_I2S_SPK_GPIO_DOUT;
+    board_config_.audio_i2s_spk_bclk = AUDIO_I2S_SPK_GPIO_BCLK;
+    board_config_.audio_i2s_spk_lrck = AUDIO_I2S_SPK_GPIO_LRCK;
+
+    // 按钮与LED引脚配置
+    board_config_.builtin_led_pin = BUILTIN_LED_GPIO;
+    board_config_.boot_button_pin = BOOT_BUTTON_GPIO;
+    board_config_.touch_button_pin = TOUCH_BUTTON_GPIO;
+    board_config_.volume_up_button_pin = VOLUME_UP_BUTTON_GPIO;
+    board_config_.volume_down_button_pin = VOLUME_DOWN_BUTTON_GPIO;
+
+    // 超声波传感器引脚配置
+#ifdef CONFIG_ENABLE_US_SENSOR
+    #ifdef CONFIG_US_CONNECTION_DIRECT
+        board_config_.us_front_trig_pin = US_FRONT_TRIG_PIN;
+        board_config_.us_front_echo_pin = US_FRONT_ECHO_PIN;
+        board_config_.us_rear_trig_pin = US_REAR_TRIG_PIN;
+        board_config_.us_rear_echo_pin = US_REAR_ECHO_PIN;
+        ESP_LOGI(TAG, "Ultrasonic sensor pins (direct): Front(T:%d, E:%d), Rear(T:%d, E:%d)",
+                 board_config_.us_front_trig_pin, board_config_.us_front_echo_pin,
+                 board_config_.us_rear_trig_pin, board_config_.us_rear_echo_pin);
+    #elif defined(CONFIG_US_CONNECTION_PCF8575)
+        board_config_.us_front_trig_pin = -1;
+        board_config_.us_front_echo_pin = -1;
+        board_config_.us_rear_trig_pin = -1;
+        board_config_.us_rear_echo_pin = -1;
+        ESP_LOGI(TAG, "Ultrasonic sensor pins using PCF8575 multiplexer");
+        #ifdef CONFIG_US_PCF8575_FRONT_TRIG_PIN
+        ESP_LOGI(TAG, "  Front Trig: P%02d, Echo: P%02d", CONFIG_US_PCF8575_FRONT_TRIG_PIN, CONFIG_US_PCF8575_FRONT_ECHO_PIN);
+        #endif
+        #ifdef CONFIG_US_PCF8575_REAR_TRIG_PIN
+        ESP_LOGI(TAG, "  Rear Trig: P%02d, Echo: P%02d", CONFIG_US_PCF8575_REAR_TRIG_PIN, CONFIG_US_PCF8575_REAR_ECHO_PIN);
+        #endif
+    #endif
+#else
+    board_config_.us_front_trig_pin = -1;
+    board_config_.us_front_echo_pin = -1;
+    board_config_.us_rear_trig_pin = -1;
+    board_config_.us_rear_echo_pin = -1;
+    ESP_LOGI(TAG, "Ultrasonic sensor disabled");
+#endif
     
     // 摄像头支持标志
     board_config_.camera_supported = (board_config_.xclk_pin > 0);
@@ -446,8 +492,8 @@ void Board::InitBoardConfig() {
     ESP_LOGI(TAG, "Motor pins (from Kconfig):");
     ESP_LOGI(TAG, "  ENA: %d, ENB: %d", board_config_.ena_pin, board_config_.enb_pin);
     #ifdef CONFIG_MOTOR_CONNECTION_PCF8575
-    // PCF8575连接方式显示扩展器引脚
-    ESP_LOGI(TAG, "  IN1: -1, IN2: -1, IN3: -1, IN4: -1 (Using PCF8575 expander)");
+    // PCF8575连接方式显示多路复用器引脚
+    ESP_LOGI(TAG, "  IN1: -1, IN2: -1, IN3: -1, IN4: -1 (Using PCF8575 multiplexer)");
     ESP_LOGI(TAG, "  PCF8575 pins: IN1: %d, IN2: %d, IN3: %d, IN4: %d", 
              CONFIG_MOTOR_PCF8575_IN1_PIN, CONFIG_MOTOR_PCF8575_IN2_PIN,
              CONFIG_MOTOR_PCF8575_IN3_PIN, CONFIG_MOTOR_PCF8575_IN4_PIN);
@@ -468,10 +514,10 @@ void Board::InitBoardConfig() {
         ESP_LOGI(TAG, "  Servo %d: %d", i+1, servo_pins_array[i]);
     }
     
-    ESP_LOGI(TAG, "Camera pins (from board-specific defines):");
+    ESP_LOGI(TAG, "Camera pins (from Kconfig or board-specific defines):");
     ESP_LOGI(TAG, "  XCLK: %d, SIOD: %d, SIOC: %d", 
              board_config_.xclk_pin, board_config_.siod_pin, board_config_.sioc_pin);
-    ESP_LOGI(TAG, "  VSYNC: %d, HREF: %d, PCLK: %d, LED: %d",
+    ESP_LOGI(TAG, "  VSYNC: %d, HREF: %d, PCLK: %d, Flash LED: %d",
              board_config_.vsync_pin, board_config_.href_pin, board_config_.pclk_pin, board_config_.cam_led_pin);
     ESP_LOGI(TAG, "--------------------------------------------");
 }
@@ -543,10 +589,16 @@ int Board::GetDefaultI2CPort() {
 }
 
 bool Board::IsI2CDeviceConnected(int port, uint8_t addr) {
-    // Simplified implementation for ESP-IDF 5.x
-    // This is a placeholder implementation that always returns false
-    // Since this function may not be critical for the actual operation
-    ESP_LOGW(TAG, "IsI2CDeviceConnected is not fully implemented in this version");
+    i2c_master_bus_handle_t bus_handle = board_get_i2c_bus_handle();
+    if (bus_handle == nullptr) {
+        ESP_LOGE(TAG, "I2C bus handle is null");
+        return false;
+    }
+    esp_err_t err = i2c_master_probe(bus_handle, addr, 100);
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "I2C device found at address 0x%02x", addr);
+        return true;
+    }
     return false;
 }
 

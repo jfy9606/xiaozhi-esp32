@@ -158,7 +158,7 @@ private:
         
         // 如果PCF8575可用，则使用PCF8575
         if (use_pcf8575_) {
-            ESP_LOGI(TAG, "Using PCF8575 GPIO expander for motor control");
+            ESP_LOGI(TAG, "Using PCF8575 GPIO multiplexer for motor control");
             // 获取PCF8575句柄
             pcf8575_handle_t pcf_handle = pcf8575_get_handle();
             if (!pcf_handle) {

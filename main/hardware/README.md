@@ -1,20 +1,20 @@
 # Hardware Manager
 
-The Hardware Manager provides a unified interface for managing sensors and actuators connected through various expander chips.
+The Hardware Manager provides a unified interface for managing sensors and actuators connected through various multiplexer chips.
 
 ## Features
 
 - **Sensor Management**: Read data from sensors connected through HW178 analog multiplexer
-- **Motor Control**: Control motors through PCF8575 GPIO expander
+- **Motor Control**: Control motors through PCF8575 GPIO multiplexer
 - **Servo Control**: Control servos through LU9685 PWM controller
 - **Configuration Management**: JSON-based configuration with validation
 - **Error Handling**: Comprehensive error handling and logging
 
 ## Supported Hardware
 
-### Expanders
+### Multiplexers
 - **PCA9548A**: I2C multiplexer for channel selection
-- **PCF8575**: 16-bit GPIO expander for motor control
+- **PCF8575**: 16-bit GPIO multiplexer for motor control
 - **LU9685**: 16-channel PWM controller for servo control
 - **HW178**: 16-channel analog multiplexer for sensor reading
 
@@ -42,7 +42,7 @@ The hardware manager uses JSON configuration files to define sensor and actuator
   "id": "temperature_01",
   "name": "Environment Temperature",
   "type": "temperature",
-  "expander": "hw178",
+  "multiplexer": "hw178",
   "channel": 0,
   "unit": "°C",
   "calibration": {

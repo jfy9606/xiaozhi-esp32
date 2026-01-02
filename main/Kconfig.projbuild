@@ -123,8 +123,8 @@ choice BOARD_TYPE
     config BOARD_TYPE_BREAD_COMPACT_WIFI_LCD
         bool "Bread Compact WiFi + LCD (面包板)"
         depends on IDF_TARGET_ESP32S3
-    config BOARD_TYPE_BREAD_COMPACT_WIFI_CAM
-        bool "Bread Compact WiFi + LCD + Camera (面包板)"
+    config BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
+        bool "Bread Compact WiFi + LCD + Camera (面包板 S3CAM)"
         depends on IDF_TARGET_ESP32S3     
     config BOARD_TYPE_BREAD_COMPACT_ML307
         bool "Bread Compact ML307/EC801E (面包板 4G)"
@@ -497,7 +497,7 @@ choice DISPLAY_OLED_TYPE
 endchoice
 
 choice DISPLAY_LCD_TYPE
-    depends on BOARD_TYPE_BREAD_COMPACT_WIFI_LCD || BOARD_TYPE_BREAD_COMPACT_ESP32_LCD || BOARD_TYPE_CGC || BOARD_TYPE_WAVESHARE_P4_NANO || BOARD_TYPE_WAVESHARE_P4_WIFI6_TOUCH_LCD_XC || BOARD_TYPE_BREAD_COMPACT_WIFI_CAM
+    depends on BOARD_TYPE_BREAD_COMPACT_WIFI_LCD || BOARD_TYPE_BREAD_COMPACT_ESP32_LCD || BOARD_TYPE_CGC || BOARD_TYPE_WAVESHARE_P4_NANO || BOARD_TYPE_WAVESHARE_P4_WIFI6_TOUCH_LCD_XC || BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
     prompt "LCD Type"
     default LCD_ST7789_240X320
     help
@@ -543,6 +543,74 @@ choice DISPLAY_LCD_TYPE
     config LCD_CUSTOM
         bool "Custom LCD (自定义屏幕参数)"
 endchoice
+
+menu "Display Pin Configuration"
+            depends on BOARD_TYPE_BREAD_COMPACT_WIFI || BOARD_TYPE_BREAD_COMPACT_WIFI_LCD || BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
+
+            config DISPLAY_SDA_PIN
+                int "Display I2C SDA Pin (for OLED)"
+                depends on BOARD_TYPE_BREAD_COMPACT_WIFI
+                default 41
+                range -1 48
+                help
+                    The GPIO number connected to the SDA pin of the OLED display.
+            
+            config DISPLAY_SCL_PIN
+                int "Display I2C SCL Pin (for OLED)"
+                depends on BOARD_TYPE_BREAD_COMPACT_WIFI
+                default 42
+                range -1 48
+                help
+                    The GPIO number connected to the SCL pin of the OLED display.
+
+            config DISPLAY_MOSI_PIN
+                int "Display MOSI Pin"
+                depends on BOARD_TYPE_BREAD_COMPACT_WIFI_LCD || BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
+                default 20
+                range 0 48
+                help
+                    The GPIO number connected to the MOSI pin of the LCD.
+
+            config DISPLAY_CLK_PIN
+                int "Display CLK Pin"
+                depends on BOARD_TYPE_BREAD_COMPACT_WIFI_LCD || BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
+                default 19
+                range 0 48
+                help
+                    The GPIO number connected to the SCLK pin of the LCD.
+
+            config DISPLAY_CS_PIN
+                int "Display CS Pin"
+                depends on BOARD_TYPE_BREAD_COMPACT_WIFI_LCD || BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
+                default 45
+                range 0 48
+                help
+                    The GPIO number connected to the CS pin of the LCD.
+
+            config DISPLAY_DC_PIN
+                int "Display DC Pin"
+                depends on BOARD_TYPE_BREAD_COMPACT_WIFI_LCD || BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
+                default 47
+                range 0 48
+                help
+                    The GPIO number connected to the DC pin of the LCD.
+
+            config DISPLAY_RST_PIN
+                int "Display Reset Pin"
+                depends on BOARD_TYPE_BREAD_COMPACT_WIFI_LCD || BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
+                default 21
+                range 0 48
+                help
+                    The GPIO number connected to the reset pin of the LCD.
+
+            config DISPLAY_BACKLIGHT_PIN
+                int "Display Backlight Pin"
+                depends on BOARD_TYPE_BREAD_COMPACT_WIFI_LCD || BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
+                default 38
+                range 0 48
+                help
+                    The GPIO number connected to the backlight pin of the LCD.
+endmenu
 
 choice DISPLAY_ESP32S3_KORVO2_V3
     depends on BOARD_TYPE_ESP_KORVO2_V3
@@ -672,770 +740,1006 @@ config USE_SERVER_AEC
         To work perperly, server-side AEC requires server support
         
 menu "Component Manager"
-    # I2C总线配置
+    # I2C Bus Configuration
     menu "I2C Bus Configuration"
         config CAMERA_I2C_PORT
-            int "摄像头I2C端口号"
+            int "Camera I2C Port"
             range 0 1
             default 1
-            depends on BOARD_TYPE_BREAD_COMPACT_WIFI_CAM
+            depends on BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
             help
-                摄像头使用的I2C端口号。ESP32支持两个I2C端口：0和1。仅在bread-compact-wifi-s3cam板上可用。
+                The I2C port number used by the camera. ESP32 supports two I2C ports: 0 and 1. Only available on bread-compact-wifi-s3cam board.
                 
         config DISPLAY_I2C_PORT
-            int "显示屏和多路复用器I2C端口号"
+            int "Display and Multiplexer I2C Port"
             range 0 1
             default 0
             help
-                显示屏和多路复用器共享使用的I2C端口号。
-                ESP32支持两个I2C端口：0和1。
+                The I2C port number shared by the display and multiplexer.
+                ESP32 supports two I2C ports: 0 and 1.
     endmenu
     
-    # Web服务器配置
+    # Web Server Configuration
     menu "Web Server"
         config ENABLE_WEB_SERVER
-            bool "启用Web服务器功能"
+            bool "Enable Web Server"
             default y
             help
-                开启或关闭Web服务器功能。开启后，设备将提供Web界面用于控制和配置。
-                Web服务器将在WiFi连接成功且系统初始化完成后自动启动。
+                Turn the web server on or off. When enabled, the device will provide a web interface for control and configuration.
+                The web server will start automatically after the WiFi connection is successful and the system initialization is complete.
         
         config WEB_SERVER_PORT
-            int "Web服务器端口"
+            int "Web Server Port"
             default 8080
             depends on ENABLE_WEB_SERVER
             help
-                Web服务器监听的端口号。默认为8080。
+                The port number the web server listens on. Default is 8080.
         
         config ENABLE_WEB_CONTENT
-            bool "启用Web内容功能"
+            bool "Enable Web Content"
             default y
             depends on ENABLE_WEB_SERVER
             help
-                开启或关闭Web内容功能。开启后，设备将提供完整的Web界面，包括控制页面等。
-                关闭此选项将只提供基本的Web API接口，不包含HTML页面。
+                Turn the web content feature on or off. When enabled, the device will provide a full web interface, including control pages, etc.
+                Disabling this option will only provide basic Web API interfaces and will not include HTML pages.
     endmenu
     
-    # 扩展器/多路复用器配置
-    menu "Multiplexer & Expander"
+    # Multiplexer Configuration
+    menu "Multiplexer"
         config ENABLE_MULTIPLEXER
-            bool "启用扩展器/多路复用器"
+            bool "Enable Multiplexer"
+            default y if BOARD_TYPE_BREAD_COMPACT_WIFI || BOARD_TYPE_BREAD_COMPACT_WIFI_LCD || BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
             default n
             help
-                启用扩展器模块，支持各种多路复用器和扩展芯片，如PCA9548A、HW-178、PCF8575、LU9685等，
-                用于扩展I/O、I2C设备、GPIO接口和舵机控制等功能。
+                Enable the multiplexer module, supporting various multiplexer chips such as PCA9548A, HW-178, PCF8575, LU9685, etc.,
+                used for extending I/O, I2C devices, GPIO interfaces, and servo control functions.
 
         config ENABLE_PCA9548A
-            bool "启用PCA9548A I2C多路复用器"
+            bool "Enable PCA9548A I2C Multiplexer"
+            default y if BOARD_TYPE_BREAD_COMPACT_WIFI || BOARD_TYPE_BREAD_COMPACT_WIFI_LCD || BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
             default n
             depends on ENABLE_MULTIPLEXER
             help
-                启用PCA9548A I2C多路复用器支持，可扩展I2C设备连接。
-                PCA9548A通过SDA、SCL输入，SC0-7、SD0-7输出，可连接多达8个I2C设备。
+                Enable PCA9548A I2C multiplexer support, which can extend I2C device connections.
+                PCA9548A input via SDA and SCL, output via SC0-7 and SD0-7, can connect up to 8 I2C devices.
 
         config PCA9548A_I2C_PORT
-            int "PCA9548A I2C端口号"
+            int "PCA9548A I2C Port"
             default 0
             range 0 1
             depends on ENABLE_PCA9548A
             help
-                PCA9548A使用的I2C端口号。ESP32支持两个I2C端口: 0和1。
+                The I2C port number used by PCA9548A. ESP32 supports two I2C ports: 0 and 1.
 
         config PCA9548A_I2C_ADDR
-            hex "PCA9548A I2C地址"
+            hex "PCA9548A I2C Address"
             default 0x70
             range 0x70 0x77
             depends on ENABLE_PCA9548A
             help
-                PCA9548A的I2C地址，默认为0x70。
-                可通过A0-A2引脚设置为0x70-0x77之间的值。
+                The I2C address of PCA9548A, default is 0x70.
+                It can be set between 0x70-0x77 via the A0-A2 pins.
 
         config PCA9548A_SDA_PIN
-            int "PCA9548A SDA引脚"
-            default 14 if BOARD_TYPE_BREAD_COMPACT_WIFI_CAM
+            int "PCA9548A SDA Pin"
+            default 14 if BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
             default 8 if BOARD_TYPE_BREAD_COMPACT_WIFI_LCD
             default 8 if BOARD_TYPE_BREAD_COMPACT_WIFI
             default 41
             range 0 48
             depends on ENABLE_PCA9548A
             help
-                连接到PCA9548A的SDA引脚的GPIO编号。
-                bread-compact-wifi-s3cam板默认使用GPIO14。
+                The GPIO number connected to the SDA pin of PCA9548A.
+                The bread-compact-wifi-s3cam board uses GPIO14 by default.
 
         config PCA9548A_SCL_PIN
-            int "PCA9548A SCL引脚"
-            default 46 if BOARD_TYPE_BREAD_COMPACT_WIFI_CAM
+            int "PCA9548A SCL Pin"
+            default 46 if BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
             default 9 if BOARD_TYPE_BREAD_COMPACT_WIFI_LCD
             default 9 if BOARD_TYPE_BREAD_COMPACT_WIFI
             default 42
             range 0 48
             depends on ENABLE_PCA9548A
             help
-                连接到PCA9548A的SCL引脚的GPIO编号。
-                bread-compact-wifi-s3cam板默认使用GPIO46。
+                The GPIO number connected to the SCL pin of PCA9548A.
+                The bread-compact-wifi-s3cam board uses GPIO46 by default.
 
         config PCA9548A_RESET_PIN
-            int "PCA9548A复位引脚"
+            int "PCA9548A Reset Pin"
             default -1
             range -1 48
             depends on ENABLE_PCA9548A
             help
-                连接到PCA9548A的复位引脚的GPIO编号。
-                如果不使用复位引脚，设置为-1。
+                The GPIO number connected to the reset pin of PCA9548A.
+                If not using a reset pin, set to -1.
 
         config PCA9548A_I2C_FREQ_HZ
-            int "PCA9548A I2C频率 (Hz)"
+            int "PCA9548A I2C Frequency (Hz)"
             default 400000
             range 100000 1000000
             depends on ENABLE_PCA9548A
             help
-                PCA9548A使用的I2C总线频率，单位Hz。
-                标准模式为100000Hz (100KHz)，快速模式为400000Hz (400KHz)。
+                The I2C bus frequency used by PCA9548A, in Hz.
+                Standard mode is 100000Hz (100KHz), Fast mode is 400000Hz (400KHz).
 
         config PCA9548A_I2C_TIMEOUT_MS
-            int "PCA9548A I2C超时时间 (ms)"
+            int "PCA9548A I2C Timeout (ms)"
             default 1000
             range 100 10000
             depends on ENABLE_PCA9548A
             help
-                PCA9548A I2C通信的超时时间，单位毫秒。
+                The timeout for PCA9548A I2C communication, in milliseconds.
 
         config ENABLE_HW178
-            bool "启用HW-178多路复用器"
+            bool "Enable HW-178 Multiplexer"
+            default y if BOARD_TYPE_BREAD_COMPACT_WIFI || BOARD_TYPE_BREAD_COMPACT_WIFI_LCD || BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
             default n
             depends on ENABLE_MULTIPLEXER
             help
-                启用HW-178模拟多路复用器支持，可扩展模拟传感器数量
+                Enable HW-178 analog multiplexer support, which can extend the number of analog sensors.
 
         config HW178_S0_PIN
-            int "HW-178 S0控制引脚"
+            int "HW-178 S0 control pin"
+            default 108 if BOARD_TYPE_BREAD_COMPACT_WIFI || BOARD_TYPE_BREAD_COMPACT_WIFI_LCD || BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
             default 1
-            range -1 48
+            range -1 115
             depends on ENABLE_HW178
             help
-                HW-178多路复用器的S0控制引脚。与S1-S3一起决定选择哪个通道。
+                HW-178 Multiplexer S0 control pin. Together with S1-S3 determines which channel is selected.
+                For bread-compact series, uses PCF8575 P08 (108) by default.
 
         config HW178_S1_PIN
-            int "HW-178 S1控制引脚"
+            int "HW-178 S1 control pin"
+            default 109 if BOARD_TYPE_BREAD_COMPACT_WIFI || BOARD_TYPE_BREAD_COMPACT_WIFI_LCD || BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
             default 2
-            range -1 48
+            range -1 115
             depends on ENABLE_HW178
             help
-                HW-178多路复用器的S1控制引脚。与S0,S2,S3一起决定选择哪个通道。
+                HW-178 Multiplexer S1 control pin. Together with S0,S2,S3 determines which channel is selected.
+                For bread-compact series, uses PCF8575 P09 (109) by default.
 
         config HW178_S2_PIN
-            int "HW-178 S2控制引脚"
+            int "HW-178 S2 control pin"
+            default 110 if BOARD_TYPE_BREAD_COMPACT_WIFI || BOARD_TYPE_BREAD_COMPACT_WIFI_LCD || BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
             default 3
-            range -1 48
+            range -1 115
             depends on ENABLE_HW178
             help
-                HW-178多路复用器的S2控制引脚。与S0,S1,S3一起决定选择哪个通道。
+                HW-178 Multiplexer S2 control pin. Together with S0,S1,S3 determines which channel is selected.
+                For bread-compact series, uses PCF8575 P10 (110) by default.
 
         config HW178_S3_PIN
-            int "HW-178 S3控制引脚"
+            int "HW-178 S3 control pin"
+            default 111 if BOARD_TYPE_BREAD_COMPACT_WIFI || BOARD_TYPE_BREAD_COMPACT_WIFI_LCD || BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
             default -1
-            range -1 48
+            range -1 115
             depends on ENABLE_HW178
             help
-                HW-178多路复用器的S3控制引脚。与S0-S2一起决定选择哪个通道。
+                HW-178 Multiplexer S3 control pin. Together with S0-S2 determines which channel is selected.
+                For bread-compact series, uses PCF8575 P11 (111) by default.
 
         config HW178_SIG_PIN
-            int "HW-178 SIG输出引脚"
+            int "HW-178 SIG Pin"
             default 3
             range 0 48
             depends on ENABLE_HW178
             help
-                HW-178多路复用器的信号输出引脚(SIG)。此引脚连接到ESP32的ADC引脚，
-                用于接收从选定通道传来的模拟信号。
-                该引脚必须支持ADC功能。
-                所有bread-compact板子统一使用GPIO3 (ADC1_CH2)。
+                The signal output pin (SIG) of the HW-178 multiplexer. This pin connects to the ADC pin of the ESP32,
+                used to receive the analog signal from the selected channel.
+                This pin must support ADC functionality.
+                All bread-compact boards use GPIO3 (ADC1_CH2) uniformly.
 
         config HW178_EN_PIN
-            int "HW-178 使能引脚"
+            int "HW-178 Enable Pin"
             default -1
             range -1 48
             depends on ENABLE_HW178
             help
-                HW-178多路复用器的使能引脚(EN)。
-                如果不使用使能引脚，设置为-1。
+                The enable pin (EN) of the HW-178 multiplexer.
+                If not using the enable pin, set to -1.
 
         config HW178_ADC_CHANNEL
-            int "HW-178 ADC通道"
+            int "HW-178 ADC Channel"
             default 2
             range 0 9
             depends on ENABLE_HW178
             help
-                HW-178信号输出引脚对应的ADC通道号。
-                请确保与HW178_SIG_PIN引脚对应的ADC通道一致。
-                所有bread-compact板子统一使用GPIO3对应的ADC1_CH2。
-                该引脚必须支持ADC功能。
+                The ADC channel number corresponding to the HW-178 signal output pin.
+                Please ensure it matches the ADC channel corresponding to the HW178_SIG_PIN.
+                All bread-compact boards use ADC1_CH2 corresponding to GPIO3 uniformly.
+                This pin must support ADC functionality.
 
         config ENABLE_PCF8575
-            bool "启用PCF8575 I2C GPIO扩展器"
+            bool "Enable PCF8575 I2C GPIO Multiplexer"
+            default y if BOARD_TYPE_BREAD_COMPACT_WIFI || BOARD_TYPE_BREAD_COMPACT_WIFI_LCD || BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
             default n
             depends on ENABLE_PCA9548A
             help
-                启用PCF8575 I2C GPIO扩展器支持，可扩展GPIO接口。
-                PCF8575通过I2C连接到PCA9548A的通道0，提供16路GPIO扩展。
+                Enable PCF8575 I2C GPIO multiplexer support, which can extend the GPIO interface.
+                PCF8575 connects to channel 0 of PCA9548A via I2C, providing 16-way GPIO expansion.
 
         config PCF8575_I2C_ADDR
-            hex "PCF8575 I2C地址"
+            hex "PCF8575 I2C Address"
             default 0x20
             range 0x20 0x27
             depends on ENABLE_PCF8575
             help
-                PCF8575的I2C地址，默认为0x20。
-                可通过A0-A2引脚设置为0x20-0x27之间的值。
+                The I2C address of PCF8575, default is 0x20.
+                It can be set between 0x20-0x27 via the A0-A2 pins.
 
         config PCF8575_I2C_TIMEOUT_MS
-            int "PCF8575 I2C超时时间 (ms)"
+            int "PCF8575 I2C Timeout (ms)"
             default 1000
             range 100 10000
             depends on ENABLE_PCF8575
             help
-                PCF8575 I2C通信的超时时间，单位毫秒。
+                The timeout for PCF8575 I2C communication, in milliseconds.
 
         config PCF8575_PCA9548A_CHANNEL
-            int "PCF8575连接的PCA9548A通道"
+            int "PCF8575 PCA9548A Channel"
             default 0
             range 0 7
             depends on ENABLE_PCF8575
             help
-                PCF8575连接的PCA9548A通道号(0-7)。
+                The PCA9548A channel number (0-7) to which PCF8575 is connected.
                 
         config ENABLE_LU9685
-            bool "启用LU9685-20CU舵机控制器"
+            bool "Enable LU9685-20CU Servo Controller"
+            default y if BOARD_TYPE_BREAD_COMPACT_WIFI || BOARD_TYPE_BREAD_COMPACT_WIFI_LCD || BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
             default n
             depends on ENABLE_PCA9548A
             help
-                启用LU9685-20CU舵机控制器支持，可控制多个舵机。
-                LU9685-20CU通过I2C总线通信，连接在PCA9548A的通道1上。
+                Enable LU9685-20CU servo controller support, which can control multiple servos.
+                LU9685-20CU communicates via the I2C bus and is connected to channel 1 of PCA9548A.
 
         config LU9685_I2C_ADDR
-            hex "LU9685-20CU I2C地址"
+            hex "LU9685-20CU I2C Address"
             default 0x40
             depends on ENABLE_LU9685
             help
-                LU9685-20CU的I2C地址，默认为0x40（7位地址格式）。
-                注意：ESP-IDF要求使用7位I2C地址格式，而非8位格式。
-                如果设备数据手册提供的是8位地址(如0x80)，请除以2或右移一位(>>1)转换为7位地址(0x40)。
+                The I2C address of LU9685-20CU, default is 0x40 (7-bit address format).
+                Note: ESP-IDF requires the 7-bit I2C address format instead of the 8-bit format.
+                If the device datasheet provides an 8-bit address (e.g., 0x80), please divide by 2 or right-shift by one (>>1) to convert to a 7-bit address (0x40).
 
         config LU9685_PCA9548A_CHANNEL
-            int "LU9685-20CU连接的PCA9548A通道"
+            int "LU9685-20CU PCA9548A Channel"
             default 1
             range 0 7
             depends on ENABLE_LU9685
             help
-                LU9685-20CU连接的PCA9548A通道号(0-7)。
+                The PCA9548A channel number (0-7) to which LU9685-20CU is connected.
     endmenu
     
-    # 电机控制器配置
+    # Motor Controller Configuration
     menu "Motor Controller"
         config ENABLE_MOTOR_CONTROLLER
-            bool "启用电机控制器"
+            bool "Enable Motor Controller"
             default y
             help
-                启用电机控制器，用于小车移动功能
+                Enable the motor controller, used for vehicle movement functions.
                 
         config MOTOR_ENA_PIN
-            int "电机A使能引脚"
-            default 17 if BOARD_TYPE_BREAD_COMPACT_WIFI
+            int "Motor A Enable Pin"
+            default 1 if BOARD_TYPE_BREAD_COMPACT_WIFI
             default 22 if BOARD_TYPE_BREAD_COMPACT_WIFI_LCD
-            default 22 if BOARD_TYPE_BREAD_COMPACT_WIFI_CAM
+            default 22 if BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
             default 47
             range 0 48
             depends on ENABLE_MOTOR_CONTROLLER
             help
-                连接到电机驱动的PWMA/ENA引脚的GPIO编号
-                注意：bread-compact-wifi-lcd和bread-compact-wifi-cam开发板由于LCD占用GPIO47，
-                已重新分配到GPIO22
+                GPIO number connected to the PWMA/ENA pin of the motor driver.
+                Note: On bread-compact-wifi-lcd and bread-compact-wifi-cam boards, GPIO47 is used by the LCD,
+                so it has been reassigned to GPIO22.
                 
         config MOTOR_ENB_PIN
-            int "电机B使能引脚"
-            default 19 if BOARD_TYPE_BREAD_COMPACT_WIFI
+            int "Motor B Enable Pin"
+            default 2 if BOARD_TYPE_BREAD_COMPACT_WIFI
             default 23 if BOARD_TYPE_BREAD_COMPACT_WIFI_LCD
-            default 23 if BOARD_TYPE_BREAD_COMPACT_WIFI_CAM
+            default 23 if BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
             default 21
             range 0 48
             depends on ENABLE_MOTOR_CONTROLLER
             help
-                连接到电机驱动的PWMB/ENB引脚的GPIO编号
-                注意：bread-compact-wifi-lcd和bread-compact-wifi-cam开发板由于LCD占用GPIO21，
-                已重新分配到GPIO23
+                GPIO number connected to the PWMB/ENB pin of the motor driver.
+                Note: On bread-compact-wifi-lcd and bread-compact-wifi-cam boards, GPIO21 is used by the LCD,
+                so it has been reassigned to GPIO23.
                 
         choice MOTOR_CONNECTION_TYPE
-            prompt "电机控制引脚连接方式"
+            prompt "Motor Control Pin Connection Type"
             default MOTOR_CONNECTION_DIRECT if BOARD_TYPE_BREAD_COMPACT_WIFI
             default MOTOR_CONNECTION_PCF8575 if BOARD_TYPE_BREAD_COMPACT_WIFI_LCD
-            default MOTOR_CONNECTION_PCF8575 if BOARD_TYPE_BREAD_COMPACT_WIFI_CAM
+            default MOTOR_CONNECTION_PCF8575 if BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
             default MOTOR_CONNECTION_DIRECT
             depends on ENABLE_MOTOR_CONTROLLER
             help
-                选择电机控制引脚(IN1-IN4)的连接方式
-                推荐：bread-compact-wifi-lcd和bread-compact-wifi-cam使用PCF8575扩展器，
-                因为LCD占用了大量GPIO引脚
+                Select the connection type for motor control pins (IN1-IN4).
+                Recommended: Use PCF8575 multiplexer for bread-compact-wifi-lcd and bread-compact-wifi-cam
+                because the LCD occupies many GPIO pins.
                 
             config MOTOR_CONNECTION_DIRECT
-                bool "直接连接GPIO引脚"
+                bool "Direct connection to GPIO pins"
                 help
-                    电机控制引脚直接连接到ESP32的GPIO引脚
+                    Motor control pins are directly connected to ESP32 GPIO pins.
                     
             config MOTOR_CONNECTION_PCF8575
-                bool "通过PCF8575 GPIO扩展器连接"
+                bool "Connect via PCF8575 GPIO Multiplexer"
                 depends on ENABLE_PCF8575
                 help
-                    电机控制引脚通过PCF8575 GPIO扩展器连接
-                    IN1-IN4连接在P04-P07引脚
+                    Motor control pins are connected via the PCF8575 GPIO multiplexer.
+                    IN1-IN4 are connected to pins P04-P07.
         endchoice
                 
         config MOTOR_IN1_PIN
-            int "电机A输入1引脚"
+            int "Motor A Input 1 Pin"
             default 18 if BOARD_TYPE_BREAD_COMPACT_WIFI
-            default 22 if BOARD_TYPE_BREAD_COMPACT_WIFI_LCD
-            default 22 if BOARD_TYPE_BREAD_COMPACT_WIFI_CAM
+            default 24 if BOARD_TYPE_BREAD_COMPACT_WIFI_LCD
+            default 24 if BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
             default 47
             range 0 48
             depends on ENABLE_MOTOR_CONTROLLER && MOTOR_CONNECTION_DIRECT
             help
-                连接到电机驱动的IN1引脚的GPIO编号
-                注意：bread-compact-wifi-lcd和bread-compact-wifi-cam开发板由于LCD占用GPIO47，
-                建议使用PCF8575扩展器连接方式
+                GPIO number connected to the IN1 pin of the motor driver.
+                Note: On bread-compact-wifi-lcd and bread-compact-wifi-cam boards, GPIO47 is used by the LCD,
+                it's recommended to use the PCF8575 multiplexer connection.
                 
         config MOTOR_IN2_PIN
-            int "电机A输入2引脚"
+            int "Motor A Input 2 Pin"
             default 17 if BOARD_TYPE_BREAD_COMPACT_WIFI
-            default 23 if BOARD_TYPE_BREAD_COMPACT_WIFI_LCD
-            default 23 if BOARD_TYPE_BREAD_COMPACT_WIFI_CAM
+            default 25 if BOARD_TYPE_BREAD_COMPACT_WIFI_LCD
+            default 25 if BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
             default 21
             range 0 48
             depends on ENABLE_MOTOR_CONTROLLER && MOTOR_CONNECTION_DIRECT
             help
-                连接到电机驱动的IN2引脚的GPIO编号
+                GPIO number connected to the IN2 pin of the motor driver.
                 
         config MOTOR_IN3_PIN
-            int "电机B输入1引脚"
+            int "Motor B Input 1 Pin"
             default 19 if BOARD_TYPE_BREAD_COMPACT_WIFI
-            default 24 if BOARD_TYPE_BREAD_COMPACT_WIFI_LCD
-            default 24 if BOARD_TYPE_BREAD_COMPACT_WIFI_CAM
+            default 26 if BOARD_TYPE_BREAD_COMPACT_WIFI_LCD
+            default 26 if BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
             default 20
             range 0 48
             depends on ENABLE_MOTOR_CONTROLLER && MOTOR_CONNECTION_DIRECT
             help
-                连接到电机驱动的IN3引脚的GPIO编号
+                GPIO number connected to the IN3 pin of the motor driver.
                 
         config MOTOR_IN4_PIN
-            int "电机B输入2引脚"
+            int "Motor B Input 2 Pin"
             default 20 if BOARD_TYPE_BREAD_COMPACT_WIFI
-            default 25 if BOARD_TYPE_BREAD_COMPACT_WIFI_LCD
-            default 25 if BOARD_TYPE_BREAD_COMPACT_WIFI_CAM
+            default 27 if BOARD_TYPE_BREAD_COMPACT_WIFI_LCD
+            default 27 if BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
             default 19
             range 0 48
             depends on ENABLE_MOTOR_CONTROLLER && MOTOR_CONNECTION_DIRECT
             help
-                连接到电机驱动的IN4引脚的GPIO编号
+                GPIO number connected to the IN4 pin of the motor driver.
                 
         config MOTOR_PCF8575_IN1_PIN
-            int "PCF8575电机A输入1引脚"
+            int "PCF8575 Motor A Input 1 Pin"
             range 0 15
             default 4  # P04
             depends on ENABLE_MOTOR_CONTROLLER && MOTOR_CONNECTION_PCF8575
             help
-                PCF8575上连接到电机驱动的IN1引脚的引脚编号（P00-P17，对应值为0-15）
-                例如，4代表P04，12代表P14
+                Pin number on PCF8575 connected to the IN1 pin of the motor driver (P00-P17, values 0-15).
+                For example, 4 represents P04, 12 represents P14.
 
         config MOTOR_PCF8575_IN2_PIN
-            int "PCF8575电机A输入2引脚"
+            int "PCF8575 Motor A Input 2 Pin"
             range 0 15
             default 5  # P05
             depends on ENABLE_MOTOR_CONTROLLER && MOTOR_CONNECTION_PCF8575
             help
-                PCF8575上连接到电机驱动的IN2引脚的引脚编号（P00-P17，对应值为0-15）
-                例如，5代表P05，13代表P15
+                Pin number on PCF8575 connected to the IN2 pin of the motor driver (P00-P17, values 0-15).
+                For example, 5 represents P05, 13 represents P15.
 
         config MOTOR_PCF8575_IN3_PIN
-            int "PCF8575电机B输入1引脚"
+            int "PCF8575 Motor B Input 1 Pin"
             range 0 15
             default 6  # P06
             depends on ENABLE_MOTOR_CONTROLLER && MOTOR_CONNECTION_PCF8575
             help
-                PCF8575上连接到电机驱动的IN3引脚的引脚编号（P00-P17，对应值为0-15）
-                例如，6代表P06，14代表P16
+                Pin number on PCF8575 connected to the IN3 pin of the motor driver (P00-P17, values 0-15).
+                For example, 6 represents P06, 14 represents P16.
 
         config MOTOR_PCF8575_IN4_PIN
-            int "PCF8575电机B输入2引脚"
+            int "PCF8575 Motor B Input 2 Pin"
             range 0 15
             default 7  # P07
             depends on ENABLE_MOTOR_CONTROLLER && MOTOR_CONNECTION_PCF8575
             help
-                PCF8575上连接到电机驱动的IN4引脚的引脚编号（P00-P17，对应值为0-15）
-                例如，7代表P07，15代表P17
+                Pin number on PCF8575 connected to the IN4 pin of the motor driver (P00-P17, values 0-15).
+                For example, 7 represents P07, 15 represents P17.
     endmenu
     
-    # 舵机控制器配置
+    # Servo Controller Configuration
     menu "Servo Controller"
         config ENABLE_SERVO_CONTROLLER
-            bool "启用舵机控制器"
+            bool "Enable Servo Controller"
             default y
             help
-                启用舵机控制器，用于舵机云台、机械臂等控制功能
+                Enable the servo controller, used for pan-tilt, robotic arm, and other control functions.
                 
         choice SERVO_CONNECTION_TYPE
-            prompt "舵机连接方式"
+            prompt "Servo Connection Type"
+            default SERVO_CONNECTION_LU9685 if BOARD_TYPE_BREAD_COMPACT_WIFI || BOARD_TYPE_BREAD_COMPACT_WIFI_LCD || BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
             default SERVO_CONNECTION_DIRECT
             depends on ENABLE_SERVO_CONTROLLER
             help
-                选择舵机的连接方式
+                Select the connection type for the servos.
                 
             config SERVO_CONNECTION_DIRECT
-                bool "直接连接GPIO引脚"
+                bool "Direct connection to GPIO pins"
                 help
-                    舵机直接连接到ESP32的GPIO引脚
+                    The servo is directly connected to the ESP32 GPIO pin.
                     
             config SERVO_CONNECTION_LU9685
-                bool "通过LU9685-20CU舵机控制器"
+                bool "Via LU9685-20CU Servo Controller"
                 depends on ENABLE_LU9685
                 help
-                    舵机通过LU9685-20CU舵机控制器连接
-                    左右云台舵机接在0-1号通道，上下云台舵机接在2-3号通道
+                    The servo is connected via the LU9685-20CU servo controller.
+                    Left and right pan-tilt servos are connected to channels 0-1,
+                    up and down pan-tilt servos are connected to channels 2-3.
         endchoice
                 
         config SERVO_COUNT
-            int "舵机数量"
+            int "Servo Count"
             default 2
             range 1 8
             depends on ENABLE_SERVO_CONTROLLER && SERVO_CONNECTION_DIRECT
             help
-                使用的舵机数量，最多支持8个
+                Number of servos used, supports up to 8.
                 
         config SERVO_PIN_1
-            int "左侧舵机引脚"
+            int "Left Servo Pin"
             default 45
             range 0 48
             depends on ENABLE_SERVO_CONTROLLER && SERVO_CONNECTION_DIRECT && SERVO_COUNT >= 1
             help
-                连接到左侧舵机的信号引脚，用于云台水平控制
+                Signal pin connected to the left servo, used for horizontal pan-tilt control.
                 
         config SERVO_PIN_2
-            int "右侧舵机引脚"
+            int "Right Servo Pin"
             default 46
             range 0 48
             depends on ENABLE_SERVO_CONTROLLER && SERVO_CONNECTION_DIRECT && SERVO_COUNT >= 2
             help
-                连接到右侧舵机的信号引脚，用于上下控制
+                Signal pin connected to the right servo, used for vertical pan-tilt control.
                 
         config SERVO_PIN_3
-            int "舵机3引脚"
+            int "Servo 3 Pin"
             default -1
             range -1 48
             depends on ENABLE_SERVO_CONTROLLER && SERVO_CONNECTION_DIRECT && SERVO_COUNT >= 3
             help
-                连接到舵机3的信号引脚
+                Signal pin connected to servo 3.
                 
         config SERVO_PIN_4
-            int "舵机4引脚"
+            int "Servo 4 Pin"
             default -1
             range -1 48
             depends on ENABLE_SERVO_CONTROLLER && SERVO_CONNECTION_DIRECT && SERVO_COUNT >= 4
             help
-                连接到舵机4的信号引脚
+                Signal pin connected to servo 4.
                 
         config SERVO_PIN_5
-            int "舵机5引脚"
+            int "Servo 5 Pin"
             default -1
             range -1 48
             depends on ENABLE_SERVO_CONTROLLER && SERVO_CONNECTION_DIRECT && SERVO_COUNT >= 5
             help
-                连接到舵机5的信号引脚
+                Signal pin connected to servo 5.
                 
         config SERVO_PIN_6
-            int "舵机6引脚"
+            int "Servo 6 Pin"
             default -1
             range -1 48
             depends on ENABLE_SERVO_CONTROLLER && SERVO_CONNECTION_DIRECT && SERVO_COUNT >= 6
             help
-                连接到舵机6的信号引脚
+                Signal pin connected to servo 6.
                 
         config SERVO_PIN_7
-            int "舵机7引脚"
+            int "Servo 7 Pin"
             default -1
             range -1 48
             depends on ENABLE_SERVO_CONTROLLER && SERVO_CONNECTION_DIRECT && SERVO_COUNT >= 7
             help
-                连接到舵机7的信号引脚
+                Signal pin connected to servo 7.
                 
         config SERVO_PIN_8
-            int "舵机8引脚"
+            int "Servo 8 Pin"
             default -1
             range -1 48
             depends on ENABLE_SERVO_CONTROLLER && SERVO_CONNECTION_DIRECT && SERVO_COUNT >= 8
             help
-                连接到舵机8的信号引脚
+                Signal pin connected to servo 8.
             
         config SERVO_LU9685_LEFT_CHANNEL
-            int "LU9685左侧舵机通道"
+            int "LU9685 Left Servo Channel"
             default 0
             range 0 15
             depends on ENABLE_SERVO_CONTROLLER && SERVO_CONNECTION_LU9685
             help
-                LU9685-20CU控制器上连接左侧舵机的通道编号(0-15)
+                Channel number (0-15) on the LU9685-20CU controller connected to the left servo.
                 
         config SERVO_LU9685_RIGHT_CHANNEL
-            int "LU9685右侧舵机通道"
+            int "LU9685 Right Servo Channel"
             default 1
             range 0 15
             depends on ENABLE_SERVO_CONTROLLER && SERVO_CONNECTION_LU9685
             help
-                LU9685-20CU控制器上连接右侧舵机的通道编号(0-15)
+                Channel number (0-15) on the LU9685-20CU controller connected to the right servo.
                 
         config SERVO_LU9685_UP_CHANNEL
-            int "LU9685上部舵机通道"
+            int "LU9685 Up Servo Channel"
             default 2
             range 0 15
             depends on ENABLE_SERVO_CONTROLLER && SERVO_CONNECTION_LU9685
             help
-                LU9685-20CU控制器上连接上部舵机的通道编号(0-15)
+                Channel number (0-15) on the LU9685-20CU controller connected to the up servo.
                 
         config SERVO_LU9685_DOWN_CHANNEL
-            int "LU9685下部舵机通道"
+            int "LU9685 Down Servo Channel"
             default 3
             range 0 15
             depends on ENABLE_SERVO_CONTROLLER && SERVO_CONNECTION_LU9685
             help
-                LU9685-20CU控制器上连接下部舵机的通道编号(0-15)
+                Channel number (0-15) on the LU9685-20CU controller connected to the down servo.
                 
         config SERVO_MIN_PULSE_WIDTH
-            int "舵机最小脉冲宽度(μs)"
+            int "Servo Minimum Pulse Width (μs)"
             default 500
             range 400 1500
             depends on ENABLE_SERVO_CONTROLLER
             help
-                舵机控制信号的最小脉冲宽度，单位为微秒。
-                通常标准舵机为500-600μs，数字舵机可能更低。
+                Minimum pulse width for the servo control signal, in microseconds.
+                Standard servos are usually 500-600μs; digital servos may be lower.
                 
         config SERVO_MAX_PULSE_WIDTH
-            int "舵机最大脉冲宽度(μs)"
+            int "Servo Maximum Pulse Width (μs)"
             default 2500
             range 1500 3000
             depends on ENABLE_SERVO_CONTROLLER
             help
-                舵机控制信号的最大脉冲宽度，单位为微秒。
-                通常标准舵机为2400-2500μs，数字舵机可能更高。
+                Maximum pulse width for the servo control signal, in microseconds.
+                Standard servos are usually 2400-2500μs; digital servos may be higher.
     endmenu
     
-    # AI控制器配置
+    # AI Controller Configuration
     menu "AI Controller"
         config ENABLE_AI_CONTROLLER
-            bool "启用AI控制器"
+            bool "Enable AI Controller"
             default y
             help
-                启用AI控制器，用于语音识别和TTS功能
+                Enable the AI controller, used for speech recognition and TTS functions.
     endmenu
     
-    # 视觉控制器配置
+    # Vision Controller Configuration
     menu "Vision Controller"
         config ENABLE_VISION_CONTROLLER
-            bool "启用视觉控制器"
+            bool "Enable Vision Controller"
             default y
-            depends on BOARD_TYPE_BREAD_COMPACT_WIFI_CAM
+            depends on BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
             help
-                启用视觉控制器，用于摄像头功能。仅在bread-compact-wifi-s3cam板上可用。
+                Enable the vision controller, used for camera functions. Only available on the bread-compact-wifi-s3cam board.
 
         config ENABLE_VISION_CONTENT
-            bool "启用视觉内容处理"
+            bool "Enable Vision Content Processing"
             default n
             depends on ENABLE_VISION_CONTROLLER
             help
-                启用视觉内容处理能力，用于图像内容识别和分析，依赖于视觉控制器
+                Enable vision content processing capabilities for image content recognition and analysis, depends on the vision controller.
+
+        menu "Camera Pin Configuration"
+            depends on ENABLE_VISION_CONTROLLER
+
+            config CAMERA_PIN_PWDN
+                int "Camera PWDN Pin"
+                default -1
+                range -1 48
+                help
+                    The GPIO number connected to the PWDN pin of the camera.
+
+            config CAMERA_PIN_RESET
+                int "Camera Reset Pin"
+                default -1
+                range -1 48
+                help
+                    The GPIO number connected to the RESET pin of the camera.
+
+            config CAMERA_PIN_XCLK
+                int "Camera XCLK Pin"
+                default 15
+                range 0 48
+                help
+                    The GPIO number connected to the XCLK pin of the camera.
+
+            config CAMERA_PIN_SIOD
+                int "Camera SIOD Pin"
+                default 4
+                range 0 48
+                help
+                    The GPIO number connected to the SIOD (SDA) pin of the camera.
+
+            config CAMERA_PIN_SIOC
+                int "Camera SIOC Pin"
+                default 5
+                range 0 48
+                help
+                    The GPIO number connected to the SIOC (SCL) pin of the camera.
+
+            config CAMERA_PIN_D7
+                int "Camera D7 Pin"
+                default 16
+                range 0 48
+                help
+                    The GPIO number connected to the D7 pin of the camera.
+
+            config CAMERA_PIN_D6
+                int "Camera D6 Pin"
+                default 17
+                range 0 48
+                help
+                    The GPIO number connected to the D6 pin of the camera.
+
+            config CAMERA_PIN_D5
+                int "Camera D5 Pin"
+                default 18
+                range 0 48
+                help
+                    The GPIO number connected to the D5 pin of the camera.
+
+            config CAMERA_PIN_D4
+                int "Camera D4 Pin"
+                default 12
+                range 0 48
+                help
+                    The GPIO number connected to the D4 pin of the camera.
+
+            config CAMERA_PIN_D3
+                int "Camera D3 Pin"
+                default 10
+                range 0 48
+                help
+                    The GPIO number connected to the D3 pin of the camera.
+
+            config CAMERA_PIN_D2
+                int "Camera D2 Pin"
+                default 8
+                range 0 48
+                help
+                    The GPIO number connected to the D2 pin of the camera.
+
+            config CAMERA_PIN_D1
+                int "Camera D1 Pin"
+                default 9
+                range 0 48
+                help
+                    The GPIO number connected to the D1 pin of the camera.
+
+            config CAMERA_PIN_D0
+                int "Camera D0 Pin"
+                default 11
+                range 0 48
+                help
+                    The GPIO number connected to the D0 pin of the camera.
+
+            config CAMERA_PIN_VSYNC
+                int "Camera VSYNC Pin"
+                default 6
+                range 0 48
+                help
+                    The GPIO number connected to the VSYNC pin of the camera.
+
+            config CAMERA_PIN_HREF
+                int "Camera HREF Pin"
+                default 7
+                range 0 48
+                help
+                    The GPIO number connected to the HREF pin of the camera.
+
+            config CAMERA_PIN_PCLK
+                int "Camera PCLK Pin"
+                default 13
+                range 0 48
+                help
+                    The GPIO number connected to the PCLK pin of the camera.
+        endmenu
+
+        menu "Audio Pin Configuration"
+            depends on BOARD_TYPE_BREAD_COMPACT_WIFI || BOARD_TYPE_BREAD_COMPACT_WIFI_LCD || BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
+
+            config AUDIO_I2S_METHOD_SIMPLEX
+                bool "Use Simplex I2S Mode (Separate I2S for MIC and SPK)"
+                default y
+                help
+                    If enabled, separate I2S interfaces will be used for microphone and speaker.
+                    If disabled, a single duplex I2S interface will be used for both.
+
+            config AUDIO_I2S_MIC_GPIO_WS
+                int "I2S MIC WS Pin"
+                default 1 if BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
+                default 4 if BOARD_TYPE_BREAD_COMPACT_WIFI || BOARD_TYPE_BREAD_COMPACT_WIFI_LCD
+                default -1
+                range -1 48
+                help
+                    The GPIO number connected to the WS pin of the I2S microphone.
+
+            config AUDIO_I2S_MIC_GPIO_SCK
+                int "I2S MIC SCK Pin"
+                default 2 if BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
+                default 5 if BOARD_TYPE_BREAD_COMPACT_WIFI || BOARD_TYPE_BREAD_COMPACT_WIFI_LCD
+                default -1
+                range -1 48
+                help
+                    The GPIO number connected to the SCK pin of the I2S microphone.
+
+            config AUDIO_I2S_MIC_GPIO_DIN
+                int "I2S MIC DIN Pin"
+                default 42 if BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
+                default 6 if BOARD_TYPE_BREAD_COMPACT_WIFI || BOARD_TYPE_BREAD_COMPACT_WIFI_LCD
+                default -1
+                range -1 48
+                help
+                    The GPIO number connected to the DIN pin of the I2S microphone.
+
+            config AUDIO_I2S_SPK_GPIO_DOUT
+                int "I2S SPK DOUT Pin"
+                default 39 if BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
+                default 7 if BOARD_TYPE_BREAD_COMPACT_WIFI || BOARD_TYPE_BREAD_COMPACT_WIFI_LCD
+                default -1
+                range -1 48
+                help
+                    The GPIO number connected to the DOUT pin of the I2S speaker/DAC.
+
+            config AUDIO_I2S_SPK_GPIO_BCLK
+                int "I2S SPK BCLK Pin"
+                default 40 if BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
+                default 15 if BOARD_TYPE_BREAD_COMPACT_WIFI || BOARD_TYPE_BREAD_COMPACT_WIFI_LCD
+                default -1
+                range -1 48
+                help
+                    The GPIO number connected to the BCLK pin of the I2S speaker/DAC.
+
+            config AUDIO_I2S_SPK_GPIO_LRCK
+                int "I2S SPK LRCK Pin"
+                default 41 if BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
+                default 16 if BOARD_TYPE_BREAD_COMPACT_WIFI || BOARD_TYPE_BREAD_COMPACT_WIFI_LCD
+                default -1
+                range -1 48
+                help
+                    The GPIO number connected to the LRCK pin of the I2S speaker/DAC.
+        endmenu
+
+        menu "Button & LED Pin Configuration"
+            depends on BOARD_TYPE_BREAD_COMPACT_WIFI || BOARD_TYPE_BREAD_COMPACT_WIFI_LCD || BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
+            config BUILTIN_LED_GPIO
+                int "Built-in LED Pin"
+                default -1
+                range -1 48
+                help
+                    The GPIO number connected to the built-in LED.
+
+            config BOOT_BUTTON_GPIO
+                int "Boot Button Pin"
+                default 0
+                range -1 48
+                help
+                    The GPIO number connected to the Boot button.
+
+            config TOUCH_BUTTON_GPIO
+                int "Touch Button Pin"
+                default -1
+                range -1 48
+                help
+                    The GPIO number connected to the Touch button.
+
+            config VOLUME_UP_BUTTON_GPIO
+                int "Volume Up Button Pin"
+                default -1
+                range -1 48
+                help
+                    The GPIO number connected to the Volume Up button.
+
+            config VOLUME_DOWN_BUTTON_GPIO
+                int "Volume Down Button Pin"
+                default -1
+                range -1 48
+                help
+                    The GPIO number connected to the Volume Down button.
+        endmenu
     endmenu
 
-    # 位置控制器配置
+    # Location Controller Configuration
     menu "Location Controller"
         config ENABLE_LOCATION_CONTROLLER
-            bool "启用位置定位功能"
+            bool "Enable Location Services"
             default y
             help
-                启用位置定位功能，用于GPS、UWB等定位系统的支持，以及位置数据处理
+                Enable location services, providing support for positioning systems like GPS and UWB, as well as location data processing.
                 
         choice LOCATION_MODE
-            prompt "默认位置定位模式"
+            prompt "Default Location Mode"
             default LOCATION_MODE_UWB
             depends on ENABLE_LOCATION_CONTROLLER
             help
-                选择默认使用的位置定位模式
+                Select the default mode used for location services.
                 
             config LOCATION_MODE_UWB
-                bool "UWB定位模式"
+                bool "UWB Mode"
                 help
-                    使用UWB模块进行室内高精度定位
+                    Use UWB modules for high-precision indoor positioning.
                     
             config LOCATION_MODE_GPS
-                bool "GPS定位模式"
+                bool "GPS Mode"
                 help
-                    使用GPS模块进行卫星定位，适合室外使用
+                    Use GPS modules for satellite positioning, suitable for outdoor use.
                     
             config LOCATION_MODE_FUSION
-                bool "融合定位模式"
+                bool "Fusion Mode"
                 help
-                    融合多种定位方式，提高精度和稳定性
+                    Combine multiple positioning methods to improve accuracy and stability.
         endchoice
         
         config LOCATION_CALIBRATION_ENABLED
-            bool "启用位置校准功能"
+            bool "Enable Location Calibration"
             default y
             depends on ENABLE_LOCATION_CONTROLLER
             help
-                启用位置校准功能，允许用户在Web界面手动校准位置数据
+                Enable location calibration, allowing users to manually calibrate location data through the web interface.
                 
         config LOCATION_SAVE_MAP_ENABLED
-            bool "启用地图保存功能"
+            bool "Enable Map Saving"
             default y
             depends on ENABLE_LOCATION_CONTROLLER
             help
-                启用地图保存功能，允许用户保存位置定位地图数据
+                Enable map saving, allowing users to save location positioning map data.
                 
         config LOCATION_UPDATE_INTERVAL_MS
-            int "位置更新间隔(毫秒)"
+            int "Location Update Interval (ms)"
             default 100
             range 50 1000
             depends on ENABLE_LOCATION_CONTROLLER
             help
-                位置数据更新的时间间隔，单位为毫秒
-                较小的值提供更实时的数据，但会增加系统负担
+                Time interval for location data updates, in milliseconds.
+                Smaller values provide more real-time data but increase system load.
     endmenu
 
-    # 超声波传感器配置
+    # Ultrasonic Sensor Configuration
     menu "Ultrasonic Sensor"
         config ENABLE_US_SENSOR
-            bool "启用超声波传感器"
+            bool "Enable Ultrasonic Sensor"
             default y
             help
-                启用超声波传感器，用于距离测量和障碍物检测
+                Enable the ultrasonic sensor, used for distance measurement and obstacle detection.
 
         config US_SAFE_DISTANCE
-            int "超声波传感器安全距离(cm)"
+            int "Ultrasonic Sensor Safe Distance (cm)"
             default 10
             range 2 100
             depends on ENABLE_US_SENSOR
             help
-                超声波传感器的安全距离阈值，单位厘米
-                当检测距离小于此值时，认为有障碍物
+                Safe distance threshold for the ultrasonic sensor, in centimeters.
+                When the detected distance is less than this value, it is considered an obstacle.
 
         config US_MAX_DISTANCE
-            int "超声波传感器最大距离(cm)"
+            int "Ultrasonic Sensor Max Distance (cm)"
             default 400
             range 50 800
             depends on ENABLE_US_SENSOR
             help
-                超声波传感器的最大测量距离，单位厘米
+                Maximum measurement distance of the ultrasonic sensor, in centimeters.
                 
         choice US_CONNECTION_TYPE
-            prompt "超声波传感器连接方式"
+            prompt "Ultrasonic Sensor Connection Type"
+            default US_CONNECTION_DIRECT if BOARD_TYPE_BREAD_COMPACT_WIFI
+            default US_CONNECTION_PCF8575 if BOARD_TYPE_BREAD_COMPACT_WIFI_LCD || BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
             default US_CONNECTION_PCF8575
             depends on ENABLE_US_SENSOR
             help
-                选择超声波传感器的连接方式
+                Select the connection type for the ultrasonic sensor.
                 
             config US_CONNECTION_DIRECT
-                bool "直接连接GPIO引脚"
+                bool "Direct connection to GPIO pins"
                 help
-                    超声波传感器直接连接到ESP32的GPIO引脚
+                    The ultrasonic sensor is directly connected to the ESP32 GPIO pin.
                     
             config US_CONNECTION_PCF8575
-                bool "通过PCF8575 GPIO扩展器连接"
+                bool "Connect via PCF8575 GPIO Multiplexer"
                 depends on ENABLE_PCF8575
                 help
-                    超声波传感器通过PCF8575 GPIO扩展器连接
-                    前置传感器的TRIG/ECHO连接在P00/P01引脚
-                    后置传感器的TRIG/ECHO连接在P02/P03引脚
+                    The ultrasonic sensor is connected via the PCF8575 GPIO multiplexer.
+                    The front sensor TRIG/ECHO is connected to pins P00/P01.
+                    The rear sensor TRIG/ECHO is connected to pins P02/P03.
         endchoice
         
         config US_FRONT_TRIG_PIN
-            int "前置超声波传感器触发引脚"
+            int "Front Ultrasonic Trigger Pin"
             default 21
             range 0 48
             depends on ENABLE_US_SENSOR && US_CONNECTION_DIRECT
             help
-                连接到前置超声波传感器的触发引脚(TRIG)的GPIO编号
+                GPIO number connected to the trigger pin (TRIG) of the front ultrasonic sensor.
 
         config US_FRONT_ECHO_PIN
-            int "前置超声波传感器回响引脚"
+            int "Front Ultrasonic Echo Pin"
             default 22
             range 0 48
             depends on ENABLE_US_SENSOR && US_CONNECTION_DIRECT
             help
-                连接到前置超声波传感器的回响引脚(ECHO)的GPIO编号
+                GPIO number connected to the echo pin (ECHO) of the front ultrasonic sensor.
                 
         config US_REAR_TRIG_PIN
-            int "后置超声波传感器触发引脚"
+            int "Rear Ultrasonic Trigger Pin"
             default 23
             range 0 48
             depends on ENABLE_US_SENSOR && US_CONNECTION_DIRECT
             help
-                连接到后置超声波传感器的触发引脚(TRIG)的GPIO编号
+                GPIO number connected to the trigger pin (TRIG) of the rear ultrasonic sensor.
 
         config US_REAR_ECHO_PIN
-            int "后置超声波传感器回响引脚"
+            int "Rear Ultrasonic Echo Pin"
             default 24
             range 0 48
             depends on ENABLE_US_SENSOR && US_CONNECTION_DIRECT
             help
-                连接到后置超声波传感器的回响引脚(ECHO)的GPIO编号
+                GPIO number connected to the echo pin (ECHO) of the rear ultrasonic sensor.
                 
         config US_PCF8575_FRONT_TRIG_PIN
-            int "PCF8575前置超声波传感器触发引脚"
+            int "PCF8575 Front Ultrasonic Trigger Pin"
             range 0 15
             default 0  # P00
             depends on ENABLE_US_SENSOR && US_CONNECTION_PCF8575
             help
-                PCF8575上连接到前置超声波传感器的触发引脚(TRIG)的引脚编号（P00-P17，对应值为0-15）
-                例如，0代表P00，8代表P10
+                Pin number on PCF8575 connected to the trigger pin (TRIG) of the front ultrasonic sensor (P00-P17, values 0-15).
+                For example, 0 represents P00, 8 represents P10.
 
         config US_PCF8575_FRONT_ECHO_PIN
-            int "PCF8575前置超声波传感器回响引脚"
+            int "PCF8575 Front Ultrasonic Echo Pin"
             range 0 15
             default 1  # P01
             depends on ENABLE_US_SENSOR && US_CONNECTION_PCF8575
             help
-                PCF8575上连接到前置超声波传感器的回响引脚(ECHO)的引脚编号（P00-P17，对应值为0-15）
-                例如，1代表P01，9代表P11
+                Pin number on PCF8575 connected to the echo pin (ECHO) of the front ultrasonic sensor (P00-P17, values 0-15).
+                For example, 1 represents P01, 9 represents P11.
                 
         config US_PCF8575_REAR_TRIG_PIN
-            int "PCF8575后置超声波传感器触发引脚"
+            int "PCF8575 Rear Ultrasonic Trigger Pin"
             range 0 15
             default 2  # P02
             depends on ENABLE_US_SENSOR && US_CONNECTION_PCF8575
             help
-                PCF8575上连接到后置超声波传感器的触发引脚(TRIG)的引脚编号（P00-P17，对应值为0-15）
-                例如，2代表P02，10代表P12
+                Pin number on PCF8575 connected to the trigger pin (TRIG) of the rear ultrasonic sensor (P00-P17, values 0-15).
+                For example, 2 represents P02, 10 represents P12.
 
         config US_PCF8575_REAR_ECHO_PIN
-            int "PCF8575后置超声波传感器回响引脚"
+            int "PCF8575 Rear Ultrasonic Echo Pin"
             range 0 15
             default 3  # P03
             depends on ENABLE_US_SENSOR && US_CONNECTION_PCF8575
             help
-                PCF8575上连接到后置超声波传感器的回响引脚(ECHO)的引脚编号（P00-P17，对应值为0-15）
-                例如，3代表P03，11代表P13
+                Pin number on PCF8575 connected to the echo pin (ECHO) of the rear ultrasonic sensor (P00-P17, values 0-15).
+                For example, 3 represents P03, 11 represents P13.
     endmenu
 
 
 
-    # IMU传感器配置
+    # IMU Sensor Configuration
     menu "IMU Sensor"
         config ENABLE_IMU
-            bool "启用IMU传感器"
+            bool "Enable IMU Sensor"
             default n
             help
-                启用惯性测量单元(IMU)传感器，用于姿态检测和运动跟踪
+                Enable the Inertial Measurement Unit (IMU) sensor, used for attitude detection and motion tracking.
     endmenu
 
-    # 光线传感器配置
+    # Light Sensor Configuration
     menu "Light Sensor"
         config ENABLE_LIGHT
-            bool "启用光线传感器"
+            bool "Enable Light Sensor"
             default n
             help
-                启用光线传感器和控制器，用于环境光照检测和灯光控制
+                Enable the light sensor and controller, used for ambient light detection and light control.
     endmenu
 
 
@@ -1507,7 +1811,7 @@ menu "Camera Configuration"
     config ENABLE_CAMERA
         bool "Enable Camera"
         default y
-        depends on BOARD_TYPE_BREAD_COMPACT_WIFI_CAM
+        depends on BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
         help
             Enable camera functionality. Only available on bread-compact-wifi-s3cam board.
             

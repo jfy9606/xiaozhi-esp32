@@ -160,7 +160,7 @@ Get overall hardware system status.
       "initialized": true,
       "version": "1.0.0"
     },
-    "expanders": {
+    "multiplexers": {
       "pca9548a": {
         "initialized": true,
         "channels": 8
@@ -208,7 +208,7 @@ Get current hardware configuration.
           "id": "temperature_01",
           "name": "Environment Temperature",
           "type": "temperature",
-          "expander": "hw178",
+          "multiplexer": "hw178",
           "channel": 0,
           "unit": "°C",
           "calibration": {

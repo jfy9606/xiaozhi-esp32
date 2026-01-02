@@ -31,7 +31,7 @@ The hardware configuration uses JSON format with the following structure:
   "id": "unique_sensor_id",
   "name": "Human Readable Name",
   "type": "sensor_type",
-  "expander": "hw178",
+  "multiplexer": "hw178",
   "channel": 0,
   "unit": "measurement_unit",
   "calibration": {
@@ -92,7 +92,7 @@ The calibration system applies the formula: `calibrated_value = (raw_value * sca
   "id": "temp_ambient",
   "name": "环境温度传感器",
   "type": "temperature",
-  "expander": "hw178",
+  "multiplexer": "hw178",
   "channel": 0,
   "unit": "°C",
   "calibration": {
@@ -108,7 +108,7 @@ The calibration system applies the formula: `calibrated_value = (raw_value * sca
   "id": "battery_voltage",
   "name": "电池电压监测",
   "type": "voltage",
-  "expander": "hw178",
+  "multiplexer": "hw178",
   "channel": 1,
   "unit": "V",
   "calibration": {
@@ -139,7 +139,7 @@ The calibration system applies the formula: `calibrated_value = (raw_value * sca
 ### Connection Types
 
 #### PCF8575 Connection
-For motors connected through PCF8575 GPIO expander:
+For motors connected through PCF8575 GPIO multiplexer:
 
 ```json
 {
@@ -248,7 +248,7 @@ For servos connected directly to ESP32 PWM:
         "id": "temp_01",
         "name": "CPU温度",
         "type": "temperature",
-        "expander": "hw178",
+        "multiplexer": "hw178",
         "channel": 0,
         "unit": "°C",
         "calibration": {"offset": 0.0, "scale": 1.0}
@@ -257,7 +257,7 @@ For servos connected directly to ESP32 PWM:
         "id": "battery_voltage",
         "name": "电池电压",
         "type": "voltage",
-        "expander": "hw178",
+        "multiplexer": "hw178",
         "channel": 1,
         "unit": "V",
         "calibration": {"offset": 0.0, "scale": 0.01}
@@ -304,7 +304,7 @@ For servos connected directly to ESP32 PWM:
         "id": "temp_ambient",
         "name": "环境温度",
         "type": "temperature",
-        "expander": "hw178",
+        "multiplexer": "hw178",
         "channel": 0,
         "unit": "°C",
         "calibration": {"offset": 0.0, "scale": 100.0}
@@ -313,7 +313,7 @@ For servos connected directly to ESP32 PWM:
         "id": "humidity",
         "name": "环境湿度",
         "type": "humidity",
-        "expander": "hw178",
+        "multiplexer": "hw178",
         "channel": 1,
         "unit": "%",
         "calibration": {"offset": 0.0, "scale": 1.0}
@@ -322,7 +322,7 @@ For servos connected directly to ESP32 PWM:
         "id": "light_level",
         "name": "光照强度",
         "type": "light",
-        "expander": "hw178",
+        "multiplexer": "hw178",
         "channel": 2,
         "unit": "lux",
         "calibration": {"offset": 0.0, "scale": 10.0}
@@ -331,7 +331,7 @@ For servos connected directly to ESP32 PWM:
         "id": "pressure",
         "name": "大气压力",
         "type": "pressure",
-        "expander": "hw178",
+        "multiplexer": "hw178",
         "channel": 3,
         "unit": "Pa",
         "calibration": {"offset": 0.0, "scale": 1000.0}
@@ -349,7 +349,7 @@ The system validates configurations for:
 
 ### Sensor Validation
 - ✅ Unique sensor IDs
-- ✅ Valid expander types
+- ✅ Valid multiplexer types
 - ✅ Channel range (0-15 for HW178)
 - ✅ Supported sensor types
 - ✅ Valid calibration values
@@ -435,25 +435,25 @@ To add custom sensor types:
 3. Add calibration support if needed
 4. Update documentation
 
-### Multiple Expander Support
+### Multiple Multiplexer Support
 
-For systems with multiple expanders:
+For systems with multiple multiplexers:
 
 ```json
 {
   "sensors": [
     {
       "id": "temp_board1",
-      "expander": "hw178_1",
+      "multiplexer": "hw178_1",
       "channel": 0
     },
     {
       "id": "temp_board2", 
-      "expander": "hw178_2",
+      "multiplexer": "hw178_2",
       "channel": 0
     }
   ]
 }
 ```
 
-Note: Multiple expander support requires code modifications.
+Note: Multiple multiplexer support requires code modifications.

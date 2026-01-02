@@ -5,7 +5,7 @@
         "id": "temperature_01",
         "name": "Environment Temperature",
         "type": "temperature",
-        "expander": "hw178",
+        "multiplexer": "hw178",
         "channel": 0,
         "unit": "°C",
         "calibration": {
@@ -17,7 +17,7 @@
         "id": "voltage_battery",
         "name": "Battery Voltage",
         "type": "voltage",
-        "expander": "hw178",
+        "multiplexer": "hw178",
         "channel": 1,
         "unit": "V",
         "calibration": {
@@ -29,7 +29,7 @@
         "id": "current_motor",
         "name": "Motor Current",
         "type": "current",
-        "expander": "hw178",
+        "multiplexer": "hw178",
         "channel": 2,
         "unit": "A",
         "calibration": {

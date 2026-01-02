@@ -22,9 +22,9 @@ GPIO22 → SCL
 GND    → GND
 ```
 
-### Connect Expander Modules
+### Connect Multiplexer Modules
 
-Connect expanders to PCA9548A channels:
+Connect multiplexers to PCA9548A channels:
 ```
 PCA9548A Channel 0 → HW178 (sensors)
 PCA9548A Channel 1 → PCF8575 (motors)
@@ -43,7 +43,7 @@ Create `hardware_config.json`:
         "id": "temp_01",
         "name": "Temperature Sensor",
         "type": "temperature",
-        "expander": "hw178",
+        "multiplexer": "hw178",
         "channel": 0,
         "unit": "°C",
         "calibration": {
@@ -183,7 +183,7 @@ Expected response:
   "success": true,
   "message": "Hardware status retrieved successfully",
   "data": {
-    "expanders": {
+    "multiplexers": {
       "pca9548a_initialized": true,
       "hw178_available": true,
       "pcf8575_available": true,

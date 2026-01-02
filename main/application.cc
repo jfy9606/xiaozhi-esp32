@@ -667,7 +667,6 @@ void Application::InitializeProtocol() {
     
     protocol_->Start();
 #ifdef CONFIG_ENABLE_MULTIPLEXER
-#ifdef CONFIG_ENABLE_MULTIPLEXER
     ESP_LOGI(TAG, "Initializing multiplexers");
 
     i2c_master_bus_handle_t display_i2c_bus = Board::GetInstance().GetDisplayI2CBusHandle();
@@ -690,7 +689,7 @@ void Application::InitializeProtocol() {
     if (pca9548a_is_initialized()) {
         esp_err_t pcf_ret = pcf8575_init();
         if (pcf_ret != ESP_OK) {
-            ESP_LOGW(TAG, "PCF8575 GPIO expander initialization failed: %s", esp_err_to_name(pcf_ret));
+            ESP_LOGW(TAG, "PCF8575 GPIO multiplexer initialization failed: %s", esp_err_to_name(pcf_ret));
         }
     }
 #endif // CONFIG_ENABLE_PCF8575
@@ -731,11 +730,13 @@ void Application::InitializeProtocol() {
     }
 
 #if defined(CONFIG_ENABLE_WEB_SERVER)
-    Web* web = new Web(8080);
-    if (web) {
-        auto& manager = ComponentManager::GetInstance();
-        manager.RegisterComponent(web);
-        web->Start();
+    auto& manager = ComponentManager::GetInstance();
+    if (manager.GetComponent("Web") == nullptr) {
+        Web* web = new Web(8080);
+        if (web) {
+            manager.RegisterComponent(web);
+            web->Start();
+        }
     }
 #endif
 
@@ -1161,12 +1162,6 @@ void Application::InitializeComponents() {
 #ifdef CONFIG_ENABLE_MOTOR_CONTROLLER
         // Initialize move controller (包含电机和舵机控制)
         ESP_LOGI(TAG, "Initializing move controller (高优先级)");
-        // 注册Motor Thing
-        ESP_LOGI(TAG, "调用iot::RegisterThing('Motor', nullptr)注册");
-        iot::RegisterThing("Motor", nullptr);
-        // 注册舵机Thing
-        ESP_LOGI(TAG, "调用iot::RegisterThing('Servo', nullptr)注册");
-        iot::RegisterThing("Servo", nullptr);
         // 给Thing初始化一点时间
         vTaskDelay(pdMS_TO_TICKS(100));
 #endif
@@ -1176,36 +1171,26 @@ void Application::InitializeComponents() {
 #ifdef CONFIG_ENABLE_US_SENSOR
         // Initialize ultrasonic sensors
         ESP_LOGI(TAG, "Initializing ultrasonic sensors");
-        // 直接使用RegisterThing，传递类型名称和nullptr（DECLARE_THING宏会处理创建函数）
-        iot::RegisterThing("US", nullptr);
 #endif
 
 #ifdef CONFIG_ENABLE_CAMERA
         // Initialize camera sensor
         ESP_LOGI(TAG, "Initializing camera");
-        // 使用通用的RegisterThing
-        iot::RegisterThing("CAM", nullptr);
 #endif
 
 #ifdef CONFIG_ENABLE_IMU
         // Initialize IMU sensor
         ESP_LOGI(TAG, "Initializing IMU sensor");
-        // 使用通用的RegisterThing
-        iot::RegisterThing("IMU", nullptr);
 #endif
 
 #ifdef CONFIG_ENABLE_LIGHT
         // Initialize light sensor/controller
         ESP_LOGI(TAG, "Initializing light controller");
-        // 使用通用的RegisterThing
-        iot::RegisterThing("Light", nullptr);
 #endif
 
 #ifdef CONFIG_ENABLE_SERVO_CONTROLLER
         // Initialize servo controller
         ESP_LOGI(TAG, "Initializing servo controller");
-        // 使用通用的RegisterThing
-        iot::RegisterThing("Servo", nullptr);
 #endif
 
         // 等待所有IoT组件初始化完成
@@ -1490,30 +1475,36 @@ bool Application::InitComponents() {
     
     // 注册Vision控制器组件
 #ifdef CONFIG_ENABLE_VISION_CONTROLLER
-    ESP_LOGI(TAG, "Registering Vision component");
-    static Vision* vision = new Vision(web_server);
-    manager.RegisterComponent(vision);
+    if (manager.GetComponent("VisionController") == nullptr) {
+        ESP_LOGI(TAG, "Registering Vision component");
+        static Vision* vision = new Vision(web_server);
+        manager.RegisterComponent(vision);
+    }
 #endif
 
     // 注册位置控制器组件
 #ifdef CONFIG_ENABLE_LOCATION_CONTROLLER
-    ESP_LOGI(TAG, "Registering Location component");
-    static Location* location = new Location(web_server);
-    manager.RegisterComponent(location);
+    if (manager.GetComponent("Location") == nullptr) {
+        ESP_LOGI(TAG, "Registering Location component");
+        static Location* location = new Location(web_server);
+        manager.RegisterComponent(location);
+    }
 #endif
 
     // 注册AI组件
-    ESP_LOGI(TAG, "Registering AI component");
-    static AI* ai_component = new AI(web_server);
-    if (ai_component && hardware_manager_) {
-        ai_component->SetHardwareManager(hardware_manager_);
-        ESP_LOGI(TAG, "Hardware manager set for AI component");
+    if (manager.GetComponent("AI") == nullptr) {
+        ESP_LOGI(TAG, "Registering AI component");
+        static AI* ai_component = new AI(web_server);
+        if (ai_component && hardware_manager_) {
+            ai_component->SetHardwareManager(hardware_manager_);
+            ESP_LOGI(TAG, "Hardware manager set for AI component");
+        }
+        manager.RegisterComponent(ai_component);
     }
-    manager.RegisterComponent(ai_component);
 
     // 初始化车辆控制组件
 #ifdef CONFIG_ENABLE_MOTOR_CONTROLLER
-    InitVehicleComponent(web_server);
+    ::InitVehicleComponent(web_server);
 #endif
 
     // 初始化传感器部分
@@ -1573,80 +1564,6 @@ void Application::SetAecMode(AecMode mode) {
     });
 }
 
-void Application::InitVehicleComponent(Web* web_server) {
-    ESP_LOGI(TAG, "Creating and registering Vehicle component");
-    
-    // 创建适当类型的车辆
-    Vehicle* vehicle = nullptr;
-    
-#ifdef CONFIG_ENABLE_MOTOR_CONTROLLER
-    // 使用安全的默认值，避免未定义配置导致编译错误
-    // 如果这些引脚未配置，将默认设置为-1表示无效
-#ifdef CONFIG_MOTOR_ENA_PIN
-    int ena_pin = CONFIG_MOTOR_ENA_PIN;
-    int enb_pin = CONFIG_MOTOR_ENB_PIN;
-#else
-    int ena_pin = -1;
-    int enb_pin = -1;
-#endif
-
-    // 电机引脚
-#if defined(CONFIG_MOTOR_IN1_PIN) && defined(CONFIG_MOTOR_IN2_PIN) && defined(CONFIG_MOTOR_IN3_PIN) && defined(CONFIG_MOTOR_IN4_PIN)
-    int in1_pin = CONFIG_MOTOR_IN1_PIN;
-    int in2_pin = CONFIG_MOTOR_IN2_PIN;
-    int in3_pin = CONFIG_MOTOR_IN3_PIN;
-    int in4_pin = CONFIG_MOTOR_IN4_PIN;
-#else
-    int in1_pin = -1;
-    int in2_pin = -1;
-    int in3_pin = -1;
-    int in4_pin = -1;
-#endif
-
-    // 舵机引脚
-#if defined(CONFIG_SERVO_PIN_1) && defined(CONFIG_SERVO_PIN_2)
-    int servo_pin_1 = CONFIG_SERVO_PIN_1;
-    int servo_pin_2 = CONFIG_SERVO_PIN_2;
-#else
-    int servo_pin_1 = -1;
-    int servo_pin_2 = -1;
-#endif
-    
-    // 检查电机引脚是否配置
-    bool motor_pins_ok = (ena_pin >= 0 && enb_pin >= 0 && 
-                         in1_pin >= 0 && in2_pin >= 0 && 
-                         in3_pin >= 0 && in4_pin >= 0);
-    
-    // 检查舵机引脚是否配置
-    bool servo_pins_ok = (servo_pin_1 >= 0 && servo_pin_2 >= 0);
-    
-    if (motor_pins_ok) {
-        // 如果电机引脚配置正确，创建电机小车
-        ESP_LOGI(TAG, "Creating vehicle with motor control (pins: ENA=%d, ENB=%d, IN1=%d, IN2=%d, IN3=%d, IN4=%d)",
-                ena_pin, enb_pin, in1_pin, in2_pin, in3_pin, in4_pin);
-        vehicle = new Vehicle(web_server, 
-                             ena_pin, enb_pin,
-                             in1_pin, in2_pin,
-                             in3_pin, in4_pin);
-    } else if (servo_pins_ok) {
-        // 如果舵机引脚配置正确，创建舵机小车
-        ESP_LOGI(TAG, "Creating vehicle with servo control (pins: SERVO1=%d, SERVO2=%d)",
-                servo_pin_1, servo_pin_2);
-        vehicle = new Vehicle(web_server, servo_pin_1, servo_pin_2);
-    } else {
-        ESP_LOGW(TAG, "Cannot create vehicle, insufficient pin configuration");
-    }
-    
-    // 如果创建成功，注册并启动组件
-    if (vehicle) {
-        auto& manager = ComponentManager::GetInstance();
-        manager.RegisterComponent(vehicle);
-        ESP_LOGI(TAG, "Vehicle component registered");
-    }
-#else
-    ESP_LOGI(TAG, "Motor controller disabled in configuration");
-#endif
-}
 void Application::PlaySound(const std::string_view& sound) {
     audio_service_.PlaySound(sound);
 }

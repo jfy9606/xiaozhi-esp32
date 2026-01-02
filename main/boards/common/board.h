@@ -60,11 +60,32 @@ typedef struct {
     int pclk_pin;
     int cam_led_pin;
 
+    // 音频引脚
+    int audio_i2s_mic_ws;
+    int audio_i2s_mic_sck;
+    int audio_i2s_mic_din;
+    int audio_i2s_spk_dout;
+    int audio_i2s_spk_bclk;
+    int audio_i2s_spk_lrck;
+
+    // 按钮与LED引脚
+    int builtin_led_pin;
+    int boot_button_pin;
+    int touch_button_pin;
+    int volume_up_button_pin;
+    int volume_down_button_pin;
+
     // 摄像头配置与信息
     bool camera_supported;           // 是否支持摄像头
     bool has_camera;                 // 是否已初始化摄像头
     camera_config_t camera_config;   // 摄像头配置
     camera_info_t* camera_info;      // 摄像头信息
+
+    // 超声波传感器引脚
+    int us_front_trig_pin;
+    int us_front_echo_pin;
+    int us_rear_trig_pin;
+    int us_rear_echo_pin;
 } board_config_t;
 
 // 根据电机连接方式选择定义
@@ -383,6 +404,315 @@ typedef struct {
 #define HW178_ADC_CHANNEL           CONFIG_HW178_ADC_CHANNEL
 #else
 #define HW178_ADC_CHANNEL           -1  // Invalid ADC channel by default
+#endif
+#endif
+
+// 超声波传感器相关定义
+#ifndef US_FRONT_TRIG_PIN
+#ifdef CONFIG_US_FRONT_TRIG_PIN
+#define US_FRONT_TRIG_PIN           CONFIG_US_FRONT_TRIG_PIN
+#else
+#define US_FRONT_TRIG_PIN           -1
+#endif
+#endif
+
+#ifndef US_FRONT_ECHO_PIN
+#ifdef CONFIG_US_FRONT_ECHO_PIN
+#define US_FRONT_ECHO_PIN           CONFIG_US_FRONT_ECHO_PIN
+#else
+#define US_FRONT_ECHO_PIN           -1
+#endif
+#endif
+
+#ifndef US_REAR_TRIG_PIN
+#ifdef CONFIG_US_REAR_TRIG_PIN
+#define US_REAR_TRIG_PIN            CONFIG_US_REAR_TRIG_PIN
+#else
+#define US_REAR_TRIG_PIN            -1
+#endif
+#endif
+
+#ifndef US_REAR_ECHO_PIN
+#ifdef CONFIG_US_REAR_ECHO_PIN
+#define US_REAR_ECHO_PIN            CONFIG_US_REAR_ECHO_PIN
+#else
+#define US_REAR_ECHO_PIN            -1
+#endif
+#endif
+
+// 摄像头引脚相关定义
+#ifndef CAMERA_PIN_PWDN
+#ifdef CONFIG_CAMERA_PIN_PWDN
+#define CAMERA_PIN_PWDN             CONFIG_CAMERA_PIN_PWDN
+#else
+#define CAMERA_PIN_PWDN             -1
+#endif
+#endif
+
+#ifndef CAMERA_PIN_RESET
+#ifdef CONFIG_CAMERA_PIN_RESET
+#define CAMERA_PIN_RESET            CONFIG_CAMERA_PIN_RESET
+#else
+#define CAMERA_PIN_RESET            -1
+#endif
+#endif
+
+#ifndef CAMERA_PIN_XCLK
+#ifdef CONFIG_CAMERA_PIN_XCLK
+#define CAMERA_PIN_XCLK             CONFIG_CAMERA_PIN_XCLK
+#else
+#define CAMERA_PIN_XCLK             -1
+#endif
+#endif
+
+#ifndef CAMERA_PIN_SIOD
+#ifdef CONFIG_CAMERA_PIN_SIOD
+#define CAMERA_PIN_SIOD             CONFIG_CAMERA_PIN_SIOD
+#else
+#define CAMERA_PIN_SIOD             -1
+#endif
+#endif
+
+#ifndef CAMERA_PIN_SIOC
+#ifdef CONFIG_CAMERA_PIN_SIOC
+#define CAMERA_PIN_SIOC             CONFIG_CAMERA_PIN_SIOC
+#else
+#define CAMERA_PIN_SIOC             -1
+#endif
+#endif
+
+#ifndef CAMERA_PIN_D7
+#ifdef CONFIG_CAMERA_PIN_D7
+#define CAMERA_PIN_D7               CONFIG_CAMERA_PIN_D7
+#else
+#define CAMERA_PIN_D7               -1
+#endif
+#endif
+
+#ifndef CAMERA_PIN_D6
+#ifdef CONFIG_CAMERA_PIN_D6
+#define CAMERA_PIN_D6               CONFIG_CAMERA_PIN_D6
+#else
+#define CAMERA_PIN_D6               -1
+#endif
+#endif
+
+#ifndef CAMERA_PIN_D5
+#ifdef CONFIG_CAMERA_PIN_D5
+#define CAMERA_PIN_D5               CONFIG_CAMERA_PIN_D5
+#else
+#define CAMERA_PIN_D5               -1
+#endif
+#endif
+
+#ifndef CAMERA_PIN_D4
+#ifdef CONFIG_CAMERA_PIN_D4
+#define CAMERA_PIN_D4               CONFIG_CAMERA_PIN_D4
+#else
+#define CAMERA_PIN_D4               -1
+#endif
+#endif
+
+#ifndef CAMERA_PIN_D3
+#ifdef CONFIG_CAMERA_PIN_D3
+#define CAMERA_PIN_D3               CONFIG_CAMERA_PIN_D3
+#else
+#define CAMERA_PIN_D3               -1
+#endif
+#endif
+
+#ifndef CAMERA_PIN_D2
+#ifdef CONFIG_CAMERA_PIN_D2
+#define CAMERA_PIN_D2               CONFIG_CAMERA_PIN_D2
+#else
+#define CAMERA_PIN_D2               -1
+#endif
+#endif
+
+#ifndef CAMERA_PIN_D1
+#ifdef CONFIG_CAMERA_PIN_D1
+#define CAMERA_PIN_D1               CONFIG_CAMERA_PIN_D1
+#else
+#define CAMERA_PIN_D1               -1
+#endif
+#endif
+
+#ifndef CAMERA_PIN_D0
+#ifdef CONFIG_CAMERA_PIN_D0
+#define CAMERA_PIN_D0               CONFIG_CAMERA_PIN_D0
+#else
+#define CAMERA_PIN_D0               -1
+#endif
+#endif
+
+#ifndef CAMERA_PIN_VSYNC
+#ifdef CONFIG_CAMERA_PIN_VSYNC
+#define CAMERA_PIN_VSYNC            CONFIG_CAMERA_PIN_VSYNC
+#else
+#define CAMERA_PIN_VSYNC            -1
+#endif
+#endif
+
+#ifndef CAMERA_PIN_HREF
+#ifdef CONFIG_CAMERA_PIN_HREF
+#define CAMERA_PIN_HREF             CONFIG_CAMERA_PIN_HREF
+#else
+#define CAMERA_PIN_HREF             -1
+#endif
+#endif
+
+#ifndef CAMERA_PIN_PCLK
+#ifdef CONFIG_CAMERA_PIN_PCLK
+#define CAMERA_PIN_PCLK             CONFIG_CAMERA_PIN_PCLK
+#else
+#define CAMERA_PIN_PCLK             -1
+#endif
+#endif
+
+// 显示屏引脚相关定义
+#ifndef DISPLAY_MOSI_PIN
+#ifdef CONFIG_DISPLAY_MOSI_PIN
+#define DISPLAY_MOSI_PIN            CONFIG_DISPLAY_MOSI_PIN
+#else
+#define DISPLAY_MOSI_PIN            -1
+#endif
+#endif
+
+#ifndef DISPLAY_CLK_PIN
+#ifdef CONFIG_DISPLAY_CLK_PIN
+#define DISPLAY_CLK_PIN             CONFIG_DISPLAY_CLK_PIN
+#else
+#define DISPLAY_CLK_PIN             -1
+#endif
+#endif
+
+#ifndef DISPLAY_CS_PIN
+#ifdef CONFIG_DISPLAY_CS_PIN
+#define DISPLAY_CS_PIN              CONFIG_DISPLAY_CS_PIN
+#else
+#define DISPLAY_CS_PIN              -1
+#endif
+#endif
+
+#ifndef DISPLAY_DC_PIN
+#ifdef CONFIG_DISPLAY_DC_PIN
+#define DISPLAY_DC_PIN              CONFIG_DISPLAY_DC_PIN
+#else
+#define DISPLAY_DC_PIN              -1
+#endif
+#endif
+
+#ifndef DISPLAY_RST_PIN
+#ifdef CONFIG_DISPLAY_RST_PIN
+#define DISPLAY_RST_PIN             CONFIG_DISPLAY_RST_PIN
+#else
+#define DISPLAY_RST_PIN             -1
+#endif
+#endif
+
+#ifndef DISPLAY_BACKLIGHT_PIN
+#ifdef CONFIG_DISPLAY_BACKLIGHT_PIN
+#define DISPLAY_BACKLIGHT_PIN       CONFIG_DISPLAY_BACKLIGHT_PIN
+#else
+#define DISPLAY_BACKLIGHT_PIN       -1
+#endif
+#endif
+
+// 音频相关定义
+#ifndef AUDIO_I2S_MIC_GPIO_WS
+#ifdef CONFIG_AUDIO_I2S_MIC_GPIO_WS
+#define AUDIO_I2S_MIC_GPIO_WS       CONFIG_AUDIO_I2S_MIC_GPIO_WS
+#else
+#define AUDIO_I2S_MIC_GPIO_WS       -1
+#endif
+#endif
+
+#ifndef AUDIO_I2S_MIC_GPIO_SCK
+#ifdef CONFIG_AUDIO_I2S_MIC_GPIO_SCK
+#define AUDIO_I2S_MIC_GPIO_SCK      CONFIG_AUDIO_I2S_MIC_GPIO_SCK
+#else
+#define AUDIO_I2S_MIC_GPIO_SCK      -1
+#endif
+#endif
+
+#ifndef AUDIO_I2S_MIC_GPIO_DIN
+#ifdef CONFIG_AUDIO_I2S_MIC_GPIO_DIN
+#define AUDIO_I2S_MIC_GPIO_DIN      CONFIG_AUDIO_I2S_MIC_GPIO_DIN
+#else
+#define AUDIO_I2S_MIC_GPIO_DIN      -1
+#endif
+#endif
+
+#ifndef AUDIO_I2S_SPK_GPIO_DOUT
+#ifdef CONFIG_AUDIO_I2S_SPK_GPIO_DOUT
+#define AUDIO_I2S_SPK_GPIO_DOUT     CONFIG_AUDIO_I2S_SPK_GPIO_DOUT
+#else
+#define AUDIO_I2S_SPK_GPIO_DOUT     -1
+#endif
+#endif
+
+#ifndef AUDIO_I2S_SPK_GPIO_BCLK
+#ifdef CONFIG_AUDIO_I2S_SPK_GPIO_BCLK
+#define AUDIO_I2S_SPK_GPIO_BCLK     CONFIG_AUDIO_I2S_SPK_GPIO_BCLK
+#else
+#define AUDIO_I2S_SPK_GPIO_BCLK     -1
+#endif
+#endif
+
+#ifndef AUDIO_I2S_SPK_GPIO_LRCK
+#ifdef CONFIG_AUDIO_I2S_SPK_GPIO_LRCK
+#define AUDIO_I2S_SPK_GPIO_LRCK     CONFIG_AUDIO_I2S_SPK_GPIO_LRCK
+#else
+#define AUDIO_I2S_SPK_GPIO_LRCK     -1
+#endif
+#endif
+
+// 按钮与LED相关定义
+#ifndef BUILTIN_LED_GPIO
+#ifdef CONFIG_BUILTIN_LED_GPIO
+#define BUILTIN_LED_GPIO            CONFIG_BUILTIN_LED_GPIO
+#else
+#define BUILTIN_LED_GPIO            -1
+#endif
+#endif
+
+#ifndef BOOT_BUTTON_GPIO
+#ifdef CONFIG_BOOT_BUTTON_GPIO
+#define BOOT_BUTTON_GPIO            CONFIG_BOOT_BUTTON_GPIO
+#else
+#define BOOT_BUTTON_GPIO            -1
+#endif
+#endif
+
+#ifndef TOUCH_BUTTON_GPIO
+#ifdef CONFIG_TOUCH_BUTTON_GPIO
+#define TOUCH_BUTTON_GPIO           CONFIG_TOUCH_BUTTON_GPIO
+#else
+#define TOUCH_BUTTON_GPIO           -1
+#endif
+#endif
+
+#ifndef VOLUME_UP_BUTTON_GPIO
+#ifdef CONFIG_VOLUME_UP_BUTTON_GPIO
+#define VOLUME_UP_BUTTON_GPIO       CONFIG_VOLUME_UP_BUTTON_GPIO
+#else
+#define VOLUME_UP_BUTTON_GPIO       -1
+#endif
+#endif
+
+#ifndef VOLUME_DOWN_BUTTON_GPIO
+#ifdef CONFIG_VOLUME_DOWN_BUTTON_GPIO
+#define VOLUME_DOWN_BUTTON_GPIO     CONFIG_VOLUME_DOWN_BUTTON_GPIO
+#else
+#define VOLUME_DOWN_BUTTON_GPIO     -1
+#endif
+#endif
+
+#ifndef CAMERA_FLASH_PIN
+#ifdef CONFIG_CAMERA_FLASH_PIN
+#define CAMERA_FLASH_PIN            CONFIG_CAMERA_FLASH_PIN
+#else
+#define CAMERA_FLASH_PIN            -1
 #endif
 #endif
 /**

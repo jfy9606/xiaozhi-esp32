@@ -176,7 +176,7 @@ bool Vision::IsRunning() const {
 }
 
 const char* Vision::GetName() const {
-    return "Vision";
+    return "VisionController";
 }
 
 void Vision::DetectCamera() {

@@ -867,7 +867,7 @@ ApiResponse HandleHardwareStatus(httpd_req_t* req) {
         cJSON_AddStringToObject(hardware_manager_status, "version", "1.0.0");
         cJSON_AddItemToObject(data, "hardware_manager", hardware_manager_status);
         
-        // 扩展器状态
+        // 多路复用器状态
         cJSON* expanders = cJSON_CreateObject();
         
         // PCA9548A多路复用器状态
@@ -877,10 +877,10 @@ ApiResponse HandleHardwareStatus(httpd_req_t* req) {
         cJSON_AddNumberToObject(pca9548a, "channels", 8);
         cJSON_AddItemToObject(expanders, "pca9548a", pca9548a);
         
-        // PCF8575 GPIO扩展器状态
+        // PCF8575 GPIO多路复用器状态
         cJSON* pcf8575 = cJSON_CreateObject();
         cJSON_AddBoolToObject(pcf8575, "initialized", true);
-        cJSON_AddStringToObject(pcf8575, "type", "GPIO Expander");
+        cJSON_AddStringToObject(pcf8575, "type", "GPIO Multiplexer");
         cJSON_AddNumberToObject(pcf8575, "pins", 16);
         cJSON_AddItemToObject(expanders, "pcf8575", pcf8575);
         
@@ -981,7 +981,7 @@ ApiResponse HandleHardwareConfig(httpd_req_t* req) {
             cJSON* sensor1 = cJSON_CreateObject();
             cJSON_AddStringToObject(sensor1, "id", "temp_01");
             cJSON_AddStringToObject(sensor1, "type", "temperature");
-            cJSON_AddStringToObject(sensor1, "expander", "hw178");
+            cJSON_AddStringToObject(sensor1, "multiplexer", "hw178");
             cJSON_AddNumberToObject(sensor1, "channel", 0);
             cJSON_AddItemToArray(sensors, sensor1);
             cJSON_AddItemToObject(config, "sensors", sensors);

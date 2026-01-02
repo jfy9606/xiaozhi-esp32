@@ -16,7 +16,7 @@
 #include <esp_lcd_panel_vendor.h>
 #include <freertos/semphr.h>
 
-// 扩展器支持
+// 多路复用器支持
 #if ENABLE_PCA9548A_MUX
 #include "ext/include/pca9548a.h"
 #endif
@@ -33,6 +33,9 @@
 #include "ext/include/hw178.h"
 #include <esp_adc/adc_oneshot.h>
 #endif
+
+// Multiplexer system
+#include "ext/include/multiplexer.h"
 
 #ifdef SH1106
 #include <esp_lcd_panel_sh1106.h>
@@ -58,7 +61,7 @@ private:
     Button volume_up_button_;
     Button volume_down_button_;
     
-    // 扩展器相关
+    // 多路复用器相关
     i2c_master_bus_handle_t i2c_bus_handle_;
     bool i2c_bus_initialized_;
     
@@ -81,6 +84,21 @@ private:
     hw178_handle_t hw178_handle_;
     adc_oneshot_unit_handle_t adc_handle_;
     bool hw178_initialized_;
+
+    static void HW178SetLevelCallback(int pin, int level, void* user_data) {
+        auto self = static_cast<CompactWifiBoard*>(user_data);
+        if (pin >= 100 && pin <= 115) {
+            // Virtual pins 100-115 map to PCF8575 P0-P15
+#if ENABLE_PCF8575_GPIO
+            if (self->pcf8575_initialized_ && self->pcf8575_handle_) {
+                pcf8575_set_level(self->pcf8575_handle_, pin - 100, level);
+            }
+#endif
+        } else {
+            // Normal GPIO pins
+            gpio_set_level((gpio_num_t)pin, level);
+        }
+    }
 #endif
 
 
@@ -101,10 +119,10 @@ private:
         ESP_ERROR_CHECK(i2c_new_master_bus(&bus_config, &display_i2c_bus_));
     }
 
-    void InitializeExpanderI2CBus() {
-        ESP_LOGI(TAG, "Initializing I2C bus for expanders");
+    void InitializeMultiplexerI2CBus() {
+        ESP_LOGI(TAG, "Initializing I2C bus for multiplexers");
         
-        // 初始化扩展器专用I2C总线
+        // 初始化多路复用器专用I2C总线
         i2c_master_bus_config_t i2c_bus_config = {
             .i2c_port = I2C_EXT_PORT,
             .sda_io_num = I2C_EXT_SDA_PIN,
@@ -120,13 +138,19 @@ private:
         
         esp_err_t ret = i2c_new_master_bus(&i2c_bus_config, &i2c_bus_handle_);
         if (ret != ESP_OK) {
-            ESP_LOGE(TAG, "Failed to initialize expander I2C bus: %s", esp_err_to_name(ret));
+            ESP_LOGE(TAG, "Failed to initialize multiplexer I2C bus: %s", esp_err_to_name(ret));
             i2c_bus_initialized_ = false;
             return;
         }
         
+        // 初始化multiplexer系统，设置全局I2C句柄
+        ret = multiplexer_init_with_bus(i2c_bus_handle_);
+        if (ret != ESP_OK) {
+            ESP_LOGW(TAG, "Failed to initialize multiplexer system: %s", esp_err_to_name(ret));
+        }
+        
         i2c_bus_initialized_ = true;
-        ESP_LOGI(TAG, "Expander I2C bus initialized successfully (SDA: GPIO%d, SCL: GPIO%d)", 
+        ESP_LOGI(TAG, "Multiplexer I2C bus initialized successfully (SDA: GPIO%d, SCL: GPIO%d)", 
                  I2C_EXT_SDA_PIN, I2C_EXT_SCL_PIN);
     }
 
@@ -211,7 +235,7 @@ private:
             return;
         }
         
-        ESP_LOGI(TAG, "Initializing PCF8575 GPIO expander");
+        ESP_LOGI(TAG, "Initializing PCF8575 GPIO multiplexer");
         
         pcf8575_config_t pcf8575_config = {
             .i2c_port = i2c_bus_handle_,
@@ -238,7 +262,7 @@ private:
         }
         
         pcf8575_initialized_ = true;
-        ESP_LOGI(TAG, "PCF8575 GPIO expander initialized successfully at address 0x%02X (via PCA9548A channel %d)", 
+        ESP_LOGI(TAG, "PCF8575 GPIO multiplexer initialized successfully at address 0x%02X (via PCA9548A channel %d)", 
                  PCF8575_I2C_ADDR, PCF8575_PCA9548A_CHANNEL);
     }
 #endif
@@ -281,6 +305,8 @@ private:
             .s2_pin = HW178_S2_PIN,
             .s3_pin = HW178_S3_PIN,
             .sig_pin = HW178_SIG_PIN,
+            .set_level_cb = HW178SetLevelCallback,
+            .user_data = this,
         };
         
         hw178_handle_ = hw178_create(&hw178_config);
@@ -404,7 +430,26 @@ private:
 #if CONFIG_IOT_PROTOCOL_XIAOZHI
         auto& thing_manager = iot::ThingManager::GetInstance();
         thing_manager.AddThing(iot::CreateThing("Speaker"));
+        thing_manager.AddThing(iot::CreateThing("Screen"));
         thing_manager.AddThing(iot::CreateThing("Lamp"));
+
+        // 根据配置选项添加舵机控制器
+#ifdef CONFIG_ENABLE_SERVO_CONTROLLER
+        thing_manager.AddThing(iot::CreateThing("ServoThing"));
+        ESP_LOGI(TAG, "Servo controller enabled");
+#endif
+
+        // 根据配置选项添加电机控制器
+#ifdef CONFIG_ENABLE_MOTOR_CONTROLLER
+        thing_manager.AddThing(iot::CreateThing("Motor"));
+        ESP_LOGI(TAG, "Motor controller enabled");
+#endif
+
+        // 根据配置选项添加超声波传感器
+#ifdef CONFIG_ENABLE_US_SENSOR
+        thing_manager.AddThing(iot::CreateThing("UltrasonicSensor"));
+        ESP_LOGI(TAG, "Ultrasonic sensor enabled");
+#endif
 #elif CONFIG_IOT_PROTOCOL_MCP
         static LampController lamp(LAMP_GPIO);
 #endif
@@ -447,9 +492,9 @@ public:
         InitializeSsd1306Display();
         InitializeButtons();
         
-        // 显示系统稳定后再初始化扩展器
-        ESP_LOGI(TAG, "Starting expander initialization...");
-        InitializeExpanderI2CBus();
+        // 显示系统稳定后再初始化多路复用器
+        ESP_LOGI(TAG, "Starting multiplexer initialization...");
+        InitializeMultiplexerI2CBus();
         
 #if ENABLE_PCA9548A_MUX
         InitializePCA9548A();
@@ -467,13 +512,13 @@ public:
         InitializeHW178();
 #endif
         
-        ESP_LOGI(TAG, "Expander initialization completed, starting IoT components...");
+        ESP_LOGI(TAG, "Multiplexer initialization completed, starting IoT components...");
         
-        // 扩展器初始化完成后再初始化IoT组件
+        // 多路复用器初始化完成后再初始化IoT组件
         InitializeIot();
 
-        // 记录扩展器状态
-        ESP_LOGI(TAG, "Expander I2C Bus: %s", i2c_bus_initialized_ ? "Initialized" : "Failed");
+        // 记录多路复用器状态
+        ESP_LOGI(TAG, "Multiplexer I2C Bus: %s", i2c_bus_initialized_ ? "Initialized" : "Failed");
         
 #if ENABLE_PCA9548A_MUX
         ESP_LOGI(TAG, "PCA9548A I2C Multiplexer: %s", pca9548a_initialized_ ? "Initialized" : "Failed");
@@ -484,7 +529,7 @@ public:
 #endif
 
 #if ENABLE_PCF8575_GPIO
-        ESP_LOGI(TAG, "PCF8575 GPIO Expander: %s", pcf8575_initialized_ ? "Initialized" : "Failed");
+        ESP_LOGI(TAG, "PCF8575 GPIO Multiplexer: %s", pcf8575_initialized_ ? "Initialized" : "Failed");
 #endif
 
 #if ENABLE_HW178_ANALOG
@@ -493,6 +538,44 @@ public:
 
         ESP_LOGI(TAG, "Bread Compact WiFi Board Initialized");
         InitializeTools();
+    }
+
+    virtual ~CompactWifiBoard() {
+        // 清理多路复用器资源
+#if ENABLE_HW178_ANALOG
+        if (hw178_handle_) {
+            hw178_delete(hw178_handle_);
+        }
+        if (adc_handle_) {
+            adc_oneshot_del_unit(adc_handle_);
+        }
+#endif
+
+#if ENABLE_PCF8575_GPIO
+        if (pcf8575_handle_) {
+            pcf8575_delete(&pcf8575_handle_);
+        }
+#endif
+
+#if ENABLE_LU9685_SERVO
+        if (lu9685_handle_) {
+            lu9685_deinit(&lu9685_handle_);
+        }
+#endif
+
+#if ENABLE_PCA9548A_MUX
+        if (pca9548a_handle_) {
+            pca9548a_delete(pca9548a_handle_);
+        }
+#endif
+
+        if (i2c_bus_handle_) {
+            i2c_del_master_bus(i2c_bus_handle_);
+        }
+
+        if (display_i2c_bus_) {
+            i2c_del_master_bus(display_i2c_bus_);
+        }
     }
 
     virtual Led* GetLed() override {
@@ -527,7 +610,7 @@ public:
         ESP_LOGI(TAG, "系统准备就绪，开始固件更新");
     }
 
-    // 扩展器访问方法
+    // 多路复用器访问方法
     bool IsI2CBusAvailable() const {
         return i2c_bus_initialized_;
     }
@@ -604,11 +687,19 @@ public:
 #endif
 
 #if ENABLE_PCF8575_GPIO
-    bool IsGPIOExpanderAvailable() const {
+    bool IsPcf8575Available() const {
+        return pcf8575_initialized_;
+    }
+
+    pcf8575_handle_t GetPcf8575Handle() const {
+        return pcf8575_handle_;
+    }
+
+    bool IsGPIOMultiplexerAvailable() const {
         return pcf8575_initialized_;
     }
     
-    bool SetExpanderPin(int pin, bool level) {
+    bool SetMultiplexerPin(int pin, bool level) {
         if (!pcf8575_initialized_ || pin < 0 || pin >= 16) {
             return false;
         }
@@ -617,7 +708,7 @@ public:
         return ret == ESP_OK;
     }
     
-    bool GetExpanderPin(int pin, bool* level) {
+    bool GetMultiplexerPin(int pin, bool* level) {
         if (!pcf8575_initialized_ || pin < 0 || pin >= 16 || !level) {
             return false;
         }
@@ -631,7 +722,7 @@ public:
         return false;
     }
     
-    bool SetExpanderPorts(uint16_t value) {
+    bool SetMultiplexerPorts(uint16_t value) {
         if (!pcf8575_initialized_) {
             return false;
         }
@@ -640,7 +731,7 @@ public:
         return ret == ESP_OK;
     }
     
-    bool GetExpanderPorts(uint16_t* value) {
+    bool GetMultiplexerPorts(uint16_t* value) {
         if (!pcf8575_initialized_ || !value) {
             return false;
         }
@@ -649,7 +740,7 @@ public:
         return ret == ESP_OK;
     }
     
-    bool SetExpanderPins(uint16_t pin_mask, uint16_t levels) {
+    bool SetMultiplexerPins(uint16_t pin_mask, uint16_t levels) {
         if (!pcf8575_initialized_) {
             return false;
         }
@@ -720,8 +811,8 @@ public:
     }
 #endif
 
-    // 获取扩展器状态信息
-    std::string GetExpanderStatusJson() const {
+    // 获取多路复用器状态信息
+    std::string GetMultiplexerStatusJson() const {
         std::string status = "{";
         status += "\"i2c_bus\":" + std::string(i2c_bus_initialized_ ? "true" : "false");
         

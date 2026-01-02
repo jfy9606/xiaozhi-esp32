@@ -8,7 +8,8 @@
                 "CONFIG_CAMERA_MODEL_AUTO_DETECT=y",
                 "CONFIG_CAMERA_OV2640_SUPPORT=y",
                 "CONFIG_CAMERA_OV3660_SUPPORT=y",
-                "CONFIG_CAMERA_OV5640_SUPPORT=y"
+                "CONFIG_CAMERA_OV5640_SUPPORT=y",
+                "CONFIG_ESP32S3_ALLOW_BOGUS_VDD_SPI_VOLTAGE=y"
             ]
         },
         {

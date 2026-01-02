@@ -5,7 +5,7 @@
         "id": "temp_cpu",
         "name": "CPU温度传感器",
         "type": "temperature",
-        "expander": "hw178",
+        "multiplexer": "hw178",
         "channel": 0,
         "unit": "°C",
         "calibration": {
@@ -17,7 +17,7 @@
         "id": "voltage_battery",
         "name": "电池电压监测",
         "type": "voltage",
-        "expander": "hw178",
+        "multiplexer": "hw178",
         "channel": 1,
         "unit": "V",
         "calibration": {
@@ -29,7 +29,7 @@
         "id": "current_total",
         "name": "总电流监测",
         "type": "current",
-        "expander": "hw178",
+        "multiplexer": "hw178",
         "channel": 2,
         "unit": "A",
         "calibration": {
@@ -41,7 +41,7 @@
         "id": "distance_front",
         "name": "前方距离传感器",
         "type": "distance",
-        "expander": "hw178",
+        "multiplexer": "hw178",
         "channel": 3,
         "unit": "cm",
         "calibration": {

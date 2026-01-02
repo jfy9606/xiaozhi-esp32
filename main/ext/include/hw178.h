@@ -64,6 +64,8 @@ typedef struct {
     gpio_num_t s2_pin;             /*!< S2 select pin */
     gpio_num_t s3_pin;             /*!< S3 select pin */
     gpio_num_t sig_pin;            /*!< SIG output pin (connects to ADC) */
+    void (*set_level_cb)(int pin, int level, void* user_data); /*!< Optional callback for virtual pins */
+    void* user_data;               /*!< User data for callback */
 } hw178_config_t;
 
 /**

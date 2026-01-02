@@ -31,7 +31,7 @@ curl http://device-ip/api/hardware/config
 **Symptoms:**
 - Error: "Multiplexer initialization failed"
 - No sensor readings available
-- Hardware status shows expanders as unavailable
+- Hardware status shows multiplexers as unavailable
 
 **Possible Causes:**
 - I2C bus not properly initialized
@@ -294,7 +294,7 @@ curl http://device-ip/api/hardware/config
 |---------|-------|----------|
 | "Multiplexer not initialized" | PCA9548A initialization failed | Check I2C connections and power |
 | "Invalid sensor type" | Unsupported sensor type | Use supported sensor types |
-| "Channel out of range" | Invalid expander channel | Use valid channel numbers (0-15) |
+| "Channel out of range" | Invalid multiplexer channel | Use valid channel numbers (0-15) |
 | "Pin conflict detected" | Multiple devices using same pin | Assign unique pins |
 | "Calibration scale cannot be zero" | Invalid calibration | Use non-zero scale values |
 

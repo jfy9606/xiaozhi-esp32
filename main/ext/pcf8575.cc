@@ -201,6 +201,17 @@ pcf8575_handle_t pcf8575_create(const pcf8575_config_t *config) {
     // 检查PCF8575设备是否可访问
     i2c_master_bus_handle_t bus_handle = dev->i2c_port;
     
+    // 如果使用了PCA9548A，探测前必须先选择正确的通道
+    if (dev->use_pca9548a) {
+        if (select_pcf8575_channel(dev) != ESP_OK) {
+            ESP_LOGE(TAG, "探测前无法选择PCA9548A通道");
+            free(dev);
+            return NULL;
+        }
+        // 给通道切换一点稳定时间
+        vTaskDelay(pdMS_TO_TICKS(1));
+    }
+    
     // 尝试探测设备是否存在
     esp_err_t ret = i2c_master_probe(bus_handle, dev->i2c_addr, dev->i2c_timeout_ms);
     if (ret != ESP_OK) {

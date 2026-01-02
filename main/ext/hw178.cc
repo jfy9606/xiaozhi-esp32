@@ -29,6 +29,8 @@ struct hw178_dev_t {
     gpio_num_t s3_pin;           // Select pin S3
     gpio_num_t sig_pin;          // Signal output pin (connects to ADC)
     hw178_channel_t channel;     // Current channel
+    void (*set_level_cb)(int pin, int level, void* user_data);
+    void* user_data;
 };
 
 hw178_handle_t hw178_create(const hw178_config_t *config)
@@ -67,36 +69,43 @@ hw178_handle_t hw178_create(const hw178_config_t *config)
     handle->s3_pin = config->s3_pin;
     handle->sig_pin = config->sig_pin;
     handle->channel = HW178_CHANNEL_C0;  // 默认通道
+    handle->set_level_cb = config->set_level_cb;
+    handle->user_data = config->user_data;
 
-    // 配置GPIO引脚
-    gpio_config_t io_conf = {
-        .mode = GPIO_MODE_OUTPUT,
-        .pull_up_en = GPIO_PULLUP_DISABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_DISABLE,
-    };
+    // 如果提供了回调，则不初始化选择引脚的GPIO（由回调处理）
+    if (handle->set_level_cb != NULL) {
+        ESP_LOGI(TAG, "Using callback for select pins");
+    } else {
+        // 配置GPIO引脚
+        gpio_config_t io_conf = {
+            .mode = GPIO_MODE_OUTPUT,
+            .pull_up_en = GPIO_PULLUP_DISABLE,
+            .pull_down_en = GPIO_PULLDOWN_DISABLE,
+            .intr_type = GPIO_INTR_DISABLE,
+        };
 
-    // 配置实际连接的选择引脚
-    uint64_t pin_bit_mask = 0;
-    if (handle->s0_pin != GPIO_NUM_NC) {
-        pin_bit_mask |= (1ULL << handle->s0_pin);
-    }
-    if (handle->s1_pin != GPIO_NUM_NC) {
-        pin_bit_mask |= (1ULL << handle->s1_pin);
-    }
-    if (handle->s2_pin != GPIO_NUM_NC) {
-        pin_bit_mask |= (1ULL << handle->s2_pin);
-    }
-    if (handle->s3_pin != GPIO_NUM_NC) {
-        pin_bit_mask |= (1ULL << handle->s3_pin);
-    }
-    
-    if (pin_bit_mask != 0) {
-        io_conf.pin_bit_mask = pin_bit_mask;
-    if (gpio_config(&io_conf) != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to configure select pins");
-            free(handle);
-            return NULL;
+        // 配置实际连接的选择引脚
+        uint64_t pin_bit_mask = 0;
+        if (handle->s0_pin != GPIO_NUM_NC) {
+            pin_bit_mask |= (1ULL << handle->s0_pin);
+        }
+        if (handle->s1_pin != GPIO_NUM_NC) {
+            pin_bit_mask |= (1ULL << handle->s1_pin);
+        }
+        if (handle->s2_pin != GPIO_NUM_NC) {
+            pin_bit_mask |= (1ULL << handle->s2_pin);
+        }
+        if (handle->s3_pin != GPIO_NUM_NC) {
+            pin_bit_mask |= (1ULL << handle->s3_pin);
+        }
+        
+        if (pin_bit_mask != 0) {
+            io_conf.pin_bit_mask = pin_bit_mask;
+            if (gpio_config(&io_conf) != ESP_OK) {
+                ESP_LOGE(TAG, "Failed to configure select pins");
+                free(handle);
+                return NULL;
+            }
         }
     }
 
@@ -135,20 +144,35 @@ esp_err_t hw178_select_channel(hw178_handle_t handle, hw178_channel_t channel)
     }
 
     // 仅为实际配置的选择引脚设置电平
-    if (handle->s0_pin != GPIO_NUM_NC) {
-    gpio_set_level(handle->s0_pin, (channel & 0x01) ? 1 : 0);
-    }
-    
-    if (handle->s1_pin != GPIO_NUM_NC) {
-    gpio_set_level(handle->s1_pin, (channel & 0x02) ? 1 : 0);
-    }
-    
-    if (handle->s2_pin != GPIO_NUM_NC) {
-    gpio_set_level(handle->s2_pin, (channel & 0x04) ? 1 : 0);
-    }
-    
-    if (handle->s3_pin != GPIO_NUM_NC) {
-    gpio_set_level(handle->s3_pin, (channel & 0x08) ? 1 : 0);
+    if (handle->set_level_cb != NULL) {
+        if (handle->s0_pin != GPIO_NUM_NC) {
+            handle->set_level_cb(handle->s0_pin, (channel & 0x01) ? 1 : 0, handle->user_data);
+        }
+        if (handle->s1_pin != GPIO_NUM_NC) {
+            handle->set_level_cb(handle->s1_pin, (channel & 0x02) ? 1 : 0, handle->user_data);
+        }
+        if (handle->s2_pin != GPIO_NUM_NC) {
+            handle->set_level_cb(handle->s2_pin, (channel & 0x04) ? 1 : 0, handle->user_data);
+        }
+        if (handle->s3_pin != GPIO_NUM_NC) {
+            handle->set_level_cb(handle->s3_pin, (channel & 0x08) ? 1 : 0, handle->user_data);
+        }
+    } else {
+        if (handle->s0_pin != GPIO_NUM_NC) {
+            gpio_set_level(handle->s0_pin, (channel & 0x01) ? 1 : 0);
+        }
+        
+        if (handle->s1_pin != GPIO_NUM_NC) {
+            gpio_set_level(handle->s1_pin, (channel & 0x02) ? 1 : 0);
+        }
+        
+        if (handle->s2_pin != GPIO_NUM_NC) {
+            gpio_set_level(handle->s2_pin, (channel & 0x04) ? 1 : 0);
+        }
+        
+        if (handle->s3_pin != GPIO_NUM_NC) {
+            gpio_set_level(handle->s3_pin, (channel & 0x08) ? 1 : 0);
+        }
     }
 
     // 更新当前通道

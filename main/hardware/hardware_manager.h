@@ -7,7 +7,7 @@
 #include "esp_err.h"
 #include "cJSON.h"
 
-// Forward declarations for expander drivers
+// Forward declarations for multiplexer drivers
 #include "../ext/include/multiplexer.h"
 #include "../ext/include/pca9548a.h"
 #include "../ext/include/pcf8575.h"
@@ -50,7 +50,7 @@ typedef struct {
     std::string id;
     std::string name;
     std::string type;
-    std::string expander;
+    std::string multiplexer;
     int channel;
     std::string unit;
     struct {
@@ -240,13 +240,14 @@ private:
     std::map<int, motor_config_t> motor_configs_;
     std::map<int, servo_config_t> servo_configs_;
     
-    // Expander handles
-    pcf8575_handle_t pcf8575_handle_;
-    lu9685_handle_t lu9685_handle_;
-    hw178_handle_t hw178_handle_;
-    
-    // Private helper methods
-    esp_err_t InitializeExpanders();
+    // Multiplexer handles
+    pca9548a_handle_t pca9548a_handle_ = nullptr;
+    pcf8575_handle_t pcf8575_handle_ = nullptr;
+    lu9685_handle_t lu9685_handle_ = nullptr;
+    hw178_handle_t hw178_handle_ = nullptr;
+
+    // Initialization helpers
+    esp_err_t InitializeMultiplexers();
     esp_err_t ParseSensorConfig(cJSON* sensors_json);
     esp_err_t ParseMotorConfig(cJSON* motors_json);
     esp_err_t ParseServoConfig(cJSON* servos_json);
@@ -271,7 +272,7 @@ private:
     std::string GetConfigurationSummary();
     
     // Sensor helper methods
-    esp_err_t SelectExpander(const std::string& expander_type, int channel);
+    esp_err_t SelectMultiplexer(const std::string& multiplexer_type, int channel);
     float ApplyCalibration(int raw_value, const sensor_config_t& config);
     bool IsSensorTypeSupported(const std::string& sensor_type);
     

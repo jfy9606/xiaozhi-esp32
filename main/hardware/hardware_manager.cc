@@ -34,10 +34,10 @@ HardwareManager::~HardwareManager() {
 esp_err_t HardwareManager::Initialize() {
     ESP_LOGI(TAG, "Initializing Hardware Manager");
     
-    // Initialize expanders first
-    esp_err_t ret = InitializeExpanders();
+    // Initialize multiplexers first
+    esp_err_t ret = InitializeMultiplexers();
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to initialize expanders: %s", esp_err_to_name(ret));
+        ESP_LOGE(TAG, "Failed to initialize multiplexers: %s", esp_err_to_name(ret));
         return ret;
     }
     
@@ -46,8 +46,8 @@ esp_err_t HardwareManager::Initialize() {
     return ESP_OK;
 }
 
-esp_err_t HardwareManager::InitializeExpanders() {
-    ESP_LOGI(TAG, "Initializing expander drivers");
+esp_err_t HardwareManager::InitializeMultiplexers() {
+    ESP_LOGI(TAG, "Initializing multiplexer drivers");
     
     // Initialize multiplexer system (this will initialize PCA9548A if available)
     esp_err_t ret = multiplexer_init();
@@ -181,17 +181,20 @@ esp_err_t HardwareManager::ParseSensorConfig(cJSON* sensors_json) {
         // Parse required fields
         cJSON* id = cJSON_GetObjectItem(sensor, "id");
         cJSON* type = cJSON_GetObjectItem(sensor, "type");
-        cJSON* expander = cJSON_GetObjectItem(sensor, "expander");
+        cJSON* multiplexer = cJSON_GetObjectItem(sensor, "multiplexer");
+        if (!multiplexer) {
+            multiplexer = cJSON_GetObjectItem(sensor, "expander"); // Backward compatibility
+        }
         cJSON* channel = cJSON_GetObjectItem(sensor, "channel");
         
-        if (!id || !type || !expander || !channel) {
+        if (!id || !type || !multiplexer || !channel) {
             ESP_LOGE(TAG, "Missing required sensor fields in configuration");
             return ESP_ERR_INVALID_ARG;
         }
         
         config.id = cJSON_GetStringValue(id);
         config.type = cJSON_GetStringValue(type);
-        config.expander = cJSON_GetStringValue(expander);
+        config.multiplexer = cJSON_GetStringValue(multiplexer);
         config.channel = cJSON_GetNumberValue(channel);
         
         // Parse optional fields
@@ -225,7 +228,7 @@ esp_err_t HardwareManager::ParseSensorConfig(cJSON* sensors_json) {
         sensor_configs_[config.id] = config;
         ESP_LOGI(TAG, "Added sensor: %s (%s) on %s channel %d", 
                  config.id.c_str(), config.type.c_str(), 
-                 config.expander.c_str(), config.channel);
+                 config.multiplexer.c_str(), config.channel);
     }
     
     return ESP_OK;
@@ -353,7 +356,7 @@ esp_err_t HardwareManager::ValidateConfiguration() {
     for (const auto& pair : sensor_configs_) {
         const sensor_config_t& config = pair.second;
         
-        if (config.expander == "hw178") {
+        if (config.multiplexer == "hw178") {
             if (config.channel < 0 || config.channel >= HW178_CHANNEL_COUNT) {
                 ESP_LOGE(TAG, "Invalid HW178 channel %d for sensor %s", 
                          config.channel, config.id.c_str());
@@ -428,10 +431,10 @@ sensor_reading_t HardwareManager::ReadSensor(const std::string& sensor_id) {
     reading.type = config.type;
     reading.unit = config.unit;
     
-    if (config.expander == "hw178") {
+    if (config.multiplexer == "hw178") {
         reading = ReadHW178Sensor(config);
     } else {
-        ESP_LOGE(TAG, "Unsupported expander type: %s", config.expander.c_str());
+        ESP_LOGE(TAG, "Unsupported multiplexer type: %s", config.multiplexer.c_str());
     }
     
     return reading;
@@ -466,9 +469,9 @@ sensor_reading_t HardwareManager::ReadHW178Sensor(const sensor_config_t& config)
     }
     
     // Select the correct channel
-    esp_err_t ret = SelectExpander("hw178", config.channel);
+    esp_err_t ret = SelectMultiplexer("hw178", config.channel);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to select expander channel for sensor %s", config.id.c_str());
+        ESP_LOGE(TAG, "Failed to select multiplexer channel for sensor %s", config.id.c_str());
         return reading;
     }
     
@@ -842,8 +845,8 @@ bool HardwareManager::ValidateSensorReading(const sensor_reading_t& reading) {
     return true;
 }
 
-esp_err_t HardwareManager::SelectExpander(const std::string& expander_type, int channel) {
-    if (expander_type == "hw178") {
+esp_err_t HardwareManager::SelectMultiplexer(const std::string& multiplexer_type, int channel) {
+    if (multiplexer_type == "hw178") {
 #ifdef CONFIG_ENABLE_HW178
         if (!hw178_is_initialized()) {
             ESP_LOGE(TAG, "HW178 not initialized");
@@ -864,7 +867,7 @@ esp_err_t HardwareManager::SelectExpander(const std::string& expander_type, int 
         ESP_LOGE(TAG, "HW178 support not enabled");
         return ESP_ERR_NOT_SUPPORTED;
 #endif
-    } else if (expander_type == "pca9548a") {
+    } else if (multiplexer_type == "pca9548a") {
         if (!pca9548a_is_initialized()) {
             ESP_LOGE(TAG, "PCA9548A not initialized");
             return ESP_ERR_INVALID_STATE;
@@ -883,7 +886,7 @@ esp_err_t HardwareManager::SelectExpander(const std::string& expander_type, int 
         return ESP_OK;
     }
     
-    ESP_LOGE(TAG, "Unsupported expander type: %s", expander_type.c_str());
+    ESP_LOGE(TAG, "Unsupported multiplexer type: %s", multiplexer_type.c_str());
     return ESP_ERR_NOT_SUPPORTED;
 }
 
@@ -1173,7 +1176,7 @@ esp_err_t HardwareManager::CreateDefaultConfiguration(const std::string& config_
     cJSON_AddStringToObject(temp_sensor, "id", "temperature_01");
     cJSON_AddStringToObject(temp_sensor, "name", "Environment Temperature");
     cJSON_AddStringToObject(temp_sensor, "type", "temperature");
-    cJSON_AddStringToObject(temp_sensor, "expander", "hw178");
+    cJSON_AddStringToObject(temp_sensor, "multiplexer", "hw178");
     cJSON_AddNumberToObject(temp_sensor, "channel", 0);
     cJSON_AddStringToObject(temp_sensor, "unit", "°C");
     
@@ -1188,7 +1191,7 @@ esp_err_t HardwareManager::CreateDefaultConfiguration(const std::string& config_
     cJSON_AddStringToObject(voltage_sensor, "id", "voltage_battery");
     cJSON_AddStringToObject(voltage_sensor, "name", "Battery Voltage");
     cJSON_AddStringToObject(voltage_sensor, "type", "voltage");
-    cJSON_AddStringToObject(voltage_sensor, "expander", "hw178");
+    cJSON_AddStringToObject(voltage_sensor, "multiplexer", "hw178");
     cJSON_AddNumberToObject(voltage_sensor, "channel", 1);
     cJSON_AddStringToObject(voltage_sensor, "unit", "V");
     
@@ -1293,7 +1296,7 @@ cJSON* HardwareManager::SerializeSensorConfig(const sensor_config_t& config) {
     cJSON_AddStringToObject(sensor, "id", config.id.c_str());
     cJSON_AddStringToObject(sensor, "name", config.name.c_str());
     cJSON_AddStringToObject(sensor, "type", config.type.c_str());
-    cJSON_AddStringToObject(sensor, "expander", config.expander.c_str());
+    cJSON_AddStringToObject(sensor, "multiplexer", config.multiplexer.c_str());
     cJSON_AddNumberToObject(sensor, "channel", config.channel);
     cJSON_AddStringToObject(sensor, "unit", config.unit.c_str());
     
@@ -1387,7 +1390,7 @@ std::string HardwareManager::GetConfigurationSummary() {
         for (const auto& pair : sensor_configs_) {
             const auto& config = pair.second;
             summary << "    - " << config.id << " (" << config.type << ") on " 
-                   << config.expander << " channel " << config.channel << "\n";
+                   << config.multiplexer << " channel " << config.channel << "\n";
         }
     }
     

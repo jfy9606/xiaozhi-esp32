@@ -50,12 +50,12 @@
  * 注：所有以下地址均为ESP-IDF兼容的7位格式
  */
 
-/* 多路复用器和扩展器 */
+/* 多路复用器 */
 #define I2C_ADDR_PCA9548A_BASE      0x70    // PCA9548A多路复用器的基础地址 (7位格式，范围0x70-0x77)
-#define I2C_ADDR_PCF8575_BASE       0x20    // PCF8575 GPIO扩展器的基础地址 (7位格式，范围0x20-0x27)
-#define I2C_ADDR_PCF8574_BASE       0x20    // PCF8574 GPIO扩展器的基础地址 (7位格式，范围0x20-0x27)
-#define I2C_ADDR_PCF8574A_BASE      0x38    // PCF8574A GPIO扩展器的基础地址 (7位格式，范围0x38-0x3F)
-#define I2C_ADDR_TCA9554_BASE       0x20    // TCA9554 GPIO扩展器的基础地址 (7位格式，范围0x20-0x27)
+#define I2C_ADDR_PCF8575_BASE       0x20    // PCF8575 GPIO多路复用器的基础地址 (7位格式，范围0x20-0x27)
+#define I2C_ADDR_PCF8574_BASE       0x20    // PCF8574 GPIO多路复用器的基础地址 (7位格式，范围0x20-0x27)
+#define I2C_ADDR_PCF8574A_BASE      0x38    // PCF8574A GPIO多路复用器的基础地址 (7位格式，范围0x38-0x3F)
+#define I2C_ADDR_TCA9554_BASE       0x20    // TCA9554 GPIO多路复用器的基础地址 (7位格式，范围0x20-0x27)
 
 /* 舵机和电机控制器 */
 #define I2C_ADDR_LU9685             0x40    // LU9685-20CU舵机控制器地址 (7位格式，8位格式为0x80)

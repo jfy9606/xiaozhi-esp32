@@ -7,18 +7,22 @@
 #include "config.h"
 #include "mcp_server.h"
 #include "lamp_controller.h"
+#include "iot/thing_manager.h"
+#include "assets/lang_config.h"
 #include "led/single_led.h"
-// 使用ESP-IDF官方摄像头支持
+// 使用增强型摄像头组件
+#include "camera/camera_components.h"
 #include <esp_camera.h>
 
 #include <esp_log.h>
+#include <driver/gpio.h>
 #include <driver/i2c_master.h>
 #include <esp_lcd_panel_vendor.h>
 #include <esp_lcd_panel_io.h>
 #include <esp_lcd_panel_ops.h>
 #include <driver/spi_common.h>
 
-// 扩展器支持
+// 多路复用器支持
 #if ENABLE_PCA9548A_MUX
 #include "ext/include/pca9548a.h"
 #endif
@@ -79,17 +83,50 @@ static const gc9a01_lcd_init_cmd_t gc9107_lcd_init_cmds[] = {
     {0xba, (uint8_t[]){0xFF, 0xFF}, 2, 0},
 };
 #endif
- 
+
+class Pcf8575Led : public Led {
+public:
+    Pcf8575Led(pcf8575_handle_t pcf8575, int pin) : pcf8575_(pcf8575), pin_(pin) {}
+    void OnStateChanged() override {
+        auto& app = Application::GetInstance();
+        auto device_state = app.GetDeviceState();
+        switch (device_state) {
+            case kDeviceStateIdle:
+                pcf8575_set_level(pcf8575_, pin_, 0);
+                break;
+            case kDeviceStateStarting:
+            case kDeviceStateWifiConfiguring:
+            case kDeviceStateConnecting:
+            case kDeviceStateListening:
+            case kDeviceStateSpeaking:
+            case kDeviceStateUpgrading:
+            case kDeviceStateActivating:
+                pcf8575_set_level(pcf8575_, pin_, 1);
+                break;
+            default:
+                break;
+        }
+    }
+private:
+    pcf8575_handle_t pcf8575_;
+    int pin_;
+};
+
 #define TAG "CompactWifiBoardS3Cam"
+
+LV_FONT_DECLARE(font_puhui_16_4);
+LV_FONT_DECLARE(font_awesome_16_4);
 
 class CompactWifiBoardS3Cam : public WifiBoard {
 private:
  
     Button boot_button_;
     LcdDisplay* display_;
+    EnhancedEsp32Camera* camera_;
     bool camera_initialized_;
+    Led* led_ = nullptr;
     
-    // 扩展器相关
+    // 级联多路复用器相关
     i2c_master_bus_handle_t i2c_bus_handle_;
     bool i2c_bus_initialized_;
     
@@ -112,6 +149,21 @@ private:
     hw178_handle_t hw178_handle_;
     adc_oneshot_unit_handle_t adc_handle_;
     bool hw178_initialized_;
+
+    static void HW178SetLevelCallback(int pin, int level, void* user_data) {
+        auto self = static_cast<CompactWifiBoardS3Cam*>(user_data);
+        if (pin >= 100 && pin <= 115) {
+            // 虚拟引脚 100-115 映射到 PCF8575 P0-P15
+#if ENABLE_PCF8575_GPIO
+            if (self->pcf8575_initialized_ && self->pcf8575_handle_) {
+                pcf8575_set_level(self->pcf8575_handle_, pin - 100, level);
+            }
+#endif
+        } else {
+            // 普通 GPIO 引脚
+            gpio_set_level((gpio_num_t)pin, level);
+        }
+    }
 #endif
 
     void InitializeSpi() {
@@ -143,17 +195,34 @@ private:
         // 初始化液晶屏驱动芯片
         ESP_LOGD(TAG, "Install LCD driver");
         esp_lcd_panel_dev_config_t panel_config = {};
-        panel_config.reset_gpio_num = DISPLAY_RST_PIN;
+        
+        // 如果复位引脚是虚拟引脚 (>100)，手动处理复位并设置驱动不自动复位
+        if ((int)DISPLAY_RST_PIN >= 100) {
+            panel_config.reset_gpio_num = GPIO_NUM_NC;
+#if ENABLE_PCF8575_GPIO
+            if (pcf8575_initialized_ && pcf8575_handle_) {
+                ESP_LOGI(TAG, "Manually resetting LCD via PCF8575 P%d", (int)DISPLAY_RST_PIN - 100);
+                pcf8575_set_level(pcf8575_handle_, (int)DISPLAY_RST_PIN - 100, 0);
+                vTaskDelay(pdMS_TO_TICKS(20));
+                pcf8575_set_level(pcf8575_handle_, (int)DISPLAY_RST_PIN - 100, 1);
+                vTaskDelay(pdMS_TO_TICKS(120));
+            }
+#endif
+        } else {
+            panel_config.reset_gpio_num = DISPLAY_RST_PIN;
+        }
+
         panel_config.rgb_ele_order = DISPLAY_RGB_ORDER;
         panel_config.bits_per_pixel = 16;
 #if defined(LCD_TYPE_ILI9341_SERIAL)
         ESP_ERROR_CHECK(esp_lcd_new_panel_ili9341(panel_io, &panel_config, &panel));
 #elif defined(LCD_TYPE_GC9A01_SERIAL)
-        ESP_ERROR_CHECK(esp_lcd_new_panel_gc9a01(panel_io, &panel_config, &panel));
         gc9a01_vendor_config_t gc9107_vendor_config = {
             .init_cmds = gc9107_lcd_init_cmds,
             .init_cmds_size = sizeof(gc9107_lcd_init_cmds) / sizeof(gc9a01_lcd_init_cmd_t),
-        };        
+        };
+        panel_config.vendor_config = &gc9107_vendor_config;
+        ESP_ERROR_CHECK(esp_lcd_new_panel_gc9a01(panel_io, &panel_config, &panel));
 #else
         ESP_ERROR_CHECK(esp_lcd_new_panel_st7789(panel_io, &panel_config, &panel));
 #endif
@@ -164,60 +233,45 @@ private:
         esp_lcd_panel_invert_color(panel, DISPLAY_INVERT_COLOR);
         esp_lcd_panel_swap_xy(panel, DISPLAY_SWAP_XY);
         esp_lcd_panel_mirror(panel, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y);
-#ifdef  LCD_TYPE_GC9A01_SERIAL
-        panel_config.vendor_config = &gc9107_vendor_config;
-#endif
         display_ = new SpiLcdDisplay(panel_io, panel,
-                                    DISPLAY_WIDTH, DISPLAY_HEIGHT, DISPLAY_OFFSET_X, DISPLAY_OFFSET_Y, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y, DISPLAY_SWAP_XY);
+                                    DISPLAY_WIDTH, DISPLAY_HEIGHT, DISPLAY_OFFSET_X, DISPLAY_OFFSET_Y, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y, DISPLAY_SWAP_XY,
+                                    {
+                                        .text_font = &font_puhui_16_4,
+                                        .icon_font = &font_awesome_16_4,
+#if CONFIG_USE_WECHAT_MESSAGE_STYLE
+                                        .emoji_font = font_emoji_32_init(),
+#else
+                                        .emoji_font = DISPLAY_HEIGHT >= 240 ? font_emoji_64_init() : font_emoji_32_init(),
+#endif
+                                    });
     }
 
     void InitializeCamera() {
-        ESP_LOGI(TAG, "Initializing ESP-IDF camera system");
+        ESP_LOGI(TAG, "Initializing enhanced camera system for S3Cam board");
         
-        camera_config_t config;
-        config.ledc_channel = LEDC_CHANNEL_0;
-        config.ledc_timer = LEDC_TIMER_0;
-        config.pin_d0 = CAMERA_PIN_D0;
-        config.pin_d1 = CAMERA_PIN_D1;
-        config.pin_d2 = CAMERA_PIN_D2;
-        config.pin_d3 = CAMERA_PIN_D3;
-        config.pin_d4 = CAMERA_PIN_D4;
-        config.pin_d5 = CAMERA_PIN_D5;
-        config.pin_d6 = CAMERA_PIN_D6;
-        config.pin_d7 = CAMERA_PIN_D7;
-        config.pin_xclk = CAMERA_PIN_XCLK;
-        config.pin_pclk = CAMERA_PIN_PCLK;
-        config.pin_vsync = CAMERA_PIN_VSYNC;
-        config.pin_href = CAMERA_PIN_HREF;
-        config.pin_sccb_sda = CAMERA_PIN_SIOD;
-        config.pin_sccb_scl = CAMERA_PIN_SIOC;
-        config.pin_pwdn = CAMERA_PIN_PWDN;
-        config.pin_reset = CAMERA_PIN_RESET;
-        config.xclk_freq_hz = XCLK_FREQ_HZ;
-        config.pixel_format = PIXFORMAT_JPEG;
-        config.frame_size = FRAMESIZE_SVGA;
-        config.jpeg_quality = 12;
-        config.fb_count = 1;
-        config.fb_location = CAMERA_FB_IN_PSRAM;
-        config.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
-        
-        // 初始化摄像头
-        esp_err_t err = esp_camera_init(&config);
-        if (err != ESP_OK) {
-            ESP_LOGE(TAG, "Camera init failed with error 0x%x", err);
+        // 使用 SetupCameraForBoard 辅助函数进行初始化
+        // 这里的 webserver 和 mcp_server 暂时传 nullptr，因为是在构造函数中调用的
+        if (CameraSystemHelpers::SetupCameraForBoard("bread-compact-wifi-s3cam", nullptr, nullptr)) {
+            camera_ = CameraComponentFactory::GetEnhancedCamera();
+            if (camera_ != nullptr) {
+                camera_initialized_ = true;
+                ESP_LOGI(TAG, "Enhanced camera system initialized successfully");
+            } else {
+                ESP_LOGE(TAG, "Failed to get enhanced camera from factory");
+                camera_initialized_ = false;
+            }
+        } else {
+            ESP_LOGE(TAG, "Failed to initialize enhanced camera system");
             camera_initialized_ = false;
-            return;
         }
-        
-        camera_initialized_ = true;
-        ESP_LOGI(TAG, "ESP-IDF camera system initialized successfully");
     }
 
     void DeinitializeCamera() {
         if (camera_initialized_) {
-            esp_camera_deinit();
+            CameraComponentFactory::DeinitializeCameraSystem();
+            camera_ = nullptr;
             camera_initialized_ = false;
-            ESP_LOGI(TAG, "ESP-IDF camera system deinitialized");
+            ESP_LOGI(TAG, "Enhanced camera system deinitialized");
         }
     }
 
@@ -248,14 +302,14 @@ private:
         });
     }
 
-    void InitializeI2CBus() {
-        ESP_LOGI(TAG, "Initializing I2C bus for expanders");
+    void InitializeMultiplexerI2CBus() {
+        ESP_LOGI(TAG, "Initializing I2C bus for multiplexers");
         
         // 初始化I2C总线
         i2c_master_bus_config_t i2c_bus_config = {
-            .i2c_port = I2C_EXT_PORT,
-            .sda_io_num = I2C_EXT_SDA_PIN,
-            .scl_io_num = I2C_EXT_SCL_PIN,
+            .i2c_port = I2C_MUX_PORT,
+            .sda_io_num = I2C_MUX_SDA_PIN,
+            .scl_io_num = I2C_MUX_SCL_PIN,
             .clk_source = I2C_CLK_SRC_DEFAULT,
             .glitch_ignore_cnt = 7,
             .intr_priority = 0,
@@ -272,7 +326,10 @@ private:
             return;
         }
         
-        // 初始化multiplexer系统，设置全局I2C句柄
+        // 给硬件一点响应时间
+        vTaskDelay(pdMS_TO_TICKS(50));
+        
+        // 初始化multiplexer system，设置全局I2C句柄
         ret = multiplexer_init_with_bus(i2c_bus_handle_);
         if (ret != ESP_OK) {
             ESP_LOGW(TAG, "Failed to initialize multiplexer system: %s", esp_err_to_name(ret));
@@ -280,7 +337,7 @@ private:
         
         i2c_bus_initialized_ = true;
         ESP_LOGI(TAG, "I2C bus initialized successfully (SDA: GPIO%d, SCL: GPIO%d)", 
-                 I2C_EXT_SDA_PIN, I2C_EXT_SCL_PIN);
+                 I2C_MUX_SDA_PIN, I2C_MUX_SCL_PIN);
     }
 
 #if ENABLE_PCA9548A_MUX
@@ -294,9 +351,9 @@ private:
         ESP_LOGI(TAG, "Initializing PCA9548A I2C multiplexer");
         
         pca9548a_config_t pca9548a_config = {
-            .i2c_port = I2C_EXT_PORT,
+            .i2c_port = I2C_MUX_PORT,
             .i2c_addr = PCA9548A_I2C_ADDR,
-            .i2c_timeout_ms = I2C_EXT_TIMEOUT_MS,
+            .i2c_timeout_ms = I2C_MUX_TIMEOUT_MS,
             .reset_pin = PCA9548A_RESET_PIN,
         };
         
@@ -364,12 +421,12 @@ private:
             return;
         }
         
-        ESP_LOGI(TAG, "Initializing PCF8575 GPIO expander");
+        ESP_LOGI(TAG, "Initializing PCF8575 GPIO multiplexer");
         
         pcf8575_config_t pcf8575_config = {
             .i2c_port = i2c_bus_handle_,
             .i2c_addr = PCF8575_I2C_ADDR,
-            .i2c_timeout_ms = I2C_EXT_TIMEOUT_MS,
+            .i2c_timeout_ms = I2C_MUX_TIMEOUT_MS,
             .all_output = true,  // 设置为输出模式
             .use_pca9548a = true,
             .pca9548a_channel = PCF8575_PCA9548A_CHANNEL,
@@ -391,8 +448,14 @@ private:
         }
         
         pcf8575_initialized_ = true;
-        ESP_LOGI(TAG, "PCF8575 GPIO expander initialized successfully at address 0x%02X (via PCA9548A channel %d)", 
+        ESP_LOGI(TAG, "PCF8575 GPIO multiplexer initialized successfully at address 0x%02X (via PCA9548A channel %d)", 
                  PCF8575_I2C_ADDR, PCF8575_PCA9548A_CHANNEL);
+
+        // 初始化 LED
+        if ((int)BUILTIN_LED_GPIO >= 100) {
+            led_ = new Pcf8575Led(pcf8575_handle_, (int)BUILTIN_LED_GPIO - 100);
+            ESP_LOGI(TAG, "Initialized PCF8575-based LED on P%d", (int)BUILTIN_LED_GPIO - 100);
+        }
     }
 #endif
 
@@ -434,6 +497,8 @@ private:
             .s2_pin = HW178_S2_PIN,
             .s3_pin = HW178_S3_PIN,
             .sig_pin = HW178_SIG_PIN,
+            .set_level_cb = HW178SetLevelCallback,
+            .user_data = this,
         };
         
         hw178_handle_ = hw178_create(&hw178_config);
@@ -449,11 +514,48 @@ private:
     }
 #endif
 
+    // 物联网初始化，添加对 AI 可见设备
+    void InitializeIot() {
+        #if CONFIG_IOT_PROTOCOL_XIAOZHI
+        auto& thing_manager = iot::ThingManager::GetInstance();
+        thing_manager.AddThing(iot::CreateThing("Speaker"));
+        thing_manager.AddThing(iot::CreateThing("Screen"));
+        thing_manager.AddThing(iot::CreateThing("Lamp"));
+        
+        // 根据配置选项添加舵机控制器
+        #ifdef CONFIG_ENABLE_SERVO_CONTROLLER
+        thing_manager.AddThing(iot::CreateThing("ServoThing"));
+        ESP_LOGI(TAG, "Servo controller enabled");
+        #endif
+        
+        // 根据配置选项添加电机控制器
+        #ifdef CONFIG_ENABLE_MOTOR_CONTROLLER
+        thing_manager.AddThing(iot::CreateThing("Motor"));
+        ESP_LOGI(TAG, "Motor controller enabled");
+        #endif
+        
+        // 根据配置选项添加超声波传感器
+        #ifdef CONFIG_ENABLE_US_SENSOR
+        thing_manager.AddThing(iot::CreateThing("UltrasonicSensor"));
+        ESP_LOGI(TAG, "Ultrasonic sensor enabled");
+        #endif
+        
+
+#elif CONFIG_IOT_PROTOCOL_MCP
+        // MCP protocol specific initialization if any
+#endif
+    }   
+
+    void InitializeTools() {
+        static LampController lamp(LAMP_GPIO);
+    }
+
 
 
 public:
     CompactWifiBoardS3Cam() :
         boot_button_(BOOT_BUTTON_GPIO),
+        camera_(nullptr),
         camera_initialized_(false),
         i2c_bus_handle_(nullptr),
         i2c_bus_initialized_(false)
@@ -476,34 +578,40 @@ public:
 #endif
     {
         
-        // 先初始化显示系统
+        // 1. 初始化基础总线
         InitializeSpi();
-        InitializeLcdDisplay();
-        InitializeButtons();
-        
-        // 显示系统稳定后再初始化扩展器
-        ESP_LOGI(TAG, "Starting expander initialization...");
-        InitializeI2CBus();
+        InitializeMultiplexerI2CBus();
         
 #if ENABLE_PCA9548A_MUX
         InitializePCA9548A();
-#endif
-
-#if ENABLE_LU9685_SERVO
-        InitializeLU9685();
 #endif
 
 #if ENABLE_PCF8575_GPIO
         InitializePCF8575();
 #endif
 
+        // 2. 总线就绪后初始化显示系统和按钮
+        InitializeLcdDisplay();
+        InitializeButtons();
+        
+#if ENABLE_LU9685_SERVO
+        InitializeLU9685();
+#endif
+
 #if ENABLE_HW178_ANALOG
         InitializeHW178();
 #endif
         
-        ESP_LOGI(TAG, "Expander initialization completed, starting camera system...");
+        ESP_LOGI(TAG, "Multiplexer initialization completed, starting tools and IoT components...");
         
-        // 扩展器初始化完成后再初始化摄像头系统
+        // 多路复用器初始化完成后再初始化工具和IoT组件
+        InitializeTools();
+        InitializeIot();
+        
+        ESP_LOGI(TAG, "Starting camera system...");
+        vTaskDelay(pdMS_TO_TICKS(100));
+        
+        // 多路复用器初始化完成后再初始化摄像头系统
         InitializeCamera();
         
         if (DISPLAY_BACKLIGHT_PIN != GPIO_NUM_NC) {
@@ -522,7 +630,7 @@ public:
 #endif
         );
         
-        // 记录扩展器状态
+        // 记录多路复用器状态
         ESP_LOGI(TAG, "I2C Bus: %s", i2c_bus_initialized_ ? "Initialized" : "Failed");
         
 #if ENABLE_PCA9548A_MUX
@@ -534,7 +642,7 @@ public:
 #endif
 
 #if ENABLE_PCF8575_GPIO
-        ESP_LOGI(TAG, "PCF8575 GPIO Expander: %s", pcf8575_initialized_ ? "Initialized" : "Failed");
+        ESP_LOGI(TAG, "PCF8575 GPIO Multiplexer: %s", pcf8575_initialized_ ? "Initialized" : "Failed");
 #endif
 
 #if ENABLE_HW178_ANALOG
@@ -547,7 +655,7 @@ public:
     virtual ~CompactWifiBoardS3Cam() {
         DeinitializeCamera();
         
-        // 清理扩展器资源
+        // 清理多路复用器资源
 #if ENABLE_HW178_ANALOG
         if (hw178_handle_) {
             hw178_delete(hw178_handle_);
@@ -580,9 +688,39 @@ public:
         }
     }
 
+    virtual Assets* GetAssets() override {
+        static Assets assets(ASSETS_XIAOZHI_PUHUI_COMMON_16_4_EMOJI_32);
+        return &assets;
+    }
+
     virtual Led* GetLed() override {
-        static SingleLed led(BUILTIN_LED_GPIO);
+        if (led_) {
+            return led_;
+        }
+#if ENABLE_PCF8575_GPIO
+        if ((int)BUILTIN_LED_GPIO >= 100) {
+            if (pcf8575_initialized_ && pcf8575_handle_) {
+                led_ = new Pcf8575Led(pcf8575_handle_, (int)BUILTIN_LED_GPIO - 100);
+                return led_;
+            } else {
+                ESP_LOGW(TAG, "PCF8575 not initialized, cannot create Pcf8575Led yet");
+            }
+        }
+#endif
+        static NoLed led;
         return &led;
+    }
+
+    virtual Display* GetDisplay() override {
+        return display_;
+    }
+
+    virtual Backlight* GetBacklight() override {
+        if (DISPLAY_BACKLIGHT_PIN != GPIO_NUM_NC) {
+            static PwmBacklight backlight(DISPLAY_BACKLIGHT_PIN, DISPLAY_BACKLIGHT_OUTPUT_INVERT);
+            return &backlight;
+        }
+        return nullptr;
     }
 
     virtual AudioCodec* GetAudioCodec() override {
@@ -606,25 +744,8 @@ public:
         return &audio_codec;
     }
 
-    virtual Display* GetDisplay() override {
-        return display_;
-    }
-
-    virtual Backlight* GetBacklight() override {
-        if (DISPLAY_BACKLIGHT_PIN != GPIO_NUM_NC) {
-            static PwmBacklight backlight(DISPLAY_BACKLIGHT_PIN, DISPLAY_BACKLIGHT_OUTPUT_INVERT);
-            return &backlight;
-        }
-        return nullptr;
-    }
-
     virtual Camera* GetCamera() override {
-        // 使用ESP-IDF官方摄像头API
-        if (camera_initialized_) {
-            // 返回一个简单的摄像头包装器，或者直接返回nullptr让上层使用esp_camera API
-            // 这里暂时返回nullptr，让应用层直接使用esp_camera_fb_get()等API
-        }
-        return nullptr;
+        return camera_;
     }
 
     // 简化的摄像头状态查询
@@ -647,7 +768,7 @@ public:
         }
     }
 
-    // 扩展器访问方法
+    // 多路复用器访问方法
     bool IsI2CBusAvailable() const {
         return i2c_bus_initialized_;
     }
@@ -724,11 +845,19 @@ public:
 #endif
 
 #if ENABLE_PCF8575_GPIO
-    bool IsGPIOExpanderAvailable() const {
+    bool IsPcf8575Available() const {
+        return pcf8575_initialized_;
+    }
+
+    pcf8575_handle_t GetPcf8575Handle() const {
+        return pcf8575_handle_;
+    }
+
+    bool IsMultiplexerPinAvailable() const {
         return pcf8575_initialized_;
     }
     
-    bool SetExpanderPin(int pin, bool level) {
+    bool SetMultiplexerPin(int pin, bool level) {
         if (!pcf8575_initialized_ || pin < 0 || pin >= 16) {
             return false;
         }
@@ -737,7 +866,7 @@ public:
         return ret == ESP_OK;
     }
     
-    bool GetExpanderPin(int pin, bool* level) {
+    bool GetMultiplexerPin(int pin, bool* level) {
         if (!pcf8575_initialized_ || pin < 0 || pin >= 16 || !level) {
             return false;
         }
@@ -751,7 +880,7 @@ public:
         return false;
     }
     
-    bool SetExpanderPorts(uint16_t value) {
+    bool SetMultiplexerPorts(uint16_t value) {
         if (!pcf8575_initialized_) {
             return false;
         }
@@ -760,7 +889,7 @@ public:
         return ret == ESP_OK;
     }
     
-    bool GetExpanderPorts(uint16_t* value) {
+    bool GetMultiplexerPorts(uint16_t* value) {
         if (!pcf8575_initialized_ || !value) {
             return false;
         }
@@ -769,7 +898,7 @@ public:
         return ret == ESP_OK;
     }
     
-    bool SetExpanderPins(uint16_t pin_mask, uint16_t levels) {
+    bool SetMultiplexerPins(uint16_t pin_mask, uint16_t levels) {
         if (!pcf8575_initialized_) {
             return false;
         }
@@ -840,8 +969,8 @@ public:
     }
 #endif
 
-    // 获取扩展器状态信息
-    std::string GetExpanderStatusJson() const {
+    // 获取多路复用器状态信息
+    std::string GetMultiplexerStatusJson() const {
         std::string status = "{";
         status += "\"i2c_bus\":" + std::string(i2c_bus_initialized_ ? "true" : "false");
         

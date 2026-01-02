@@ -14,6 +14,10 @@ static std::map<std::string, std::function<Thing*()>>* thing_creators = nullptr;
 
 void RegisterThing(const std::string& type, std::function<Thing*()> creator) {
 #if CONFIG_IOT_PROTOCOL_XIAOZHI
+    if (!creator) {
+        ESP_LOGW(TAG, "Attempted to register null creator for thing type: %s", type.c_str());
+        return;
+    }
     if (thing_creators == nullptr) {
         thing_creators = new std::map<std::string, std::function<Thing*()>>();
     }
@@ -23,9 +27,17 @@ void RegisterThing(const std::string& type, std::function<Thing*()> creator) {
 
 Thing* CreateThing(const std::string& type) {
 #if CONFIG_IOT_PROTOCOL_XIAOZHI
+    if (thing_creators == nullptr) {
+        ESP_LOGE(TAG, "Thing creators map not initialized");
+        return nullptr;
+    }
     auto creator = thing_creators->find(type);
     if (creator == thing_creators->end()) {
         ESP_LOGE(TAG, "Thing type not found: %s", type.c_str());
+        return nullptr;
+    }
+    if (!creator->second) {
+        ESP_LOGE(TAG, "Creator function for thing type %s is null", type.c_str());
         return nullptr;
     }
     return creator->second();

@@ -30,6 +30,10 @@ AudioService::~AudioService() {
 
 
 void AudioService::Initialize(AudioCodec* codec) {
+    if (codec == nullptr) {
+        ESP_LOGE(TAG, "AudioCodec is null, cannot initialize AudioService");
+        return;
+    }
     codec_ = codec;
     codec_->Start();
 
