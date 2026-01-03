@@ -1,10 +1,10 @@
+#include "config.h"
 #include "wifi_board.h"
 #include "codecs/no_audio_codec.h"
 #include "display/lcd_display.h"
 #include "system_reset.h"
 #include "application.h"
 #include "button.h"
-#include "config.h"
 #include "mcp_server.h"
 #include "lamp_controller.h"
 #include "iot/thing_manager.h"
@@ -13,7 +13,6 @@
 // 使用增强型摄像头组件
 #include "camera/camera_components.h"
 #include <esp_camera.h>
-
 #include <esp_log.h>
 #include <driver/gpio.h>
 #include <driver/i2c_master.h>
@@ -21,6 +20,7 @@
 #include <esp_lcd_panel_io.h>
 #include <esp_lcd_panel_ops.h>
 #include <driver/spi_common.h>
+#include "backlight.h"
 
 // 多路复用器支持
 #if ENABLE_PCA9548A_MUX
@@ -122,7 +122,7 @@ private:
  
     Button boot_button_;
     LcdDisplay* display_;
-    EnhancedEsp32Camera* camera_;
+    Esp32Camera* camera_;
     bool camera_initialized_;
     Led* led_ = nullptr;
     
@@ -168,9 +168,9 @@ private:
 
     void InitializeSpi() {
         spi_bus_config_t buscfg = {};
-        buscfg.mosi_io_num = DISPLAY_MOSI_PIN;
+        buscfg.mosi_io_num = (gpio_num_t)DISPLAY_MOSI_PIN;
         buscfg.miso_io_num = GPIO_NUM_NC;
-        buscfg.sclk_io_num = DISPLAY_CLK_PIN;
+        buscfg.sclk_io_num = (gpio_num_t)DISPLAY_CLK_PIN;
         buscfg.quadwp_io_num = GPIO_NUM_NC;
         buscfg.quadhd_io_num = GPIO_NUM_NC;
         buscfg.max_transfer_sz = DISPLAY_WIDTH * DISPLAY_HEIGHT * sizeof(uint16_t);
@@ -183,8 +183,8 @@ private:
         // 液晶屏控制IO初始化
         ESP_LOGD(TAG, "Install panel IO");
         esp_lcd_panel_io_spi_config_t io_config = {};
-        io_config.cs_gpio_num = DISPLAY_CS_PIN;
-        io_config.dc_gpio_num = DISPLAY_DC_PIN;
+        io_config.cs_gpio_num = (gpio_num_t)DISPLAY_CS_PIN;
+        io_config.dc_gpio_num = (gpio_num_t)DISPLAY_DC_PIN;
         io_config.spi_mode = DISPLAY_SPI_MODE;
         io_config.pclk_hz = 40 * 1000 * 1000;
         io_config.trans_queue_depth = 10;
@@ -209,7 +209,7 @@ private:
             }
 #endif
         } else {
-            panel_config.reset_gpio_num = DISPLAY_RST_PIN;
+            panel_config.reset_gpio_num = (gpio_num_t)DISPLAY_RST_PIN;
         }
 
         panel_config.rgb_ele_order = DISPLAY_RGB_ORDER;
@@ -234,16 +234,8 @@ private:
         esp_lcd_panel_swap_xy(panel, DISPLAY_SWAP_XY);
         esp_lcd_panel_mirror(panel, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y);
         display_ = new SpiLcdDisplay(panel_io, panel,
-                                    DISPLAY_WIDTH, DISPLAY_HEIGHT, DISPLAY_OFFSET_X, DISPLAY_OFFSET_Y, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y, DISPLAY_SWAP_XY,
-                                    {
-                                        .text_font = &font_puhui_16_4,
-                                        .icon_font = &font_awesome_16_4,
-#if CONFIG_USE_WECHAT_MESSAGE_STYLE
-                                        .emoji_font = font_emoji_32_init(),
-#else
-                                        .emoji_font = DISPLAY_HEIGHT >= 240 ? font_emoji_64_init() : font_emoji_32_init(),
-#endif
-                                    });
+                                    DISPLAY_WIDTH, DISPLAY_HEIGHT, DISPLAY_OFFSET_X, DISPLAY_OFFSET_Y, 
+                                    DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y, DISPLAY_SWAP_XY);
     }
 
     void InitializeCamera() {
@@ -252,7 +244,7 @@ private:
         // 使用 SetupCameraForBoard 辅助函数进行初始化
         // 这里的 webserver 和 mcp_server 暂时传 nullptr，因为是在构造函数中调用的
         if (CameraSystemHelpers::SetupCameraForBoard("bread-compact-wifi-s3cam", nullptr, nullptr)) {
-            camera_ = CameraComponentFactory::GetEnhancedCamera();
+            camera_ = CameraComponentFactory::GetEsp32Camera();
             if (camera_ != nullptr) {
                 camera_initialized_ = true;
                 ESP_LOGI(TAG, "Enhanced camera system initialized successfully");
@@ -307,9 +299,9 @@ private:
         
         // 初始化I2C总线
         i2c_master_bus_config_t i2c_bus_config = {
-            .i2c_port = I2C_MUX_PORT,
-            .sda_io_num = I2C_MUX_SDA_PIN,
-            .scl_io_num = I2C_MUX_SCL_PIN,
+            .i2c_port = (i2c_port_t)I2C_MUX_PORT,
+            .sda_io_num = (gpio_num_t)I2C_MUX_SDA_PIN,
+            .scl_io_num = (gpio_num_t)I2C_MUX_SCL_PIN,
             .clk_source = I2C_CLK_SRC_DEFAULT,
             .glitch_ignore_cnt = 7,
             .intr_priority = 0,
@@ -351,10 +343,10 @@ private:
         ESP_LOGI(TAG, "Initializing PCA9548A I2C multiplexer");
         
         pca9548a_config_t pca9548a_config = {
-            .i2c_port = I2C_MUX_PORT,
+            .i2c_port = (i2c_port_t)I2C_MUX_PORT,
             .i2c_addr = PCA9548A_I2C_ADDR,
             .i2c_timeout_ms = I2C_MUX_TIMEOUT_MS,
-            .reset_pin = PCA9548A_RESET_PIN,
+            .reset_pin = (gpio_num_t)PCA9548A_RESET_PIN,
         };
         
         pca9548a_handle_ = pca9548a_create(&pca9548a_config);
@@ -688,11 +680,6 @@ public:
         }
     }
 
-    virtual Assets* GetAssets() override {
-        static Assets assets(ASSETS_XIAOZHI_PUHUI_COMMON_16_4_EMOJI_32);
-        return &assets;
-    }
-
     virtual Led* GetLed() override {
         if (led_) {
             return led_;
@@ -736,10 +723,11 @@ public:
 
 #ifdef AUDIO_I2S_METHOD_SIMPLEX
         static NoAudioCodecSimplex audio_codec(AUDIO_INPUT_SAMPLE_RATE, AUDIO_OUTPUT_SAMPLE_RATE,
-            AUDIO_I2S_SPK_GPIO_BCLK, AUDIO_I2S_SPK_GPIO_LRCK, AUDIO_I2S_SPK_GPIO_DOUT, AUDIO_I2S_MIC_GPIO_SCK, AUDIO_I2S_MIC_GPIO_WS, AUDIO_I2S_MIC_GPIO_DIN);
+            (gpio_num_t)AUDIO_I2S_SPK_GPIO_BCLK, (gpio_num_t)AUDIO_I2S_SPK_GPIO_LRCK, (gpio_num_t)AUDIO_I2S_SPK_GPIO_DOUT, 
+            (gpio_num_t)AUDIO_I2S_MIC_GPIO_SCK, (gpio_num_t)AUDIO_I2S_MIC_GPIO_WS, (gpio_num_t)AUDIO_I2S_MIC_GPIO_DIN);
 #else
         static NoAudioCodecDuplex audio_codec(AUDIO_INPUT_SAMPLE_RATE, AUDIO_OUTPUT_SAMPLE_RATE,
-            AUDIO_I2S_GPIO_BCLK, AUDIO_I2S_GPIO_WS, AUDIO_I2S_GPIO_DOUT, AUDIO_I2S_GPIO_DIN);
+            (gpio_num_t)AUDIO_I2S_GPIO_BCLK, (gpio_num_t)AUDIO_I2S_GPIO_WS, (gpio_num_t)AUDIO_I2S_GPIO_DOUT, (gpio_num_t)AUDIO_I2S_GPIO_DIN);
 #endif
         return &audio_codec;
     }

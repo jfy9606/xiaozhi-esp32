@@ -1,5 +1,6 @@
 #include "vision.h"
 #include "../boards/common/esp32_camera.h"
+#include "esp_camera.h"
 #include "board.h"
 #include "esp_log.h"
 #include "settings.h"
@@ -628,11 +629,11 @@ camera_fb_t* Vision::GetFrame() {
         return nullptr;
     }
     
-    return camera_->GetFrame();
+    return (camera_fb_t*)camera_->GetFrame();
 }
 
 void Vision::ReturnFrame(camera_fb_t* fb) {
-    if (camera_) {
+    if (camera_ && fb) {
         camera_->ReturnFrame(fb);
     }
 }

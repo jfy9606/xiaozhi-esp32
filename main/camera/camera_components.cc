@@ -6,18 +6,18 @@
 
 // Static members
 bool CameraComponentFactory::system_initialized_ = false;
-EnhancedEsp32Camera* CameraComponentFactory::enhanced_camera_ = nullptr;
+Esp32Camera* CameraComponentFactory::esp32_camera_ = nullptr;
 CameraComponentFactory::CameraSystemConfig CameraComponentFactory::system_config_ = {};
 
 // Factory methods
 
-EnhancedEsp32Camera* CameraComponentFactory::CreateEnhancedCamera(
+Esp32Camera* CameraComponentFactory::CreateEsp32Camera(
     const camera_config_t& camera_config,
     const enhanced_camera_config_t& enhanced_config) {
     
-    ESP_LOGI(TAG, "Creating enhanced camera");
+    ESP_LOGI(TAG, "Creating ESP32 camera");
     
-    EnhancedEsp32Camera* camera = new EnhancedEsp32Camera(camera_config, enhanced_config);
+    Esp32Camera* camera = new Esp32Camera(camera_config, enhanced_config);
     if (!camera) {
         ESP_LOGE(TAG, "Failed to create enhanced camera");
         return nullptr;
@@ -43,10 +43,10 @@ bool CameraComponentFactory::InitializeCameraSystem(
     // Store configuration
     system_config_ = system_config;
     
-    // Create enhanced camera
-    enhanced_camera_ = CreateEnhancedCamera(camera_config, system_config.enhanced_config);
-    if (!enhanced_camera_) {
-        ESP_LOGE(TAG, "Failed to create enhanced camera");
+    // Create ESP32 camera
+    esp32_camera_ = CreateEsp32Camera(camera_config, system_config.enhanced_config);
+    if (!esp32_camera_) {
+        ESP_LOGE(TAG, "Failed to create ESP32 camera");
         return false;
     }
     
@@ -55,8 +55,8 @@ bool CameraComponentFactory::InitializeCameraSystem(
         auto& resource_manager = CameraResourceManager::GetInstance();
         if (!resource_manager.Initialize()) {
             ESP_LOGE(TAG, "Failed to initialize resource manager");
-            delete enhanced_camera_;
-            enhanced_camera_ = nullptr;
+            delete esp32_camera_;
+            esp32_camera_ = nullptr;
             return false;
         }
         ESP_LOGI(TAG, "Resource management initialized");
@@ -78,7 +78,7 @@ bool CameraComponentFactory::InitializeCameraSystem(
             // Continue without vision integration
         } else {
             // Set camera for vision integration
-            vision_integration.SetCamera(enhanced_camera_);
+            vision_integration.SetCamera(esp32_camera_);
             ESP_LOGI(TAG, "Vision integration initialized");
         }
     }
@@ -91,7 +91,7 @@ bool CameraComponentFactory::InitializeCameraSystem(
             // Continue without MCP tools
         } else {
             // Set camera and enable resource management if configured
-            mcp_tools.SetEnhancedCamera(enhanced_camera_);
+            mcp_tools.SetEsp32Camera(esp32_camera_);
             if (system_config.enable_resource_management) {
                 mcp_tools.EnableResourceManagement();
             }
@@ -105,8 +105,8 @@ bool CameraComponentFactory::InitializeCameraSystem(
     }
     
     // Initialize the camera
-    if (!enhanced_camera_->Initialize()) {
-        ESP_LOGE(TAG, "Failed to initialize enhanced camera");
+    if (!esp32_camera_->Initialize()) {
+        ESP_LOGE(TAG, "Failed to initialize ESP32 camera");
         DeinitializeCameraSystem();
         return false;
     }
@@ -135,11 +135,11 @@ void CameraComponentFactory::DeinitializeCameraSystem() {
         vision_integration.Deinitialize();
     }
     
-    // Deinitialize enhanced camera
-    if (enhanced_camera_) {
-        enhanced_camera_->Deinitialize();
-        delete enhanced_camera_;
-        enhanced_camera_ = nullptr;
+    // Deinitialize ESP32 camera
+    if (esp32_camera_) {
+        esp32_camera_->Deinitialize();
+        delete esp32_camera_;
+        esp32_camera_ = nullptr;
     }
     
     // Deinitialize resource management
@@ -175,8 +175,8 @@ McpCameraTools* CameraComponentFactory::GetMcpTools() {
     return &McpCameraTools::GetInstance();
 }
 
-EnhancedEsp32Camera* CameraComponentFactory::GetEnhancedCamera() {
-    return enhanced_camera_;
+Esp32Camera* CameraComponentFactory::GetEsp32Camera() {
+    return esp32_camera_;
 }
 
 // System status
@@ -189,7 +189,7 @@ std::string CameraComponentFactory::GetSystemStatusJson() {
     cJSON* root = cJSON_CreateObject();
     
     cJSON_AddBoolToObject(root, "initialized", system_initialized_);
-    cJSON_AddBoolToObject(root, "has_enhanced_camera", enhanced_camera_ != nullptr);
+    cJSON_AddBoolToObject(root, "has_esp32_camera", esp32_camera_ != nullptr);
     
     // System configuration
     cJSON* config = cJSON_CreateObject();
@@ -225,13 +225,13 @@ std::string CameraComponentFactory::GetSystemStatusJson() {
             }
         }
         
-        if (enhanced_camera_) {
+        if (esp32_camera_) {
             cJSON* camera_status = cJSON_CreateObject();
-            cJSON_AddBoolToObject(camera_status, "initialized", enhanced_camera_->IsInitialized());
-            cJSON_AddStringToObject(camera_status, "model", enhanced_camera_->GetModelName(enhanced_camera_->GetDetectedModel()));
-            cJSON_AddStringToObject(camera_status, "sensor", enhanced_camera_->GetSensorName());
-            cJSON_AddBoolToObject(camera_status, "has_flash", enhanced_camera_->HasFlash());
-            cJSON_AddItemToObject(root, "enhanced_camera", camera_status);
+            cJSON_AddBoolToObject(camera_status, "initialized", esp32_camera_->IsInitialized());
+            cJSON_AddStringToObject(camera_status, "model", esp32_camera_->GetModelName(esp32_camera_->GetDetectedModel()));
+            cJSON_AddStringToObject(camera_status, "sensor", esp32_camera_->GetSensorName());
+            cJSON_AddBoolToObject(camera_status, "has_flash", esp32_camera_->HasFlash());
+            cJSON_AddItemToObject(root, "esp32_camera", camera_status);
         }
     }
     
@@ -376,7 +376,7 @@ bool IsCameraAvailable() {
         return vision_integration->IsCameraAvailable();
     }
     
-    return CameraComponentFactory::GetEnhancedCamera() != nullptr;
+    return CameraComponentFactory::GetEsp32Camera() != nullptr;
 }
 
 bool IsVisionActive() {

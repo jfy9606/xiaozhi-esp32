@@ -629,12 +629,7 @@ public:
         }
     }
 
-   virtual Assets* GetAssets() override {
-        static Assets assets(ASSETS_XIAOZHI_PUHUI_COMMON_16_4_EMOJI_32);
-        return &assets;
-    }
-
-    virtual Led* GetLed() override {
+   virtual Led* GetLed() override {
         static SingleLed led(BUILTIN_LED_GPIO);
         return &led;
     }

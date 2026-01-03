@@ -170,7 +170,9 @@ set(INCLUDE_DIRS "." "display" "display/lvgl_display" "audio" "protocols")
 set(INCLUDE_DIRS "." "display" "display/lvgl_display" "display/lvgl_display/jpg" "audio" "protocols")
 
 # Add board common files
-file(GLOB BOARD_COMMON_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/boards/common/*.cc)
+file(GLOB BOARD_COMMON_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/boards/common/*.cc ${CMAKE_CURRENT_SOURCE_DIR}/boards/common/*.cpp)
+# Exclude specific files that need conditional inclusion
+list(FILTER BOARD_COMMON_SOURCES EXCLUDE REGEX ".*(esp32_camera|blufi)\\.(cc|cpp)$")
 list(APPEND SOURCES ${BOARD_COMMON_SOURCES})
 list(APPEND INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/boards/common)
 
@@ -714,12 +716,11 @@ file(GLOB BOARD_SOURCES
 )
 list(APPEND SOURCES ${BOARD_SOURCES})
 
-# Add camera and vision components only for s3cam board
-# This ensures camera functionality is restricted to bread-compact-wifi-s3cam board only
-if(CONFIG_BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM)
+# Add camera and vision components if vision controller is enabled
+if(CONFIG_ENABLE_VISION_CONTROLLER)
+    list(APPEND SOURCES "boards/common/esp32_camera.cc")
     list(APPEND SOURCES "vision/vision.cc")
     list(APPEND SOURCES "camera/camera_resource_manager.cc")
-    list(APPEND SOURCES "camera/enhanced_esp32_camera.cc")
     list(APPEND SOURCES "camera/vision_integration.cc")
     list(APPEND SOURCES "camera/mcp_camera_tools.cc")
     list(APPEND SOURCES "camera/camera_components.cc")
@@ -729,7 +730,7 @@ if(CONFIG_BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM)
     if(NOT DEFINED COMPONENT_REQUIRES)
         set(COMPONENT_REQUIRES "")
     endif()
-    list(APPEND COMPONENT_REQUIRES "esp32-camera")
+    list(APPEND COMPONENT_REQUIRES "esp32-camera" "esp_video")
 endif()
 
 # Select audio processor according to Kconfig

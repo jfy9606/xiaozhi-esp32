@@ -569,6 +569,8 @@ menu "Display Pin Configuration"
             config DISPLAY_MOSI_PIN
                 int "Display MOSI Pin"
                 depends on BOARD_TYPE_BREAD_COMPACT_WIFI_LCD || BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
+                default 47 if BOARD_TYPE_BREAD_COMPACT_WIFI_LCD
+                default 20 if BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
                 default 20
                 range 0 48
                 help
@@ -577,6 +579,8 @@ menu "Display Pin Configuration"
             config DISPLAY_CLK_PIN
                 int "Display CLK Pin"
                 depends on BOARD_TYPE_BREAD_COMPACT_WIFI_LCD || BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
+                default 21 if BOARD_TYPE_BREAD_COMPACT_WIFI_LCD
+                default 19 if BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
                 default 19
                 range 0 48
                 help
@@ -585,6 +589,8 @@ menu "Display Pin Configuration"
             config DISPLAY_CS_PIN
                 int "Display CS Pin"
                 depends on BOARD_TYPE_BREAD_COMPACT_WIFI_LCD || BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
+                default 41 if BOARD_TYPE_BREAD_COMPACT_WIFI_LCD
+                default 1 if BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
                 default 45
                 range 0 48
                 help
@@ -593,6 +599,8 @@ menu "Display Pin Configuration"
             config DISPLAY_DC_PIN
                 int "Display DC Pin"
                 depends on BOARD_TYPE_BREAD_COMPACT_WIFI_LCD || BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
+                default 40 if BOARD_TYPE_BREAD_COMPACT_WIFI_LCD
+                default 21 if BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
                 default 47
                 range 0 48
                 help
@@ -601,14 +609,19 @@ menu "Display Pin Configuration"
             config DISPLAY_RST_PIN
                 int "Display Reset Pin"
                 depends on BOARD_TYPE_BREAD_COMPACT_WIFI_LCD || BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
+                default 115 if BOARD_TYPE_BREAD_COMPACT_WIFI_LCD
+                default 115 if BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
                 default 21
-                range 0 48
+                range 0 127
                 help
                     The GPIO number connected to the reset pin of the LCD.
+                    Note: For bread-compact series, it uses PCF8575 P15 (115) by default.
 
             config DISPLAY_BACKLIGHT_PIN
                 int "Display Backlight Pin"
                 depends on BOARD_TYPE_BREAD_COMPACT_WIFI_LCD || BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
+                default 42 if BOARD_TYPE_BREAD_COMPACT_WIFI_LCD
+                default 38 if BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
                 default 38
                 range 0 48
                 help
@@ -825,27 +838,25 @@ menu "Component Manager"
 
         config PCA9548A_SDA_PIN
             int "PCA9548A SDA Pin"
-            default 14 if BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
-            default 8 if BOARD_TYPE_BREAD_COMPACT_WIFI_LCD
-            default 8 if BOARD_TYPE_BREAD_COMPACT_WIFI
+            default 1 if BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
+            default 1 if BOARD_TYPE_BREAD_COMPACT_WIFI_LCD
+            default 1 if BOARD_TYPE_BREAD_COMPACT_WIFI
             default 41
             range 0 48
             depends on ENABLE_PCA9548A
             help
                 The GPIO number connected to the SDA pin of PCA9548A.
-                The bread-compact-wifi-s3cam board uses GPIO14 by default.
 
         config PCA9548A_SCL_PIN
             int "PCA9548A SCL Pin"
-            default 46 if BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
-            default 9 if BOARD_TYPE_BREAD_COMPACT_WIFI_LCD
-            default 9 if BOARD_TYPE_BREAD_COMPACT_WIFI
+            default 2 if BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
+            default 2 if BOARD_TYPE_BREAD_COMPACT_WIFI_LCD
+            default 2 if BOARD_TYPE_BREAD_COMPACT_WIFI
             default 42
             range 0 48
             depends on ENABLE_PCA9548A
             help
                 The GPIO number connected to the SCL pin of PCA9548A.
-                The bread-compact-wifi-s3cam board uses GPIO46 by default.
 
         config PCA9548A_RESET_PIN
             int "PCA9548A Reset Pin"
@@ -883,43 +894,42 @@ menu "Component Manager"
 
         config HW178_S0_PIN
             int "HW-178 S0 control pin"
-            default 108 if BOARD_TYPE_BREAD_COMPACT_WIFI || BOARD_TYPE_BREAD_COMPACT_WIFI_LCD || BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
+            default 105 if BOARD_TYPE_BREAD_COMPACT_WIFI || BOARD_TYPE_BREAD_COMPACT_WIFI_LCD || BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
             default 1
             range -1 115
             depends on ENABLE_HW178
             help
                 HW-178 Multiplexer S0 control pin. Together with S1-S3 determines which channel is selected.
-                For bread-compact series, uses PCF8575 P08 (108) by default.
+                For bread-compact series, uses PCF8575 P05 (105) by default.
 
         config HW178_S1_PIN
             int "HW-178 S1 control pin"
-            default 109 if BOARD_TYPE_BREAD_COMPACT_WIFI || BOARD_TYPE_BREAD_COMPACT_WIFI_LCD || BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
+            default 106 if BOARD_TYPE_BREAD_COMPACT_WIFI || BOARD_TYPE_BREAD_COMPACT_WIFI_LCD || BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
             default 2
             range -1 115
             depends on ENABLE_HW178
             help
                 HW-178 Multiplexer S1 control pin. Together with S0,S2,S3 determines which channel is selected.
-                For bread-compact series, uses PCF8575 P09 (109) by default.
+                For bread-compact series, uses PCF8575 P06 (106) by default.
 
         config HW178_S2_PIN
             int "HW-178 S2 control pin"
-            default 110 if BOARD_TYPE_BREAD_COMPACT_WIFI || BOARD_TYPE_BREAD_COMPACT_WIFI_LCD || BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
+            default 107 if BOARD_TYPE_BREAD_COMPACT_WIFI || BOARD_TYPE_BREAD_COMPACT_WIFI_LCD || BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
             default 3
             range -1 115
             depends on ENABLE_HW178
             help
                 HW-178 Multiplexer S2 control pin. Together with S0,S1,S3 determines which channel is selected.
-                For bread-compact series, uses PCF8575 P10 (110) by default.
+                For bread-compact series, uses PCF8575 P07 (107) by default.
 
         config HW178_S3_PIN
             int "HW-178 S3 control pin"
-            default 111 if BOARD_TYPE_BREAD_COMPACT_WIFI || BOARD_TYPE_BREAD_COMPACT_WIFI_LCD || BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
             default -1
             range -1 115
             depends on ENABLE_HW178
             help
                 HW-178 Multiplexer S3 control pin. Together with S0-S2 determines which channel is selected.
-                For bread-compact series, uses PCF8575 P11 (111) by default.
+                For bread-compact series, it is disabled by default (-1).
 
         config HW178_SIG_PIN
             int "HW-178 SIG Pin"
@@ -1049,15 +1059,12 @@ menu "Component Manager"
                 
         choice MOTOR_CONNECTION_TYPE
             prompt "Motor Control Pin Connection Type"
-            default MOTOR_CONNECTION_DIRECT if BOARD_TYPE_BREAD_COMPACT_WIFI
-            default MOTOR_CONNECTION_PCF8575 if BOARD_TYPE_BREAD_COMPACT_WIFI_LCD
-            default MOTOR_CONNECTION_PCF8575 if BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
+            default MOTOR_CONNECTION_PCF8575 if BOARD_TYPE_BREAD_COMPACT_WIFI || BOARD_TYPE_BREAD_COMPACT_WIFI_LCD || BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
             default MOTOR_CONNECTION_DIRECT
             depends on ENABLE_MOTOR_CONTROLLER
             help
                 Select the connection type for motor control pins (IN1-IN4).
-                Recommended: Use PCF8575 multiplexer for bread-compact-wifi-lcd and bread-compact-wifi-cam
-                because the LCD occupies many GPIO pins.
+                For bread-compact series, it is recommended to use the PCF8575 multiplexer.
                 
             config MOTOR_CONNECTION_DIRECT
                 bool "Direct connection to GPIO pins"
@@ -1069,7 +1076,7 @@ menu "Component Manager"
                 depends on ENABLE_PCF8575
                 help
                     Motor control pins are connected via the PCF8575 GPIO multiplexer.
-                    IN1-IN4 are connected to pins P04-P07.
+                    For bread-compact series, IN1-IN4 are connected to pins P01-P04 (101-104) by default.
         endchoice
                 
         config MOTOR_IN1_PIN
@@ -1121,38 +1128,38 @@ menu "Component Manager"
         config MOTOR_PCF8575_IN1_PIN
             int "PCF8575 Motor A Input 1 Pin"
             range 0 15
-            default 4  # P04
+            default 1  # P01
             depends on ENABLE_MOTOR_CONTROLLER && MOTOR_CONNECTION_PCF8575
             help
                 Pin number on PCF8575 connected to the IN1 pin of the motor driver (P00-P17, values 0-15).
-                For example, 4 represents P04, 12 represents P14.
+                For example, 1 represents P01, 11 represents P11.
 
         config MOTOR_PCF8575_IN2_PIN
             int "PCF8575 Motor A Input 2 Pin"
             range 0 15
-            default 5  # P05
+            default 2  # P02
             depends on ENABLE_MOTOR_CONTROLLER && MOTOR_CONNECTION_PCF8575
             help
                 Pin number on PCF8575 connected to the IN2 pin of the motor driver (P00-P17, values 0-15).
-                For example, 5 represents P05, 13 represents P15.
+                For example, 2 represents P02, 12 represents P12.
 
         config MOTOR_PCF8575_IN3_PIN
             int "PCF8575 Motor B Input 1 Pin"
             range 0 15
-            default 6  # P06
+            default 3  # P03
             depends on ENABLE_MOTOR_CONTROLLER && MOTOR_CONNECTION_PCF8575
             help
                 Pin number on PCF8575 connected to the IN3 pin of the motor driver (P00-P17, values 0-15).
-                For example, 6 represents P06, 14 represents P16.
+                For example, 3 represents P03, 13 represents P13.
 
         config MOTOR_PCF8575_IN4_PIN
             int "PCF8575 Motor B Input 2 Pin"
             range 0 15
-            default 7  # P07
+            default 4  # P04
             depends on ENABLE_MOTOR_CONTROLLER && MOTOR_CONNECTION_PCF8575
             help
                 Pin number on PCF8575 connected to the IN4 pin of the motor driver (P00-P17, values 0-15).
-                For example, 7 represents P07, 15 represents P17.
+                For example, 4 represents P04, 14 represents P14.
     endmenu
     
     # Servo Controller Configuration
@@ -1322,9 +1329,8 @@ menu "Component Manager"
         config ENABLE_VISION_CONTROLLER
             bool "Enable Vision Controller"
             default y
-            depends on BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
             help
-                Enable the vision controller, used for camera functions. Only available on the bread-compact-wifi-s3cam board.
+                Enable the vision controller, used for camera functions.
 
         config ENABLE_VISION_CONTENT
             bool "Enable Vision Content Processing"
@@ -1336,8 +1342,24 @@ menu "Component Manager"
         menu "Camera Pin Configuration"
             depends on ENABLE_VISION_CONTROLLER
 
+            choice CAMERA_PIN_MAPPING
+                prompt "Camera Pin Mapping Type"
+                default CAMERA_PIN_FREENOVE
+                help
+                    Select the camera pin mapping type.
+                    Freenove: Use the fixed mapping for Freenove ESP32-S3 WROOM built-in socket.
+                    Custom: Manually configure each GPIO pin for the camera.
+
+                config CAMERA_PIN_FREENOVE
+                    bool "Freenove S3 WROOM (Built-in Socket)"
+                
+                config CAMERA_PIN_CUSTOM
+                    bool "Custom Mapping (No Built-in Socket)"
+            endchoice
+
             config CAMERA_PIN_PWDN
                 int "Camera PWDN Pin"
+                depends on CAMERA_PIN_CUSTOM
                 default -1
                 range -1 48
                 help
@@ -1345,6 +1367,7 @@ menu "Component Manager"
 
             config CAMERA_PIN_RESET
                 int "Camera Reset Pin"
+                depends on CAMERA_PIN_CUSTOM
                 default -1
                 range -1 48
                 help
@@ -1352,6 +1375,7 @@ menu "Component Manager"
 
             config CAMERA_PIN_XCLK
                 int "Camera XCLK Pin"
+                depends on CAMERA_PIN_CUSTOM
                 default 15
                 range 0 48
                 help
@@ -1359,6 +1383,7 @@ menu "Component Manager"
 
             config CAMERA_PIN_SIOD
                 int "Camera SIOD Pin"
+                depends on CAMERA_PIN_CUSTOM
                 default 4
                 range 0 48
                 help
@@ -1366,6 +1391,7 @@ menu "Component Manager"
 
             config CAMERA_PIN_SIOC
                 int "Camera SIOC Pin"
+                depends on CAMERA_PIN_CUSTOM
                 default 5
                 range 0 48
                 help
@@ -1373,6 +1399,7 @@ menu "Component Manager"
 
             config CAMERA_PIN_D7
                 int "Camera D7 Pin"
+                depends on CAMERA_PIN_CUSTOM
                 default 16
                 range 0 48
                 help
@@ -1380,6 +1407,7 @@ menu "Component Manager"
 
             config CAMERA_PIN_D6
                 int "Camera D6 Pin"
+                depends on CAMERA_PIN_CUSTOM
                 default 17
                 range 0 48
                 help
@@ -1387,6 +1415,7 @@ menu "Component Manager"
 
             config CAMERA_PIN_D5
                 int "Camera D5 Pin"
+                depends on CAMERA_PIN_CUSTOM
                 default 18
                 range 0 48
                 help
@@ -1394,6 +1423,7 @@ menu "Component Manager"
 
             config CAMERA_PIN_D4
                 int "Camera D4 Pin"
+                depends on CAMERA_PIN_CUSTOM
                 default 12
                 range 0 48
                 help
@@ -1401,6 +1431,7 @@ menu "Component Manager"
 
             config CAMERA_PIN_D3
                 int "Camera D3 Pin"
+                depends on CAMERA_PIN_CUSTOM
                 default 10
                 range 0 48
                 help
@@ -1408,6 +1439,7 @@ menu "Component Manager"
 
             config CAMERA_PIN_D2
                 int "Camera D2 Pin"
+                depends on CAMERA_PIN_CUSTOM
                 default 8
                 range 0 48
                 help
@@ -1415,6 +1447,7 @@ menu "Component Manager"
 
             config CAMERA_PIN_D1
                 int "Camera D1 Pin"
+                depends on CAMERA_PIN_CUSTOM
                 default 9
                 range 0 48
                 help
@@ -1422,6 +1455,7 @@ menu "Component Manager"
 
             config CAMERA_PIN_D0
                 int "Camera D0 Pin"
+                depends on CAMERA_PIN_CUSTOM
                 default 11
                 range 0 48
                 help
@@ -1429,6 +1463,7 @@ menu "Component Manager"
 
             config CAMERA_PIN_VSYNC
                 int "Camera VSYNC Pin"
+                depends on CAMERA_PIN_CUSTOM
                 default 6
                 range 0 48
                 help
@@ -1436,6 +1471,7 @@ menu "Component Manager"
 
             config CAMERA_PIN_HREF
                 int "Camera HREF Pin"
+                depends on CAMERA_PIN_CUSTOM
                 default 7
                 range 0 48
                 help
@@ -1443,114 +1479,121 @@ menu "Component Manager"
 
             config CAMERA_PIN_PCLK
                 int "Camera PCLK Pin"
+                depends on CAMERA_PIN_CUSTOM
                 default 13
                 range 0 48
                 help
                     The GPIO number connected to the PCLK pin of the camera.
         endmenu
 
-        menu "Audio Pin Configuration"
-            depends on BOARD_TYPE_BREAD_COMPACT_WIFI || BOARD_TYPE_BREAD_COMPACT_WIFI_LCD || BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
+    endmenu
 
-            config AUDIO_I2S_METHOD_SIMPLEX
-                bool "Use Simplex I2S Mode (Separate I2S for MIC and SPK)"
-                default y
-                help
-                    If enabled, separate I2S interfaces will be used for microphone and speaker.
-                    If disabled, a single duplex I2S interface will be used for both.
+    menu "Audio Pin Configuration"
+        depends on BOARD_TYPE_BREAD_COMPACT_WIFI || BOARD_TYPE_BREAD_COMPACT_WIFI_LCD || BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
 
-            config AUDIO_I2S_MIC_GPIO_WS
-                int "I2S MIC WS Pin"
-                default 1 if BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
-                default 4 if BOARD_TYPE_BREAD_COMPACT_WIFI || BOARD_TYPE_BREAD_COMPACT_WIFI_LCD
-                default -1
-                range -1 48
-                help
-                    The GPIO number connected to the WS pin of the I2S microphone.
+        config AUDIO_I2S_METHOD_SIMPLEX
+            bool "Use Simplex I2S Mode (Separate I2S for MIC and SPK)"
+            default y
+            help
+                If enabled, separate I2S interfaces will be used for microphone and speaker.
+                If disabled, a single duplex I2S interface will be used for both.
 
-            config AUDIO_I2S_MIC_GPIO_SCK
-                int "I2S MIC SCK Pin"
-                default 2 if BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
-                default 5 if BOARD_TYPE_BREAD_COMPACT_WIFI || BOARD_TYPE_BREAD_COMPACT_WIFI_LCD
-                default -1
-                range -1 48
-                help
-                    The GPIO number connected to the SCK pin of the I2S microphone.
+        config AUDIO_I2S_MIC_GPIO_WS
+            int "I2S MIC WS Pin"
+            default 42 if BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
+            default 4 if BOARD_TYPE_BREAD_COMPACT_WIFI || BOARD_TYPE_BREAD_COMPACT_WIFI_LCD
+            default -1
+            range -1 48
+            help
+                The GPIO number connected to the WS pin of the I2S microphone.
 
-            config AUDIO_I2S_MIC_GPIO_DIN
-                int "I2S MIC DIN Pin"
-                default 42 if BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
-                default 6 if BOARD_TYPE_BREAD_COMPACT_WIFI || BOARD_TYPE_BREAD_COMPACT_WIFI_LCD
-                default -1
-                range -1 48
-                help
-                    The GPIO number connected to the DIN pin of the I2S microphone.
+        config AUDIO_I2S_MIC_GPIO_SCK
+            int "I2S MIC SCK Pin"
+            default 41 if BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
+            default 5 if BOARD_TYPE_BREAD_COMPACT_WIFI || BOARD_TYPE_BREAD_COMPACT_WIFI_LCD
+            default -1
+            range -1 48
+            help
+                The GPIO number connected to the SCK pin of the I2S microphone.
 
-            config AUDIO_I2S_SPK_GPIO_DOUT
-                int "I2S SPK DOUT Pin"
-                default 39 if BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
-                default 7 if BOARD_TYPE_BREAD_COMPACT_WIFI || BOARD_TYPE_BREAD_COMPACT_WIFI_LCD
-                default -1
-                range -1 48
-                help
-                    The GPIO number connected to the DOUT pin of the I2S speaker/DAC.
+        config AUDIO_I2S_MIC_GPIO_DIN
+            int "I2S MIC DIN Pin"
+            default 2 if BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
+            default 6 if BOARD_TYPE_BREAD_COMPACT_WIFI || BOARD_TYPE_BREAD_COMPACT_WIFI_LCD
+            default -1
+            range -1 48
+            help
+                The GPIO number connected to the DIN pin of the I2S microphone.
 
-            config AUDIO_I2S_SPK_GPIO_BCLK
-                int "I2S SPK BCLK Pin"
-                default 40 if BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
-                default 15 if BOARD_TYPE_BREAD_COMPACT_WIFI || BOARD_TYPE_BREAD_COMPACT_WIFI_LCD
-                default -1
-                range -1 48
-                help
-                    The GPIO number connected to the BCLK pin of the I2S speaker/DAC.
+        config AUDIO_I2S_SPK_GPIO_DOUT
+            int "I2S SPK DOUT Pin"
+            default 43 if BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
+            default 7 if BOARD_TYPE_BREAD_COMPACT_WIFI || BOARD_TYPE_BREAD_COMPACT_WIFI_LCD
+            default -1
+            range -1 48
+            help
+                The GPIO number connected to the DOUT pin of the I2S speaker/DAC.
 
-            config AUDIO_I2S_SPK_GPIO_LRCK
-                int "I2S SPK LRCK Pin"
-                default 41 if BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
-                default 16 if BOARD_TYPE_BREAD_COMPACT_WIFI || BOARD_TYPE_BREAD_COMPACT_WIFI_LCD
-                default -1
-                range -1 48
-                help
-                    The GPIO number connected to the LRCK pin of the I2S speaker/DAC.
-        endmenu
+        config AUDIO_I2S_SPK_GPIO_BCLK
+            int "I2S SPK BCLK Pin"
+            default 40 if BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
+            default 15 if BOARD_TYPE_BREAD_COMPACT_WIFI || BOARD_TYPE_BREAD_COMPACT_WIFI_LCD
+            default -1
+            range -1 48
+            help
+                The GPIO number connected to the BCLK pin of the I2S speaker/DAC.
 
-        menu "Button & LED Pin Configuration"
-            depends on BOARD_TYPE_BREAD_COMPACT_WIFI || BOARD_TYPE_BREAD_COMPACT_WIFI_LCD || BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
-            config BUILTIN_LED_GPIO
-                int "Built-in LED Pin"
-                default -1
-                range -1 48
-                help
-                    The GPIO number connected to the built-in LED.
+        config AUDIO_I2S_SPK_GPIO_LRCK
+            int "I2S SPK LRCK Pin"
+            default 39 if BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
+            default 16 if BOARD_TYPE_BREAD_COMPACT_WIFI || BOARD_TYPE_BREAD_COMPACT_WIFI_LCD
+            default -1
+            range -1 48
+            help
+                The GPIO number connected to the LRCK pin of the I2S speaker/DAC.
+    endmenu
 
-            config BOOT_BUTTON_GPIO
-                int "Boot Button Pin"
-                default 0
-                range -1 48
-                help
-                    The GPIO number connected to the Boot button.
+    menu "Button & LED Pin Configuration"
+        depends on BOARD_TYPE_BREAD_COMPACT_WIFI || BOARD_TYPE_BREAD_COMPACT_WIFI_LCD || BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
+        config BUILTIN_LED_GPIO
+            int "Built-in LED Pin"
+            default 100 if BOARD_TYPE_BREAD_COMPACT_WIFI || BOARD_TYPE_BREAD_COMPACT_WIFI_LCD || BOARD_TYPE_BREAD_COMPACT_WIFI_S3CAM
+            default -1
+            range -1 127
+            help
+                The GPIO number connected to the built-in LED.
+                For bread-compact series, it uses PCF8575 P0 (100) by default.
 
-            config TOUCH_BUTTON_GPIO
-                int "Touch Button Pin"
-                default -1
-                range -1 48
-                help
-                    The GPIO number connected to the Touch button.
+        config BOOT_BUTTON_GPIO
+            int "Boot Button Pin"
+            default 0
+            range -1 48
+            help
+                The GPIO number connected to the Boot button.
 
-            config VOLUME_UP_BUTTON_GPIO
-                int "Volume Up Button Pin"
-                default -1
-                range -1 48
-                help
-                    The GPIO number connected to the Volume Up button.
+        config TOUCH_BUTTON_GPIO
+            int "Touch Button Pin"
+            default 47 if BOARD_TYPE_BREAD_COMPACT_WIFI
+            default -1
+            range -1 48
+            help
+                The GPIO number connected to the Touch button.
 
-            config VOLUME_DOWN_BUTTON_GPIO
-                int "Volume Down Button Pin"
-                default -1
-                range -1 48
-                help
-                    The GPIO number connected to the Volume Down button.
-        endmenu
+        config VOLUME_UP_BUTTON_GPIO
+            int "Volume Up Button Pin"
+            default 40 if BOARD_TYPE_BREAD_COMPACT_WIFI
+            default -1
+            range -1 48
+            help
+                The GPIO number connected to the Volume Up button.
+
+        config VOLUME_DOWN_BUTTON_GPIO
+            int "Volume Down Button Pin"
+            default 39 if BOARD_TYPE_BREAD_COMPACT_WIFI
+            default -1
+            range -1 48
+            help
+                The GPIO number connected to the Volume Down button.
     endmenu
 
     # Location Controller Configuration

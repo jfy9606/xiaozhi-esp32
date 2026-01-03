@@ -2,8 +2,8 @@
 
 #include "../mcp_server.h"
 #include "../boards/common/camera.h"
+#include "../boards/common/esp32_camera.h"
 #include "camera_resource_manager.h"
-#include "enhanced_esp32_camera.h"
 
 /**
  * MCP Camera Control Tools
@@ -24,8 +24,8 @@ public:
     // Camera management
     bool SetCamera(Camera* camera);
     Camera* GetCamera() const;
-    bool SetEnhancedCamera(EnhancedEsp32Camera* camera);
-    EnhancedEsp32Camera* GetEnhancedCamera() const;
+    bool SetEsp32Camera(Esp32Camera* camera);
+    Esp32Camera* GetEsp32Camera() const;
     
     // Resource management integration
     bool EnableResourceManagement();
@@ -58,7 +58,7 @@ private:
     // Components
     McpServer* mcp_server_;
     Camera* camera_;
-    EnhancedEsp32Camera* enhanced_camera_;
+    Esp32Camera* esp32_camera_;
     CameraResourceManager* resource_manager_;
     
     // Tool implementations

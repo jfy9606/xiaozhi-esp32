@@ -123,6 +123,58 @@
 #endif
 
 //Enhanced Camera Config - Multi-model support
+#ifdef CONFIG_CAMERA_PIN_FREENOVE
+// Fixed mapping for Freenove ESP32-S3 WROOM built-in socket
+#ifndef CAMERA_PIN_D0
+#define CAMERA_PIN_D0     GPIO_NUM_11
+#endif
+#ifndef CAMERA_PIN_D1
+#define CAMERA_PIN_D1     GPIO_NUM_9
+#endif
+#ifndef CAMERA_PIN_D2
+#define CAMERA_PIN_D2     GPIO_NUM_8
+#endif
+#ifndef CAMERA_PIN_D3
+#define CAMERA_PIN_D3     GPIO_NUM_10
+#endif
+#ifndef CAMERA_PIN_D4
+#define CAMERA_PIN_D4     GPIO_NUM_12
+#endif
+#ifndef CAMERA_PIN_D5
+#define CAMERA_PIN_D5     GPIO_NUM_18
+#endif
+#ifndef CAMERA_PIN_D6
+#define CAMERA_PIN_D6     GPIO_NUM_17
+#endif
+#ifndef CAMERA_PIN_D7
+#define CAMERA_PIN_D7     GPIO_NUM_16
+#endif
+#ifndef CAMERA_PIN_XCLK
+#define CAMERA_PIN_XCLK   GPIO_NUM_15
+#endif
+#ifndef CAMERA_PIN_PCLK
+#define CAMERA_PIN_PCLK   GPIO_NUM_13
+#endif
+#ifndef CAMERA_PIN_VSYNC
+#define CAMERA_PIN_VSYNC  GPIO_NUM_6
+#endif
+#ifndef CAMERA_PIN_HREF
+#define CAMERA_PIN_HREF   GPIO_NUM_7
+#endif
+#ifndef CAMERA_PIN_SIOC
+#define CAMERA_PIN_SIOC   GPIO_NUM_5
+#endif
+#ifndef CAMERA_PIN_SIOD
+#define CAMERA_PIN_SIOD   GPIO_NUM_4
+#endif
+#ifndef CAMERA_PIN_PWDN
+#define CAMERA_PIN_PWDN   GPIO_NUM_NC
+#endif
+#ifndef CAMERA_PIN_RESET
+#define CAMERA_PIN_RESET  GPIO_NUM_NC
+#endif
+#else
+// Custom mapping or default
 #ifndef CAMERA_PIN_D0
 #ifdef CONFIG_CAMERA_PIN_D0
 #define CAMERA_PIN_D0 ((gpio_num_t)CONFIG_CAMERA_PIN_D0)
@@ -250,6 +302,7 @@
 #define CAMERA_PIN_RESET GPIO_NUM_NC
 #endif
 #endif
+#endif // CONFIG_CAMERA_PIN_FREENOVE
 #define XCLK_FREQ_HZ 20000000
 
 // Enhanced camera resource management
@@ -320,41 +373,41 @@
 
 #ifndef DISPLAY_MOSI_PIN
 #ifdef CONFIG_DISPLAY_MOSI_PIN
-#define DISPLAY_MOSI_PIN      ((gpio_num_t)CONFIG_DISPLAY_MOSI_PIN)
+#define DISPLAY_MOSI_PIN ((gpio_num_t)CONFIG_DISPLAY_MOSI_PIN)
 #else
-#define DISPLAY_MOSI_PIN      GPIO_NUM_20
+#define DISPLAY_MOSI_PIN GPIO_NUM_40
 #endif
 #endif
 
 #ifndef DISPLAY_CLK_PIN
 #ifdef CONFIG_DISPLAY_CLK_PIN
-#define DISPLAY_CLK_PIN       ((gpio_num_t)CONFIG_DISPLAY_CLK_PIN)
+#define DISPLAY_CLK_PIN ((gpio_num_t)CONFIG_DISPLAY_CLK_PIN)
 #else
-#define DISPLAY_CLK_PIN       GPIO_NUM_19
-#endif
-#endif
-
-#ifndef DISPLAY_DC_PIN
-#ifdef CONFIG_DISPLAY_DC_PIN
-#define DISPLAY_DC_PIN        ((gpio_num_t)CONFIG_DISPLAY_DC_PIN)
-#else
-#define DISPLAY_DC_PIN        GPIO_NUM_21
-#endif
-#endif
-
-#ifndef DISPLAY_RST_PIN
-#ifdef CONFIG_DISPLAY_RST_PIN
-#define DISPLAY_RST_PIN       ((gpio_num_t)CONFIG_DISPLAY_RST_PIN)
-#else
-#define DISPLAY_RST_PIN       ((gpio_num_t)107)    // 使用PCF8575 P7
+#define DISPLAY_CLK_PIN GPIO_NUM_39
 #endif
 #endif
 
 #ifndef DISPLAY_CS_PIN
 #ifdef CONFIG_DISPLAY_CS_PIN
-#define DISPLAY_CS_PIN        ((gpio_num_t)CONFIG_DISPLAY_CS_PIN)
+#define DISPLAY_CS_PIN ((gpio_num_t)CONFIG_DISPLAY_CS_PIN)
 #else
-#define DISPLAY_CS_PIN        GPIO_NUM_1
+#define DISPLAY_CS_PIN GPIO_NUM_NC
+#endif
+#endif
+
+#ifndef DISPLAY_DC_PIN
+#ifdef CONFIG_DISPLAY_DC_PIN
+#define DISPLAY_DC_PIN ((gpio_num_t)CONFIG_DISPLAY_DC_PIN)
+#else
+#define DISPLAY_DC_PIN GPIO_NUM_NC
+#endif
+#endif
+
+#ifndef DISPLAY_RST_PIN
+#ifdef CONFIG_DISPLAY_RST_PIN
+#define DISPLAY_RST_PIN ((gpio_num_t)CONFIG_DISPLAY_RST_PIN)
+#else
+#define DISPLAY_RST_PIN GPIO_NUM_NC
 #endif
 #endif
 
@@ -594,34 +647,44 @@
 // ========== 级联多路复用器配置 ==========
 // 主I2C总线配置 (用于所有I2C级联多路复用器)
 // 使用Kconfig配置的引脚，支持用户自定义
+#ifndef I2C_MUX_SDA_PIN
 #ifdef CONFIG_PCA9548A_SDA_PIN
 #define I2C_MUX_SDA_PIN           ((gpio_num_t)CONFIG_PCA9548A_SDA_PIN)
 #else
 #define I2C_MUX_SDA_PIN           GPIO_NUM_14    // 默认I2C数据线
 #endif
+#endif
 
+#ifndef I2C_MUX_SCL_PIN
 #ifdef CONFIG_PCA9548A_SCL_PIN
 #define I2C_MUX_SCL_PIN           ((gpio_num_t)CONFIG_PCA9548A_SCL_PIN)
 #else
 #define I2C_MUX_SCL_PIN           GPIO_NUM_44    // 移动到 GPIO 44 以避开 ADC 冲突
 #endif
+#endif
 
+#ifndef I2C_MUX_FREQ_HZ
 #ifdef CONFIG_PCA9548A_I2C_FREQ_HZ
 #define I2C_MUX_FREQ_HZ           CONFIG_PCA9548A_I2C_FREQ_HZ
 #else
 #define I2C_MUX_FREQ_HZ           400000         // 默认I2C频率 400KHz
 #endif
+#endif
 
+#ifndef I2C_MUX_PORT
 #ifdef CONFIG_DISPLAY_I2C_PORT
 #define I2C_MUX_PORT              ((i2c_port_t)CONFIG_DISPLAY_I2C_PORT)
 #else
 #define I2C_MUX_PORT              I2C_NUM_0      // 使用I2C_NUM_0以避开摄像头的I2C_NUM_1
 #endif
+#endif
 
+#ifndef I2C_MUX_TIMEOUT_MS
 #ifdef CONFIG_PCA9548A_I2C_TIMEOUT_MS
 #define I2C_MUX_TIMEOUT_MS        CONFIG_PCA9548A_I2C_TIMEOUT_MS
 #else
 #define I2C_MUX_TIMEOUT_MS        1000           // 默认I2C超时时间
+#endif
 #endif
 
 // 1. PCA9548A I2C多路复用器配置

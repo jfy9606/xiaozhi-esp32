@@ -1,8 +1,9 @@
 #pragma once
 
 #include "../components.h"
-#include "../boards/common/esp32_camera.h"
+#include "../boards/common/camera.h"
 #include "../web/web.h"
+#include <esp_camera.h>
 #include <memory>
 #include <vector>
 #include <functional>
@@ -48,6 +49,7 @@ public:
     void StopStreaming();
     bool IsStreaming() const { return is_streaming_; }
     bool Capture(CaptureCallback callback = nullptr);
+
     camera_fb_t* GetFrame();
     void ReturnFrame(camera_fb_t* fb);
     
@@ -98,8 +100,8 @@ private:
     static esp_err_t BmpHandler(httpd_req_t *req);
     
     // 辅助函数
-    static ra_filter_t* RaFilterInit(ra_filter_t* filter, size_t sample_size);
-    static int RaFilterRun(ra_filter_t* filter, int value);
+    ra_filter_t* RaFilterInit(ra_filter_t* filter, size_t sample_size);
+    int RaFilterRun(ra_filter_t* filter, int value);
     static size_t JpegEncodeStream(void *arg, size_t index, const void *data, size_t len);
 };
 

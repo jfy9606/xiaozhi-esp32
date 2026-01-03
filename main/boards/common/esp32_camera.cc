@@ -1,17 +1,19 @@
+#if !defined(CONFIG_IDF_TARGET_ESP32) && !defined(CONFIG_IDF_TARGET_ESP32S3) && !defined(CONFIG_IDF_TARGET_ESP32S2)
 #include <fcntl.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/param.h>
 #include <unistd.h>
 #include <errno.h>
-#include <esp_heap_caps.h>
-#include <cstdio>
-#include <cstring>
-
-#include "esp_imgfx_color_convert.h"
 #include "esp_video_device.h"
 #include "esp_video_init.h"
 #include "linux/videodev2.h"
+#endif
+
+#include <esp_heap_caps.h>
+#include <cstdio>
+#include <cstring>
+#include "esp_imgfx_color_convert.h"
 
 #include "board.h"
 #include "display.h"
@@ -30,7 +32,7 @@
 #include <esp_log.h> // should be after LOCAL_LOG_LEVEL definition
 
 #ifdef CONFIG_XIAOZHI_ENABLE_ROTATE_CAMERA_IMAGE
-#ifdef CONFIG_IDF_TARGET_ESP32P4
+#if !defined(CONFIG_IDF_TARGET_ESP32) && !defined(CONFIG_IDF_TARGET_ESP32S3) && !defined(CONFIG_IDF_TARGET_ESP32S2)
 #include "driver/ppa.h"
 #if defined(CONFIG_XIAOZHI_CAMERA_IMAGE_ROTATION_ANGLE_90)
 #define IMAGE_ROTATION_ANGLE (PPA_SRM_ROTATION_ANGLE_270)
@@ -94,6 +96,7 @@ static void log_available_video_devices() {
 #define CAM_PRINT_FOURCC(pixelformat) (void)0;
 #endif  // CONFIG_XIAOZHI_ENABLE_CAMERA_DEBUG_MODE
 
+#if !defined(CONFIG_IDF_TARGET_ESP32) && !defined(CONFIG_IDF_TARGET_ESP32S3) && !defined(CONFIG_IDF_TARGET_ESP32S2)
 Esp32Camera::Esp32Camera(const esp_video_init_config_t& config) {
     if (esp_video_init(&config) != ESP_OK) {
         ESP_LOGE(TAG, "esp_video_init failed");
@@ -1038,25 +1041,489 @@ std::string Esp32Camera::Explain(const std::string& question) {
     return result;
 }
 
-bool Esp32Camera::SetFlashLevel(int level) {
-    if (flash_pin_ < 0) {
-        ESP_LOGE(TAG, "Camera does not have flash");
+bool Esp32Camera::HasFlash() { return false; }
+bool Esp32Camera::SetFlashLevel(int level) { return false; }
+int Esp32Camera::GetFlashLevel() { return 0; }
+bool Esp32Camera::SetBrightness(int brightness) { return false; }
+int Esp32Camera::GetBrightness() { return 0; }
+bool Esp32Camera::SetContrast(int contrast) { return false; }
+int Esp32Camera::GetContrast() { return 0; }
+bool Esp32Camera::SetSaturation(int saturation) { return false; }
+int Esp32Camera::GetSaturation() { return 0; }
+bool Esp32Camera::StartStreaming() { return false; }
+void Esp32Camera::StopStreaming() {}
+const char* Esp32Camera::GetSensorName() { return "V4L2"; }
+void* Esp32Camera::GetFrame() { return nullptr; }
+void Esp32Camera::ReturnFrame(void* fb) {}
+bool Esp32Camera::GetHMirror() { return false; }
+bool Esp32Camera::GetVFlip() { return false; }
+
+#else // CONFIG_IDF_TARGET_ESP32 or ESP32S3 or ESP32S2 is defined
+
+#include <driver/gpio.h>
+#include <driver/ledc.h>
+#include <sensor.h>
+
+Esp32Camera::Esp32Camera(const camera_config_t& config) : config_(config), detected_model_(CAMERA_NONE), initialized_(false), resource_manager_(nullptr) {
+    memset(&enhanced_config_, 0, sizeof(enhanced_config_));
+    enhanced_config_.flash_pin = GPIO_NUM_NC;
+}
+
+Esp32Camera::Esp32Camera(const camera_config_t& config, const enhanced_camera_config_t& enhanced_config)
+    : config_(config), enhanced_config_(enhanced_config), detected_model_(CAMERA_NONE), 
+      initialized_(false), resource_manager_(nullptr) {
+    
+    if (enhanced_config_.resource_managed) {
+        resource_manager_ = &CameraResourceManager::GetInstance();
+    }
+}
+
+Esp32Camera::~Esp32Camera() {
+    Deinitialize();
+}
+
+bool Esp32Camera::Initialize() {
+    if (initialized_) {
+        return true;
+    }
+
+    // Initialize resource manager if needed
+    if (resource_manager_ && !resource_manager_->Initialize()) {
+        ESP_LOGE(TAG, "Failed to initialize resource manager");
         return false;
     }
     
-    // 限制范围在0-255
-    level = level < 0 ? 0 : (level > 255 ? 255 : level);
+    // Lock resources if managed
+    if (resource_manager_ && !resource_manager_->LockResourceForCamera()) {
+        ESP_LOGE(TAG, "Failed to lock camera resources");
+        return false;
+    }
     
-    if (level > 0) {
-        // 这里应该使用PWM控制闪光灯亮度，简化为开关控制
-        gpio_set_level((gpio_num_t)flash_pin_, 1);
-        ESP_LOGI(TAG, "Camera flash set to ON");
+    // Auto-detect sensor if enabled
+    if (enhanced_config_.auto_detect) {
+        ESP_LOGI(TAG, "Starting camera auto-detection...");
+        if (!AutoDetectSensor()) {
+            ESP_LOGW(TAG, "Auto-detection failed, using default model: %s", GetModelName(enhanced_config_.model));
+            detected_model_ = enhanced_config_.model;
+        } else {
+            ESP_LOGI(TAG, "Auto-detection successful: %s", GetModelName(detected_model_));
+        }
     } else {
-        gpio_set_level((gpio_num_t)flash_pin_, 0);
-        ESP_LOGI(TAG, "Camera flash set to OFF");
+        detected_model_ = enhanced_config_.model;
+        ESP_LOGI(TAG, "Using configured camera model: %s", GetModelName(detected_model_));
+    }
+    
+    esp_err_t err = esp_camera_init(&config_);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Camera init failed with error 0x%x", err);
+        if (resource_manager_) {
+            resource_manager_->ReleaseResource();
+        }
+        return false;
+    }
+    
+    // Apply model-specific settings
+    if (!SetModelSpecificSettings(detected_model_)) {
+        ESP_LOGE(TAG, "Failed to apply model-specific settings");
+    }
+    
+    // Configure flash if available
+    if (enhanced_config_.flash_pin != GPIO_NUM_NC) {
+        ConfigureFlashPin();
+    }
+    
+    // Apply model optimizations
+    ApplyModelOptimizations();
+    
+    initialized_ = true;
+    
+    // Update resource manager state
+    if (resource_manager_) {
+        resource_manager_->SetCameraInitialized(true);
+        resource_manager_->SetDetectedModel(GetModelName(detected_model_));
     }
     
     return true;
+}
+
+void Esp32Camera::Deinitialize() {
+    if (!initialized_) {
+        return;
+    }
+    
+    esp_camera_deinit();
+
+    // Release resources
+    if (resource_manager_) {
+        resource_manager_->SetCameraInitialized(false);
+        resource_manager_->ReleaseResource();
+    }
+    
+    initialized_ = false;
+}
+
+void Esp32Camera::SetExplainUrl(const std::string& url, const std::string& token) {
+    explain_url_ = url;
+    explain_token_ = token;
+}
+
+bool Esp32Camera::AutoDetectSensor() {
+    ESP_LOGI(TAG, "Starting camera sensor auto-detection");
+    
+#ifdef CONFIG_CAMERA_OV5640_SUPPORT
+    if (DetectOV5640()) {
+        detected_model_ = CAMERA_OV5640;
+        return true;
+    }
+#endif
+    
+#ifdef CONFIG_CAMERA_OV3660_SUPPORT
+    if (DetectOV3660()) {
+        detected_model_ = CAMERA_OV3660;
+        return true;
+    }
+#endif
+    
+#ifdef CONFIG_CAMERA_OV2640_SUPPORT
+    if (DetectOV2640()) {
+        detected_model_ = CAMERA_OV2640;
+        return true;
+    }
+#endif
+    
+    ESP_LOGW(TAG, "No supported camera sensor detected");
+    return false;
+}
+
+bool Esp32Camera::SetCameraModel(camera_model_t model) {
+    if (initialized_) {
+        ESP_LOGE(TAG, "Cannot change model while camera is initialized");
+        return false;
+    }
+    
+    enhanced_config_.model = model;
+    detected_model_ = model;
+    return true;
+}
+
+camera_model_t Esp32Camera::GetDetectedModel() const {
+    return detected_model_;
+}
+
+const char* Esp32Camera::GetModelName(camera_model_t model) const {
+    return GetModelNameStatic(model);
+}
+
+bool Esp32Camera::EnableWithResourceManagement() {
+    if (!resource_manager_) {
+        ESP_LOGE(TAG, "Resource management not enabled");
+        return false;
+    }
+    
+    return resource_manager_->SetCameraEnabled(true);
+}
+
+void Esp32Camera::DisableWithResourceManagement() {
+    if (resource_manager_) {
+        resource_manager_->SetCameraEnabled(false);
+    }
+}
+
+bool Esp32Camera::IsResourceManaged() const {
+    return enhanced_config_.resource_managed && resource_manager_;
+}
+
+bool Esp32Camera::ApplyModelOptimizations() {
+    switch (detected_model_) {
+        case CAMERA_OV2640:
+            SetBrightness(0);
+            SetContrast(0);
+            SetSaturation(0);
+            break;
+        case CAMERA_OV3660:
+            SetBrightness(1);
+            SetContrast(1);
+            SetSaturation(0);
+            break;
+        case CAMERA_OV5640:
+            SetBrightness(0);
+            SetContrast(2);
+            SetSaturation(1);
+            break;
+        default:
+            return false;
+    }
+    return true;
+}
+
+bool Esp32Camera::SetModelSpecificSettings(camera_model_t model) {
+    switch (model) {
+        case CAMERA_OV2640:
+#ifdef CONFIG_CAMERA_OV2640_SUPPORT
+            return InitializeOV2640();
+#else
+            return false;
+#endif
+        case CAMERA_OV3660:
+#ifdef CONFIG_CAMERA_OV3660_SUPPORT
+            return InitializeOV3660();
+#else
+            return false;
+#endif
+        case CAMERA_OV5640:
+#ifdef CONFIG_CAMERA_OV5640_SUPPORT
+            return InitializeOV5640();
+#else
+            return false;
+#endif
+        default:
+            return true;
+    }
+}
+
+enhanced_camera_config_t Esp32Camera::GetEnhancedConfig() const {
+    return enhanced_config_;
+}
+
+bool Esp32Camera::UpdateEnhancedConfig(const enhanced_camera_config_t& config) {
+    if (initialized_) {
+        return false;
+    }
+    enhanced_config_ = config;
+    return true;
+}
+
+bool Esp32Camera::IsModelSupported(camera_model_t model) {
+    switch (model) {
+        case CAMERA_OV2640:
+#ifdef CONFIG_CAMERA_OV2640_SUPPORT
+            return true;
+#else
+            return false;
+#endif
+        case CAMERA_OV3660:
+#ifdef CONFIG_CAMERA_OV3660_SUPPORT
+            return true;
+#else
+            return false;
+#endif
+        case CAMERA_OV5640:
+#ifdef CONFIG_CAMERA_OV5640_SUPPORT
+            return true;
+#else
+            return false;
+#endif
+        default:
+            return false;
+    }
+}
+
+int Esp32Camera::GetSupportedModelsCount() {
+    int count = 0;
+#ifdef CONFIG_CAMERA_OV2640_SUPPORT
+    count++;
+#endif
+#ifdef CONFIG_CAMERA_OV3660_SUPPORT
+    count++;
+#endif
+#ifdef CONFIG_CAMERA_OV5640_SUPPORT
+    count++;
+#endif
+    return count;
+}
+
+void Esp32Camera::GetSupportedModels(camera_model_t* models, int max_count) {
+    int index = 0;
+#ifdef CONFIG_CAMERA_OV2640_SUPPORT
+    if (index < max_count) models[index++] = CAMERA_OV2640;
+#endif
+#ifdef CONFIG_CAMERA_OV3660_SUPPORT
+    if (index < max_count) models[index++] = CAMERA_OV3660;
+#endif
+#ifdef CONFIG_CAMERA_OV5640_SUPPORT
+    if (index < max_count) models[index++] = CAMERA_OV5640;
+#endif
+}
+
+const char* Esp32Camera::GetModelNameStatic(camera_model_t model) {
+    switch (model) {
+        case CAMERA_OV2640: return "OV2640";
+        case CAMERA_OV3660: return "OV3660";
+        case CAMERA_OV5640: return "OV5640";
+        default: return "Unknown";
+    }
+}
+
+bool Esp32Camera::DetectOV2640() {
+    sensor_t* sensor = esp_camera_sensor_get();
+    if (sensor == nullptr) return false;
+    uint8_t mid_h = sensor->get_reg(sensor, 0x1C, 0xFF);
+    uint8_t mid_l = sensor->get_reg(sensor, 0x1D, 0xFF);
+    uint16_t manufacturer_id = (mid_h << 8) | mid_l;
+    uint8_t pid_h = sensor->get_reg(sensor, 0x0A, 0xFF);
+    uint8_t pid_l = sensor->get_reg(sensor, 0x0B, 0xFF);
+    uint16_t product_id = (pid_h << 8) | pid_l;
+    return (manufacturer_id == 0x7FA2 && product_id == 0x2642);
+}
+
+bool Esp32Camera::DetectOV3660() {
+    sensor_t* sensor = esp_camera_sensor_get();
+    if (sensor == nullptr) return false;
+    uint8_t chip_id_h = sensor->get_reg(sensor, 0x300A, 0xFF);
+    uint8_t chip_id_l = sensor->get_reg(sensor, 0x300B, 0xFF);
+    uint16_t chip_id = (chip_id_h << 8) | chip_id_l;
+    return (chip_id == 0x3660);
+}
+
+bool Esp32Camera::DetectOV5640() {
+    sensor_t* sensor = esp_camera_sensor_get();
+    if (sensor == nullptr) return false;
+    uint8_t chip_id_h = sensor->get_reg(sensor, 0x300A, 0xFF);
+    uint8_t chip_id_l = sensor->get_reg(sensor, 0x300B, 0xFF);
+    uint16_t chip_id = (chip_id_h << 8) | chip_id_l;
+    return (chip_id == 0x5640);
+}
+
+bool Esp32Camera::InitializeOV2640() {
+    sensor_t* sensor = esp_camera_sensor_get();
+    if (sensor == nullptr) return false;
+    sensor->set_quality(sensor, 12);
+    sensor->set_colorbar(sensor, 0);
+    sensor->set_whitebal(sensor, 1);
+    sensor->set_gain_ctrl(sensor, 1);
+    sensor->set_exposure_ctrl(sensor, 1);
+    sensor->set_hmirror(sensor, 0);
+    sensor->set_vflip(sensor, 0);
+    return true;
+}
+
+bool Esp32Camera::InitializeOV3660() {
+    sensor_t* sensor = esp_camera_sensor_get();
+    if (sensor == nullptr) return false;
+    sensor->set_quality(sensor, 10);
+    sensor->set_colorbar(sensor, 0);
+    sensor->set_whitebal(sensor, 1);
+    sensor->set_gain_ctrl(sensor, 1);
+    sensor->set_exposure_ctrl(sensor, 1);
+    sensor->set_hmirror(sensor, 0);
+    sensor->set_vflip(sensor, 0);
+    sensor->set_brightness(sensor, 1);
+    sensor->set_contrast(sensor, 1);
+    sensor->set_saturation(sensor, 0);
+    sensor->set_sharpness(sensor, 0);
+    sensor->set_denoise(sensor, 0);
+    sensor->set_ae_level(sensor, 0);
+    sensor->set_aec_value(sensor, 300);
+    sensor->set_aec2(sensor, 0);
+    return true;
+}
+
+bool Esp32Camera::InitializeOV5640() {
+    sensor_t* sensor = esp_camera_sensor_get();
+    if (sensor == nullptr) return false;
+    sensor->set_quality(sensor, 8);
+    sensor->set_colorbar(sensor, 0);
+    sensor->set_whitebal(sensor, 1);
+    sensor->set_gain_ctrl(sensor, 1);
+    sensor->set_exposure_ctrl(sensor, 1);
+    sensor->set_hmirror(sensor, 0);
+    sensor->set_vflip(sensor, 0);
+    sensor->set_brightness(sensor, 0);
+    sensor->set_contrast(sensor, 2);
+    sensor->set_saturation(sensor, 1);
+    sensor->set_sharpness(sensor, 1);
+    sensor->set_denoise(sensor, 1);
+    sensor->set_ae_level(sensor, 0);
+    sensor->set_aec_value(sensor, 400);
+    sensor->set_aec2(sensor, 0);
+    if (sensor->set_lenc) sensor->set_lenc(sensor, 1);
+    return true;
+}
+
+void Esp32Camera::ConfigureFlashPin() {
+    if (enhanced_config_.flash_pin == GPIO_NUM_NC) return;
+    ledc_timer_config_t ledc_timer = {
+        .speed_mode = LEDC_LOW_SPEED_MODE,
+        .duty_resolution = LEDC_TIMER_13_BIT,
+        .timer_num = LEDC_TIMER_0,
+        .freq_hz = 5000,
+        .clk_cfg = LEDC_AUTO_CLK
+    };
+    ledc_timer_config(&ledc_timer);
+    ledc_channel_config_t ledc_channel = {
+        .gpio_num = (int)enhanced_config_.flash_pin,
+        .speed_mode = LEDC_LOW_SPEED_MODE,
+        .channel = LEDC_CHANNEL_0,
+        .timer_sel = LEDC_TIMER_0,
+        .duty = 0,
+        .hpoint = 0
+    };
+    ledc_channel_config(&ledc_channel);
+}
+
+void Esp32Camera::SetFlashState(bool on) {
+    if (!HasFlash()) return;
+    if (on) SetFlashLevel(enhanced_config_.flash_level);
+    else SetFlashLevel(0);
+}
+
+bool Esp32Camera::SetFlashLevel(int level) {
+    if (!HasFlash()) return false;
+    if (level < 0) level = 0;
+    if (level > 100) level = 100;
+    enhanced_config_.flash_level = level;
+    uint32_t duty = (level * 8191) / 100;
+    esp_err_t err = ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, duty);
+    if (err == ESP_OK) err = ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
+    return err == ESP_OK;
+}
+
+int Esp32Camera::GetFlashLevel() {
+    return enhanced_config_.flash_level;
+}
+
+bool Esp32Camera::HasFlash() {
+    return enhanced_config_.flash_pin != GPIO_NUM_NC;
+}
+
+bool Esp32Camera::Capture() {
+    return true;
+}
+
+bool Esp32Camera::SetHMirror(bool enabled) {
+    sensor_t *s = esp_camera_sensor_get();
+    if (s != nullptr) {
+        return s->set_hmirror(s, enabled) == ESP_OK;
+    }
+    return false;
+}
+
+bool Esp32Camera::SetVFlip(bool enabled) {
+    sensor_t *s = esp_camera_sensor_get();
+    if (s != nullptr) {
+        return s->set_vflip(s, enabled) == ESP_OK;
+    }
+    return false;
+}
+
+bool Esp32Camera::GetHMirror() {
+    sensor_t *s = esp_camera_sensor_get();
+    if (s != nullptr) {
+        return s->status.hmirror;
+    }
+    return false;
+}
+
+bool Esp32Camera::GetVFlip() {
+    sensor_t *s = esp_camera_sensor_get();
+    if (s != nullptr) {
+        return s->status.vflip;
+    }
+    return false;
+}
+
+std::string Esp32Camera::Explain(const std::string& question) {
+    return "";
 }
 
 bool Esp32Camera::SetBrightness(int brightness) {
@@ -1142,9 +1609,36 @@ void Esp32Camera::StopStreaming() {
     ESP_LOGI(TAG, "Camera streaming stopped");
 }
 
-camera_fb_t* Esp32Camera::GetFrame() {
+int Esp32Camera::GetBrightness() {
+    return brightness_;
+}
+
+int Esp32Camera::GetContrast() {
+    return contrast_;
+}
+
+int Esp32Camera::GetSaturation() {
+    return saturation_;
+}
+
+const char* Esp32Camera::GetSensorName() {
+    sensor_t *s = esp_camera_sensor_get();
+    if (s != nullptr) {
+        switch (s->id.PID) {
+            case OV2640_PID: return "OV2640";
+            case OV3660_PID: return "OV3660";
+            case OV5640_PID: return "OV5640";
+            case OV7670_PID: return "OV7670";
+            case OV7725_PID: return "OV7725";
+            default: return "Unknown";
+        }
+    }
+    return "None";
+}
+
+void* Esp32Camera::GetFrame() {
     if (fb_ != nullptr) {
-        esp_camera_fb_return(fb_);
+        esp_camera_fb_return((camera_fb_t*)fb_);
         fb_ = nullptr;
     }
     
@@ -1152,12 +1646,13 @@ camera_fb_t* Esp32Camera::GetFrame() {
     return fb_;
 }
 
-void Esp32Camera::ReturnFrame(camera_fb_t* fb) {
+void Esp32Camera::ReturnFrame(void* fb) {
     if (fb != nullptr) {
-        esp_camera_fb_return(fb);
+        esp_camera_fb_return((camera_fb_t*)fb);
     }
     
     if (fb == fb_) {
         fb_ = nullptr;
     }
 }
+#endif // CONFIG_IDF_TARGET_ESP32 or ESP32S3 or ESP32S2

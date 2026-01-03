@@ -9,7 +9,6 @@
 #include <driver/i2c_master.h>
 #include <driver/gpio.h>
 #include <vector>
-#include "esp32_camera.h"
 #include <functional>
 #include <network_interface.h>
 
@@ -78,7 +77,6 @@ typedef struct {
     // 摄像头配置与信息
     bool camera_supported;           // 是否支持摄像头
     bool has_camera;                 // 是否已初始化摄像头
-    camera_config_t camera_config;   // 摄像头配置
     camera_info_t* camera_info;      // 摄像头信息
 
     // 超声波传感器引脚

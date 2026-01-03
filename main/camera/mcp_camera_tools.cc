@@ -11,7 +11,7 @@ McpCameraTools& McpCameraTools::GetInstance() {
 
 McpCameraTools::McpCameraTools() 
     : initialized_(false), resource_managed_(false),
-      mcp_server_(nullptr), camera_(nullptr), enhanced_camera_(nullptr), 
+      mcp_server_(nullptr), camera_(nullptr), esp32_camera_(nullptr), 
       resource_manager_(nullptr) {
 }
 
@@ -55,7 +55,7 @@ void McpCameraTools::Deinitialize() {
     // Reset state
     mcp_server_ = nullptr;
     camera_ = nullptr;
-    enhanced_camera_ = nullptr;
+    esp32_camera_ = nullptr;
     resource_manager_ = nullptr;
     resource_managed_ = false;
     
@@ -77,15 +77,15 @@ Camera* McpCameraTools::GetCamera() const {
     return camera_;
 }
 
-bool McpCameraTools::SetEnhancedCamera(EnhancedEsp32Camera* camera) {
-    enhanced_camera_ = camera;
-    camera_ = camera; // Enhanced camera is also a base camera
-    ESP_LOGI(TAG, "Enhanced camera set for MCP tools");
+bool McpCameraTools::SetEsp32Camera(Esp32Camera* camera) {
+    esp32_camera_ = camera;
+    camera_ = camera; // Esp32Camera is also a base camera
+    ESP_LOGI(TAG, "Esp32Camera set for MCP tools");
     return true;
 }
 
-EnhancedEsp32Camera* McpCameraTools::GetEnhancedCamera() const {
-    return enhanced_camera_;
+Esp32Camera* McpCameraTools::GetEsp32Camera() const {
+    return esp32_camera_;
 }
 
 bool McpCameraTools::EnableResourceManagement() {
@@ -449,10 +449,10 @@ std::string McpCameraTools::GetCameraStatusJson() const {
         cJSON_AddBoolToObject(root, "vflip", camera_->GetVFlip());
     }
     
-    if (enhanced_camera_) {
-        cJSON_AddStringToObject(root, "type", "enhanced");
-        cJSON_AddStringToObject(root, "model", enhanced_camera_->GetModelName(enhanced_camera_->GetDetectedModel()));
-        cJSON_AddNumberToObject(root, "flash_level", enhanced_camera_->GetFlashLevel());
+    if (esp32_camera_) {
+        cJSON_AddStringToObject(root, "type", "esp32");
+        cJSON_AddStringToObject(root, "model", esp32_camera_->GetModelName(esp32_camera_->GetDetectedModel()));
+        cJSON_AddNumberToObject(root, "flash_level", esp32_camera_->GetFlashLevel());
     } else {
         cJSON_AddStringToObject(root, "type", "basic");
     }

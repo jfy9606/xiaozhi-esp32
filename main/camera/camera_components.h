@@ -9,7 +9,6 @@
 
 // Core camera components
 #include "camera_resource_manager.h"
-#include "enhanced_esp32_camera.h"
 #include "vision_integration.h"
 #include "mcp_camera_tools.h"
 
@@ -47,7 +46,7 @@ public:
     };
     
     // Factory methods
-    static EnhancedEsp32Camera* CreateEnhancedCamera(
+    static Esp32Camera* CreateEsp32Camera(
         const camera_config_t& camera_config,
         const enhanced_camera_config_t& enhanced_config
     );
@@ -65,7 +64,7 @@ public:
     static CameraResourceManager* GetResourceManager();
     static VisionIntegration* GetVisionIntegration();
     static McpCameraTools* GetMcpTools();
-    static EnhancedEsp32Camera* GetEnhancedCamera();
+    static Esp32Camera* GetEsp32Camera();
     
     // System status
     static bool IsCameraSystemInitialized();
@@ -73,7 +72,7 @@ public:
 
 private:
     static bool system_initialized_;
-    static EnhancedEsp32Camera* enhanced_camera_;
+    static Esp32Camera* esp32_camera_;
     static CameraSystemConfig system_config_;
 };
 
